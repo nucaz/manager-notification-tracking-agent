@@ -1,0 +1,47 @@
+services:
+  app:
+    build: .
+    container_name: licencias_app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+    ports:
+      # Puerto expuesto en el host. Se usa 8090 para no chocar con GLPI/Zabbix
+      # (que normalmente ocupan 80/443/8080 en el mismo servidor). Ajustar si
+      # ese puerto ya esta en uso: "OTRO_PUERTO:3000"
+      - "8090:3000"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11
+    container_name: licencias_db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-licencias_app}
+      MARIADB_USER: ${DB_USER:-licencias}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-changeme_root_password}
+    volumes:
+      - db_data:/var/lib/mysql
+    # No se publica el puerto 3306 al host: solo es accesible dentro de la red
+    # interna de docker-compose (mas seguro). Si necesitas acceso externo
+    # para administrar la BD, descomenta la siguiente linea con un puerto
+    # que no choque con un MySQL/MariaDB ya instalado en el servidor:
+    # ports:
+    #   - "3307:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  db_data:
+  uploads_data:

@@ -1,0 +1,56 @@
+<%
+// Variables esperadas: a (adjunto), currentUser
+%>
+<li class="list-group-item px-0">
+  <div class="d-flex justify-content-between align-items-start">
+    <div>
+      <span class="badge bg-light text-dark border"><%= a.doc_type %></span>
+      <a href="/adjuntos/descargar/<%= a.id %>"><%= a.original_name %></a>
+      <% if (a.description) { %><div class="small text-muted"><%= a.description %></div><% } %>
+    </div>
+    <% if (currentUser.role !== 'lector') { %>
+      <form action="/adjuntos/eliminar/<%= a.id %>" method="post" onsubmit="return confirm('¿Eliminar este archivo?');">
+        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+      </form>
+    <% } %>
+  </div>
+
+  <% if (['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(a.mime_type) && currentUser.role !== 'lector') { %>
+    <div class="mt-2 p-2 bg-light rounded small">
+      <% if (a.extraction_status === 'completado') { %>
+        <div class="mb-1"><i class="bi bi-robot"></i> <strong>Datos extraídos con IA</strong>
+          <% if (a.applied_at) { %><span class="badge bg-success ms-1">Aplicado al registro</span><% } %>
+        </div>
+        <div class="row g-1 mb-2">
+          <div class="col-6"><strong>Monto:</strong> <%= a.extracted_amount !== null ? a.extracted_amount + ' ' + (a.extracted_currency || '') : '—' %></div>
+          <div class="col-6"><strong>Proveedor:</strong> <%= a.extracted_provider || '—' %></div>
+          <div class="col-6"><strong>N° factura:</strong> <%= a.extracted_invoice_number || '—' %></div>
+          <div class="col-6"><strong>RUC/NIT:</strong> <%= a.extracted_tax_id || '—' %></div>
+          <div class="col-6"><strong>F. emisión:</strong> <%= a.extracted_issue_date || '—' %></div>
+          <div class="col-6"><strong>F. vencimiento:</strong> <%= a.extracted_due_date || '—' %></div>
+          <div class="col-12"><strong>Concepto:</strong> <%= a.extracted_concept || '—' %></div>
+          <div class="col-12"><strong>Local/sede:</strong> <%= a.extracted_site || '—' %></div>
+        </div>
+        <div class="d-flex gap-2">
+          <% if (!a.applied_at) { %>
+            <form action="/adjuntos/<%= a.id %>/aplicar" method="post">
+              <button class="btn btn-xs btn-outline-success btn-sm" type="submit">Aplicar al registro</button>
+            </form>
+          <% } %>
+          <form action="/adjuntos/<%= a.id %>/extraer" method="post">
+            <button class="btn btn-xs btn-outline-secondary btn-sm" type="submit">Re-extraer</button>
+          </form>
+        </div>
+      <% } else if (a.extraction_status === 'error') { %>
+        <div class="text-danger mb-1"><i class="bi bi-exclamation-triangle"></i> Error al extraer: <%= a.extraction_error %></div>
+        <form action="/adjuntos/<%= a.id %>/extraer" method="post">
+          <button class="btn btn-sm btn-outline-secondary" type="submit">Reintentar extracción</button>
+        </form>
+      <% } else { %>
+        <form action="/adjuntos/<%= a.id %>/extraer" method="post">
+          <button class="btn btn-sm btn-outline-primary" type="submit"><i class="bi bi-robot"></i> Extraer datos con IA</button>
+        </form>
+      <% } %>
+    </div>
+  <% } %>
+</li>

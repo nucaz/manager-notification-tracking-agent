@@ -1,0 +1,84 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h2 class="mb-0"><%= item.product_name %></h2>
+    <span class="badge <%= item.computed_status === 'vencido' ? 'bg-danger' : item.computed_status === 'por_vencer' ? 'bg-warning text-dark' : item.computed_status === 'activo' ? 'bg-success' : 'bg-secondary' %>">
+      <%= item.days_left !== null ? item.days_left + ' día(s) restantes' : 'sin fecha de vencimiento' %>
+    </span>
+  </div>
+  <div>
+    <% if (currentUser.role !== 'lector') { %>
+      <a href="/licencias/<%= item.id %>/editar" class="btn btn-outline-primary">Editar</a>
+      <form action="/glpi/sincronizar/license/<%= item.id %>" method="post" class="d-inline">
+        <button class="btn btn-outline-secondary" type="submit" title="Crear/actualizar como Contrato en GLPI">
+          <i class="bi bi-cloud-upload"></i> Sincronizar con GLPI
+        </button>
+      </form>
+      <form action="/licencias/<%= item.id %>/eliminar" method="post" class="d-inline"
+            onsubmit="return confirm('¿Eliminar esta licencia? Esta acción no se puede deshacer.');">
+        <button class="btn btn-outline-danger" type="submit">Eliminar</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-7">
+    <div class="card p-3">
+      <h5>Detalle</h5>
+      <table class="table table-sm">
+        <tr><th style="width:220px;">Proveedor</th><td><%= item.vendor || '—' %></td></tr>
+        <tr><th>Tipo de licencia</th><td><%= item.license_type || '—' %></td></tr>
+        <tr><th>Clave</th><td><%= item.license_key || '—' %></td></tr>
+        <tr><th>Asientos</th><td><%= item.seats %></td></tr>
+        <tr><th>Asignado a</th><td><%= item.assigned_to || '—' %></td></tr>
+        <tr><th>Costo</th><td><%= item.cost ? item.cost + ' ' + item.currency : '—' %></td></tr>
+        <tr><th>Fecha de compra</th><td><%= item.purchase_date || '—' %></td></tr>
+        <tr><th>Fecha de inicio</th><td><%= item.start_date || '—' %></td></tr>
+        <tr><th>Fecha de vencimiento</th><td><%= item.expiration_date || '—' %></td></tr>
+        <tr><th>Renovación automática</th><td><%= item.auto_renew ? 'Sí' : 'No' %></td></tr>
+        <tr><th>Local / sede</th><td><%= item.site_location || '—' %></td></tr>
+        <tr><th>Equipo GLPI vinculado</th><td><%= item.glpi_computer_id || '—' %></td></tr>
+        <tr><th>Entidad GLPI vinculada</th><td><%= item.glpi_entity_id || '—' %></td></tr>
+        <tr><th>Contrato GLPI sincronizado</th><td><%= item.glpi_contract_id || '—' %></td></tr>
+        <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-md-5">
+    <div class="card p-3">
+      <h5>Adjuntos (contratos, adendas, facturas)</h5>
+      <% if (currentUser.role !== 'lector') { %>
+        <form action="/adjuntos/subir/license/<%= item.id %>" method="post" enctype="multipart/form-data" class="mb-3 border-bottom pb-3">
+          <div class="mb-2">
+            <select name="doc_type" class="form-select form-select-sm">
+              <option value="contrato">Contrato</option>
+              <option value="adenda">Adenda</option>
+              <option value="factura">Factura</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <input type="text" name="description" class="form-control form-control-sm" placeholder="Descripción (opcional)">
+          </div>
+          <div class="mb-2">
+            <input type="file" name="file" class="form-control form-control-sm" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary">Subir archivo</button>
+        </form>
+      <% } %>
+      <ul class="list-group list-group-flush">
+        <% attachments.forEach(function(a) { %>
+          <%- include('../partials/attachment_item', { a: a }) %>
+        <% }); %>
+        <% if (attachments.length === 0) { %>
+          <li class="list-group-item px-0 text-muted">Sin archivos adjuntos.</li>
+        <% } %>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

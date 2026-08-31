@@ -1,0 +1,68 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Red — Topologías y arquitecturas</h2>
+  <% if (currentUser.role !== 'lector') { %>
+    <a href="/red/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Subir diagrama</a>
+  <% } %>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <select name="category" class="form-select">
+      <option value="">Todas las categorías</option>
+      <% categories.forEach(function(c) { %>
+        <option value="<%= c.value %>" <%= category === c.value ? 'selected' : '' %>><%= c.label %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<div class="row g-3">
+  <% items.forEach(function(d) { %>
+    <div class="col-md-4">
+      <div class="card p-3 h-100">
+        <div class="d-flex justify-content-between align-items-start">
+          <h6 class="mb-1"><%= d.title %></h6>
+          <span class="badge bg-light text-dark border">v<%= d.version %></span>
+        </div>
+        <span class="badge bg-primary mb-2 align-self-start">
+          <% var catLabel = categories.find(c => c.value === d.category); %>
+          <%= catLabel ? catLabel.label : d.category %>
+        </span>
+        <% if (d.description) { %><p class="small text-muted mb-2"><%= d.description %></p><% } %>
+        <p class="small text-muted mb-2">
+          Subido por <%= d.uploaded_by_name || '—' %> el <%= d.uploaded_at %>
+        </p>
+        <div class="mt-auto d-flex gap-2 flex-wrap">
+          <a href="/red/descargar/<%= d.id %>" class="btn btn-sm btn-outline-primary">Descargar</a>
+          <% if (currentUser.role !== 'lector') { %>
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#version-<%= d.id %>">
+              Nueva versión
+            </button>
+            <form action="/red/eliminar/<%= d.id %>" method="post" onsubmit="return confirm('¿Eliminar este diagrama?');">
+              <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+            </form>
+          <% } %>
+        </div>
+        <% if (currentUser.role !== 'lector') { %>
+          <div class="collapse mt-2" id="version-<%= d.id %>">
+            <form action="/red/<%= d.id %>/nueva-version" method="post" enctype="multipart/form-data">
+              <input type="file" name="file" class="form-control form-control-sm mb-2" required>
+              <input type="text" name="description" class="form-control form-control-sm mb-2" placeholder="Descripción de esta versión">
+              <button type="submit" class="btn btn-sm btn-primary">Subir nueva versión</button>
+            </form>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  <% }); %>
+  <% if (items.length === 0) { %>
+    <div class="col-12"><p class="text-muted text-center py-4">No hay diagramas subidos todavía.</p></div>
+  <% } %>
+</div>
+
+<%- include('../partials/foot') %>

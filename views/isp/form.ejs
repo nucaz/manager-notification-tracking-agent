@@ -1,0 +1,85 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3"><%= title %></h2>
+
+<form method="post" class="card p-4" action="<%= item.id ? '/isp/' + item.id + '/editar' : '/isp/nuevo' %>">
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label">Proveedor (ISP) *</label>
+      <input type="text" name="provider" class="form-control" required value="<%= item.provider || '' %>" placeholder="Claro, Movistar, WOW...">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">N° de contrato</label>
+      <input type="text" name="contract_number" class="form-control" value="<%= item.contract_number || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Tipo de servicio</label>
+      <input type="text" name="service_type" class="form-control" value="<%= item.service_type || '' %>" placeholder="Fibra dedicada, enlace punto a punto...">
+    </div>
+
+    <div class="col-md-3">
+      <label class="form-label">Ancho de banda bajada</label>
+      <input type="text" name="bandwidth_down" class="form-control" value="<%= item.bandwidth_down || '' %>" placeholder="Ej: 100 Mbps">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Ancho de banda subida</label>
+      <input type="text" name="bandwidth_up" class="form-control" value="<%= item.bandwidth_up || '' %>" placeholder="Ej: 100 Mbps">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Costo mensual</label>
+      <input type="number" step="0.01" name="monthly_cost" class="form-control" value="<%= item.monthly_cost || '' %>">
+    </div>
+    <div class="col-md-1">
+      <label class="form-label">Moneda</label>
+      <input type="text" name="currency" class="form-control" value="<%= item.currency || 'PEN' %>">
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+      <div class="form-check">
+        <input type="checkbox" class="form-check-input" name="auto_renew" id="auto_renew" <%= item.auto_renew ? 'checked' : '' %>>
+        <label class="form-check-label" for="auto_renew">Renovación automática</label>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <label class="form-label">Fecha de inicio</label>
+      <input type="date" name="start_date" class="form-control" value="<%= item.start_date || '' %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Fecha de vencimiento</label>
+      <input type="date" name="end_date" class="form-control" value="<%= item.end_date || '' %>">
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Contacto (nombre)</label>
+      <input type="text" name="contact_name" class="form-control" value="<%= item.contact_name || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Contacto (teléfono)</label>
+      <input type="text" name="contact_phone" class="form-control" value="<%= item.contact_phone || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Contacto (correo)</label>
+      <input type="email" name="contact_email" class="form-control" value="<%= item.contact_email || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Local / sede</label>
+      <input type="text" name="site_location" class="form-control" value="<%= item.site_location || '' %>" placeholder="Ej: Sede principal">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Notas de SLA</label>
+      <textarea name="sla_notes" class="form-control" rows="2"><%= item.sla_notes || '' %></textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Notas</label>
+      <textarea name="notes" class="form-control" rows="3"><%= item.notes || '' %></textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <a href="/isp" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

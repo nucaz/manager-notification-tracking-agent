@@ -1,0 +1,36 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3"><%= title %></h2>
+
+<form method="post" class="card p-4" action="/red/nuevo" enctype="multipart/form-data">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Título *</label>
+      <input type="text" name="title" class="form-control" required placeholder="Ej: Arquitectura de red - sede principal">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Categoría *</label>
+      <select name="category" class="form-select" required>
+        <% categories.forEach(function(c) { %>
+          <option value="<%= c.value %>"><%= c.label %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Descripción</label>
+      <textarea name="description" class="form-control" rows="3" placeholder="Notas sobre el diagrama, versión, alcance, etc."></textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Archivo *</label>
+      <input type="file" name="file" class="form-control" required>
+      <div class="form-text">Formatos permitidos: PDF, imágenes (PNG/JPG/SVG), Visio (.vsdx), draw.io (.drawio), Word/Excel, ZIP.</div>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">Subir diagrama</button>
+    <a href="/red" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

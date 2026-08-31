@@ -1,0 +1,36 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3"><%= title %></h2>
+
+<form method="post" class="card p-4" action="<%= item.id ? '/usuarios/' + item.id + '/editar' : '/usuarios/nuevo' %>" style="max-width:520px;">
+  <div class="mb-3">
+    <label class="form-label">Nombre completo *</label>
+    <input type="text" name="full_name" class="form-control" required value="<%= item.full_name || '' %>">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Correo electrónico *</label>
+    <input type="email" name="email" class="form-control" required value="<%= item.email || '' %>">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Contraseña <%= item.id ? '(dejar en blanco para no cambiar)' : '*' %></label>
+    <input type="password" name="password" class="form-control" <%= item.id ? '' : 'required' %>>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Rol</label>
+    <select name="role" class="form-select">
+      <option value="lector" <%= item.role === 'lector' ? 'selected' : '' %>>Lector (solo ver)</option>
+      <option value="editor" <%= item.role === 'editor' ? 'selected' : '' %>>Editor (crear/editar)</option>
+      <option value="admin" <%= item.role === 'admin' ? 'selected' : '' %>>Administrador</option>
+    </select>
+  </div>
+  <% if (item.id) { %>
+    <div class="form-check mb-3">
+      <input type="checkbox" class="form-check-input" name="active" id="active" <%= item.active ? 'checked' : '' %>>
+      <label class="form-check-label" for="active">Usuario activo</label>
+    </div>
+  <% } %>
+  <button type="submit" class="btn btn-primary">Guardar</button>
+  <a href="/usuarios" class="btn btn-outline-secondary">Cancelar</a>
+</form>
+
+<%- include('../partials/foot') %>

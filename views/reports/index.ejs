@@ -1,0 +1,68 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3">Reportes y consultas</h2>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <select name="modulo" class="form-select">
+      <% Object.entries(modules).forEach(function(entry) { %>
+        <option value="<%= entry[0] %>" <%= mod === entry[0] ? 'selected' : '' %>><%= entry[1].label %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-auto">
+    <input type="date" name="from" value="<%= filters.from %>" class="form-control" title="Vence desde">
+  </div>
+  <div class="col-auto">
+    <input type="date" name="to" value="<%= filters.to %>" class="form-control" title="Vence hasta">
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select">
+      <option value="">Todos los estados</option>
+      <option value="vencido" <%= filters.status === 'vencido' ? 'selected' : '' %>>Vencidos</option>
+      <option value="por_vencer" <%= filters.status === 'por_vencer' ? 'selected' : '' %>>Por vencer</option>
+      <option value="activo" <%= filters.status === 'activo' ? 'selected' : '' %>>Activos</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Consultar</button>
+  </div>
+  <div class="col-auto">
+    <a class="btn btn-outline-success"
+       href="/reportes/exportar.csv?modulo=<%= mod %>&from=<%= filters.from %>&to=<%= filters.to %>&status=<%= filters.status %>">
+      <i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV
+    </a>
+  </div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <% cfg.columns.forEach(function(c) { %><th><%= c %></th><% }); %>
+          <th>Días restantes</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach(function(r) { %>
+          <tr>
+            <% cfg.columns.forEach(function(c) { %><td><%= r[c] !== null && r[c] !== undefined ? r[c] : '—' %></td><% }); %>
+            <td><%= r.days_left !== null ? r.days_left : '—' %></td>
+            <td>
+              <span class="badge <%= r.computed_status === 'vencido' ? 'bg-danger' : r.computed_status === 'por_vencer' ? 'bg-warning text-dark' : r.computed_status === 'activo' ? 'bg-success' : 'bg-secondary' %>">
+                <%= r.computed_status %>
+              </span>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (rows.length === 0) { %>
+          <tr><td colspan="<%= cfg.columns.length + 2 %>" class="text-center text-muted py-4">Sin resultados para los filtros seleccionados.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>
