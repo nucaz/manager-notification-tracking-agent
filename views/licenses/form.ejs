@@ -1,0 +1,86 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3"><%= title %></h2>
+
+<form method="post" class="card p-4" action="<%= item.id ? '/licencias/' + item.id + '/editar' : '/licencias/nuevo' %>">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Producto *</label>
+      <input type="text" name="product_name" class="form-control" required value="<%= item.product_name || '' %>" placeholder="Ej: Microsoft 365 E3, Power BI Pro, Office 2021">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Proveedor</label>
+      <input type="text" name="vendor" class="form-control" value="<%= item.vendor || '' %>" placeholder="Ej: Microsoft">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Tipo de licencia</label>
+      <input type="text" name="license_type" class="form-control" value="<%= item.license_type || '' %>" placeholder="Suscripción anual, perpetua...">
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Clave de licencia</label>
+      <input type="text" name="license_key" class="form-control" value="<%= item.license_key || '' %>">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Asientos</label>
+      <input type="number" min="1" name="seats" class="form-control" value="<%= item.seats || 1 %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Asignado a</label>
+      <input type="text" name="assigned_to" class="form-control" value="<%= item.assigned_to || '' %>" placeholder="Área o usuario">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Costo</label>
+      <input type="number" step="0.01" name="cost" class="form-control" value="<%= item.cost || '' %>">
+    </div>
+    <div class="col-md-1">
+      <label class="form-label">Moneda</label>
+      <input type="text" name="currency" class="form-control" value="<%= item.currency || 'PEN' %>">
+    </div>
+
+    <div class="col-md-3">
+      <label class="form-label">Fecha de compra</label>
+      <input type="date" name="purchase_date" class="form-control" value="<%= item.purchase_date || '' %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Fecha de inicio</label>
+      <input type="date" name="start_date" class="form-control" value="<%= item.start_date || '' %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Fecha de vencimiento</label>
+      <input type="date" name="expiration_date" class="form-control" value="<%= item.expiration_date || '' %>">
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+      <div class="form-check">
+        <input type="checkbox" class="form-check-input" name="auto_renew" id="auto_renew" <%= item.auto_renew ? 'checked' : '' %>>
+        <label class="form-check-label" for="auto_renew">Renovación automática</label>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Local / sede</label>
+      <input type="text" name="site_location" class="form-control" value="<%= item.site_location || '' %>" placeholder="Ej: Sede principal, Tienda San Isidro...">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">ID de equipo en GLPI (opcional)</label>
+      <input type="number" name="glpi_computer_id" class="form-control" value="<%= item.glpi_computer_id || '' %>" placeholder="Ver búsqueda en el detalle del registro">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">ID de entidad en GLPI (opcional)</label>
+      <input type="number" name="glpi_entity_id" class="form-control" value="<%= item.glpi_entity_id || '' %>">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Notas</label>
+      <textarea name="notes" class="form-control" rows="3"><%= item.notes || '' %></textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <a href="/licencias" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

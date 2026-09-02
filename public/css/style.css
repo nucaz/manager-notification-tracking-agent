@@ -1,0 +1,20 @@
+body {
+  background-color: #f7f8fa;
+}
+.card {
+  border: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.table thead th {
+  white-space: nowrap;
+}
+.stat-card {
+  border-radius: 10px;
+}
+.stat-card .stat-number {
+  font-size: 2rem;
+  font-weight: 700;
+}
+.navbar-brand {
+  font-weight: 600;
+}

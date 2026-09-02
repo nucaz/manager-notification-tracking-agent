@@ -1,0 +1,33 @@
+{
+  "name": "glpi-licencias-app",
+  "version": "1.0.0",
+  "description": "Aplicacion web para seguimiento de licencias de software, dominios, contratos ISP, adjuntos y topologias de red, integrada con GLPI via API REST.",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node src/db/migrate.js",
+    "seed": "node src/db/seed.js",
+    "send-reminders": "node src/jobs/sendReminders.js",
+    "send-reminders:dry-run": "node src/jobs/sendReminders.js --dry-run",
+    "reset-2fa": "node src/db/resetOtp.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "connect-flash": "^0.1.1",
+    "dotenv": "^16.4.7",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
+    "express-session": "^1.18.1",
+    "express-validator": "^7.2.1",
+    "multer": "^2.0.1",
+    "mysql2": "^3.11.5",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.0.6",
+    "otplib": "^13.5.0",
+    "qrcode": "^1.5.4"
+  }
+}

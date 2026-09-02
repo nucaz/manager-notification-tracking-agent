@@ -1,0 +1,8 @@
+node_modules/
+.env
+uploads/adjuntos/*
+uploads/red/*
+!uploads/adjuntos/.gitkeep
+!uploads/red/.gitkeep
+*.log
+.DS_Store

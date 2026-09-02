@@ -1,0 +1,105 @@
+<%- include('partials/head', { title: title }) %>
+
+<h2 class="mb-4">Panel principal</h2>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number text-danger"><%= counts.vencido %></div>
+      <div class="text-muted">Vencidos</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number text-warning"><%= counts.por_vencer %></div>
+      <div class="text-muted">Por vencer (≤30 días)</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number text-success"><%= counts.activo %></div>
+      <div class="text-muted">Activos</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number"><%= counts.total %></div>
+      <div class="text-muted">Total de registros</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <a href="/licencias" class="text-decoration-none">
+      <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div><i class="bi bi-key"></i> Licencias de software</div>
+          <span class="badge bg-primary rounded-pill"><%= counts.licenses %></span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="/dominios" class="text-decoration-none">
+      <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div><i class="bi bi-globe"></i> Dominios</div>
+          <span class="badge bg-primary rounded-pill"><%= counts.domains %></span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="/isp" class="text-decoration-none">
+      <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div><i class="bi bi-router"></i> Contratos ISP</div>
+          <span class="badge bg-primary rounded-pill"><%= counts.isp %></span>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-8">
+    <div class="card p-3">
+      <h5>Próximos vencimientos</h5>
+      <% if (upcoming.length === 0) { %>
+        <p class="text-muted mb-0">No hay vencimientos próximos ni vencidos. Todo al día.</p>
+      <% } else { %>
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr><th>Tipo</th><th>Nombre</th><th>Vence</th><th>Días</th><th></th></tr>
+          </thead>
+          <tbody>
+            <% upcoming.forEach(function(i) { %>
+              <tr>
+                <td><%= i.label %></td>
+                <td><%= i.name %></td>
+                <td><%= i.expiration_date %></td>
+                <td>
+                  <span class="badge <%= i.computed_status === 'vencido' ? 'bg-danger' : 'bg-warning text-dark' %>">
+                    <%= i.days_left %> día(s)
+                  </span>
+                </td>
+                <td><a href="<%= i.url %>" class="btn btn-sm btn-outline-secondary">Ver</a></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card p-3">
+      <h5><i class="bi bi-diagram-3"></i> Módulo de Red</h5>
+      <p class="text-muted">Diagramas de topología, arquitectura web, infraestructura TI, datacenter, Azure, AWS, VPS/hosting y housing.</p>
+      <div class="stat-number mb-2"><%= diagramCount %></div>
+      <a href="/red" class="btn btn-outline-primary btn-sm">Ver diagramas</a>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/foot') %>

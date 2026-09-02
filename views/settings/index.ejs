@@ -1,0 +1,136 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3">Configuración</h2>
+
+<form method="post" action="/configuracion">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card p-3 mb-3">
+        <h5>General</h5>
+        <label class="form-label">Nombre de la aplicación</label>
+        <input type="text" name="app_name" class="form-control" value="<%= settings.app_name %>">
+      </div>
+
+      <div class="card p-3 mb-3">
+        <h5>Integración con GLPI</h5>
+        <div class="mb-2">
+          <label class="form-label">URL base de la API REST</label>
+          <input type="text" name="glpi_base_url" class="form-control" value="<%= settings.glpi_base_url %>" placeholder="https://svrmonitor-dp.ad.depilzone.com.pe/apirest.php">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">App-Token</label>
+          <input type="text" name="glpi_app_token" class="form-control" value="<%= settings.glpi_app_token %>">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">User-Token</label>
+          <input type="text" name="glpi_user_token" class="form-control" value="<%= settings.glpi_user_token %>">
+        </div>
+        <div class="form-text mb-2">
+          Genera el App-Token en GLPI: Configuración → General → API. El User-Token se genera desde
+          el perfil del usuario de servicio (Preferencias → API personal).
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card p-3 mb-3">
+        <h5>Servidor de correo (SMTP)</h5>
+        <div class="row g-2">
+          <div class="col-8">
+            <label class="form-label">Host</label>
+            <input type="text" name="smtp_host" class="form-control" value="<%= settings.smtp_host %>">
+          </div>
+          <div class="col-4">
+            <label class="form-label">Puerto</label>
+            <input type="number" name="smtp_port" class="form-control" value="<%= settings.smtp_port %>">
+          </div>
+        </div>
+        <div class="form-check my-2">
+          <input type="checkbox" class="form-check-input" name="smtp_secure" id="smtp_secure" <%= String(settings.smtp_secure) === 'true' ? 'checked' : '' %>>
+          <label class="form-check-label" for="smtp_secure">Usar TLS/SSL implícito (puerto 465)</label>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Usuario</label>
+          <input type="text" name="smtp_user" class="form-control" value="<%= settings.smtp_user %>">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Contraseña</label>
+          <input type="password" name="smtp_pass" class="form-control" value="<%= settings.smtp_pass %>">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Correo remitente</label>
+          <input type="email" name="smtp_from" class="form-control" value="<%= settings.smtp_from %>">
+        </div>
+      </div>
+
+      <div class="card p-3 mb-3">
+        <h5>Extracción de facturas con IA (Gemini)</h5>
+        <div class="mb-2">
+          <label class="form-label">API key de Gemini</label>
+          <input type="password" name="gemini_api_key" class="form-control" value="<%= settings.gemini_api_key %>" placeholder="AIza...">
+          <div class="form-text">
+            Genera tu API key en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
+            El uso tiene costo según el volumen de facturas procesadas (facturación de Google Cloud/AI Studio).
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Modelo</label>
+          <input type="text" name="gemini_model" class="form-control" value="<%= settings.gemini_model %>" placeholder="gemini-2.5-flash">
+          <div class="form-text">
+            Modelo "flash" recomendado por costo/velocidad para leer facturas. Si Google libera un modelo
+            más nuevo (o el actual deja de estar disponible), cámbialo aquí sin necesidad de tocar código.
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-3 mb-3">
+        <h5>Recordatorios automáticos</h5>
+        <div class="mb-2">
+          <label class="form-label">Umbrales de días antes del vencimiento</label>
+          <input type="text" name="reminder_thresholds_days" class="form-control" value="<%= settings.reminder_thresholds_days %>" placeholder="90,60,30,15,7,1">
+          <div class="form-text">Se envía un correo cuando faltan exactamente estos días (separados por coma).</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Correos destinatarios</label>
+          <input type="text" name="reminder_recipients" class="form-control" value="<%= settings.reminder_recipients %>" placeholder="ti@depilzone.com.pe, sistemas@depilzone.com.pe">
+          <div class="form-text">Separados por coma. La tarea corre todos los días a las 08:00 (hora del servidor).</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Guardar configuración</button>
+</form>
+
+<div class="row g-3 mt-1">
+  <div class="col-md-6">
+    <form action="/glpi/probar-conexion" method="post" class="card p-3 mb-2">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h6>Probar conexión con GLPI</h6>
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
+    </form>
+    <form action="/configuracion/probar-gemini" method="post" class="card p-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h6>Verificar API key de Gemini</h6>
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Verificar ahora</button>
+    </form>
+  </div>
+  <div class="col-md-6">
+    <form action="/configuracion/probar-smtp" method="post" class="card p-3 mb-2">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h6>Verificar conexión SMTP</h6>
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Verificar ahora</button>
+    </form>
+    <form action="/configuracion/enviar-prueba" method="post" class="card p-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h6>Enviar correo de prueba</h6>
+      <div class="input-group input-group-sm">
+        <input type="email" name="test_email" class="form-control" placeholder="destino@correo.com" required>
+        <button type="submit" class="btn btn-outline-primary">Enviar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

@@ -1,0 +1,66 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Licencias de software</h2>
+  <% if (currentUser.role !== 'lector') { %>
+    <a href="/licencias/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nueva licencia</a>
+  <% } %>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar por producto, proveedor o asignado a...">
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select">
+      <option value="">Todos los estados</option>
+      <option value="vencido" <%= status === 'vencido' ? 'selected' : '' %>>Vencidos</option>
+      <option value="por_vencer" <%= status === 'por_vencer' ? 'selected' : '' %>>Por vencer</option>
+      <option value="activo" <%= status === 'activo' ? 'selected' : '' %>>Activos</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Producto</th><th>Proveedor</th><th>Tipo</th><th>Asientos</th>
+          <th>Asignado a</th><th>Vence</th><th>Estado</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.forEach(function(item) { %>
+          <tr>
+            <td><a href="/licencias/<%= item.id %>"><%= item.product_name %></a></td>
+            <td><%= item.vendor || '—' %></td>
+            <td><%= item.license_type || '—' %></td>
+            <td><%= item.seats %></td>
+            <td><%= item.assigned_to || '—' %></td>
+            <td><%= item.expiration_date || '—' %></td>
+            <td>
+              <span class="badge <%= item.computed_status === 'vencido' ? 'bg-danger' : item.computed_status === 'por_vencer' ? 'bg-warning text-dark' : item.computed_status === 'activo' ? 'bg-success' : 'bg-secondary' %>">
+                <%= item.days_left !== null ? item.days_left + ' día(s)' : 'sin fecha' %>
+              </span>
+            </td>
+            <td class="text-end">
+              <a href="/licencias/<%= item.id %>" class="btn btn-sm btn-outline-secondary">Ver</a>
+              <% if (currentUser.role !== 'lector') { %>
+                <a href="/licencias/<%= item.id %>/editar" class="btn btn-sm btn-outline-primary">Editar</a>
+              <% } %>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="8" class="text-center text-muted py-4">No hay licencias registradas.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>
