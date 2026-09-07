@@ -11,7 +11,7 @@ function enrich(rows, dateField, type, label, url) {
     return {
       type,
       label,
-      name: r.product_name || r.domain_name || r.provider,
+      name: r.product_name || r.domain_name || r.provider || r.name || r.common_name,
       days_left: days,
       computed_status: statusFromDays(days),
       expiration_date: r[dateField],
@@ -25,11 +25,15 @@ router.get('/', requireAuth, async (req, res, next) => {
     const [licenses] = await pool.query('SELECT * FROM software_licenses');
     const [domains] = await pool.query('SELECT * FROM domains');
     const [isp] = await pool.query('SELECT * FROM isp_contracts');
+    const [servers] = await pool.query('SELECT * FROM servers');
+    const [certificates] = await pool.query('SELECT * FROM certificates');
 
     const all = [
       ...enrich(licenses, 'expiration_date', 'license', 'Licencia', '/licencias'),
       ...enrich(domains, 'expiration_date', 'domain', 'Dominio', '/dominios'),
       ...enrich(isp, 'end_date', 'isp_contract', 'Contrato ISP', '/isp'),
+      ...enrich(servers, 'support_expiration_date', 'server', 'Soporte de servidor/activo', '/servidores'),
+      ...enrich(certificates, 'expiration_date', 'certificate', 'Certificado TLS', '/certificados'),
     ];
 
     const counts = {
@@ -40,6 +44,8 @@ router.get('/', requireAuth, async (req, res, next) => {
       licenses: licenses.length,
       domains: domains.length,
       isp: isp.length,
+      servers: servers.length,
+      certificates: certificates.length,
     };
 
     const upcoming = all

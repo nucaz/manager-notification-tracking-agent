@@ -5,6 +5,11 @@ Aplicación web para el seguimiento de:
 - **Licencias de software** (Microsoft 365, Power BI, Office, antivirus, etc.)
 - **Dominios**: fechas de registro, renovación y vencimiento
 - **Contratos ISP**: proveedor, ancho de banda contratado, vigencia, SLA
+- **Servidores y Activos TI**: inventario de servidores físicos/virtuales/nube,
+  con criticidad, ambiente (producción/pruebas/calidad/desarrollo),
+  responsable, dependencias y vencimiento de soporte/garantía
+- **Certificados TLS**: dominio cubierto, emisor, tipo (single/wildcard/SAN),
+  vencimiento y vínculo opcional con el módulo de Dominios
 - **Adjuntos**: contratos, adendas y facturas vinculados a cada registro
 - **Extracción de facturas con IA (Gemini)**: al adjuntar una factura/recibo
   (PDF o imagen), un botón "Extraer datos con IA" lee el documento y
@@ -18,7 +23,8 @@ Aplicación web para el seguimiento de:
 - **Reportes y consultas** con exportación a CSV
 - **Integración con GLPI vía API REST**: prueba de conexión, búsqueda de
   equipos/entidades para vincular registros, y sincronización de licencias,
-  dominios y contratos ISP como objetos "Contract" en GLPI
+  dominios, contratos ISP, servidores/activos y certificados como objetos
+  "Contract" en GLPI
 
 Construida en Node.js + Express + EJS + MySQL/MariaDB, pensada para
 desplegarse con Docker junto a tu stack GLPI + Zabbix existente.
@@ -213,7 +219,7 @@ src/db/               Pool de conexión, migración, seed del admin y reset-2fa
 src/services/         Cliente GLPI, cliente Gemini (extracción IA), envío de correo, configuración, subida de archivos, TOTP (2FA)
 src/jobs/              Tarea programada de recordatorios (node-cron)
 src/middleware/        Autenticación, control de acceso por rol y protección CSRF
-src/routes/             Rutas de cada módulo (licencias, dominios, isp, red, adjuntos, glpi, reportes, configuración, usuarios, 2FA)
+src/routes/             Rutas de cada módulo (licencias, dominios, isp, servidores, certificados, red, adjuntos, glpi, reportes, configuración, usuarios, 2FA)
 views/                  Plantillas EJS (Bootstrap 5)
 uploads/                Archivos subidos (adjuntos y diagramas de red)
 ```

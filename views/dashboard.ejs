@@ -60,6 +60,26 @@
       </div>
     </a>
   </div>
+  <div class="col-md-4">
+    <a href="/servidores" class="text-decoration-none">
+      <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div><i class="bi bi-hdd-rack"></i> Servidores y Activos TI</div>
+          <span class="badge bg-primary rounded-pill"><%= counts.servers %></span>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="/certificados" class="text-decoration-none">
+      <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div><i class="bi bi-patch-check"></i> Certificados TLS</div>
+          <span class="badge bg-primary rounded-pill"><%= counts.certificates %></span>
+        </div>
+      </div>
+    </a>
+  </div>
 </div>
 
 <div class="row g-3">

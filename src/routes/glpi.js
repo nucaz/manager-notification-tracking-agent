@@ -41,9 +41,11 @@ const ENTITY_TABLES = {
   license: { table: 'software_licenses' },
   domain: { table: 'domains' },
   isp_contract: { table: 'isp_contracts' },
+  server: { table: 'servers' },
+  certificate: { table: 'certificates' },
 };
 
-// Sincroniza un registro local (licencia/dominio/contrato ISP) como Contrato en GLPI
+// Sincroniza un registro local (licencia/dominio/contrato ISP/servidor/certificado) como Contrato en GLPI
 router.post('/sincronizar/:entityType/:id', canWrite, async (req, res, next) => {
   try {
     const { entityType, id } = req.params;
@@ -67,6 +69,14 @@ router.post('/sincronizar/:entityType/:id', canWrite, async (req, res, next) => 
     } else if (entityType === 'domain') {
       name = `Dominio: ${item.domain_name}`;
       beginDate = item.registration_date;
+      notes = item.notes || '';
+    } else if (entityType === 'server') {
+      name = `Activo TI: ${item.name}`;
+      beginDate = item.purchase_date;
+      notes = item.notes || '';
+    } else if (entityType === 'certificate') {
+      name = `Certificado TLS: ${item.common_name}`;
+      beginDate = item.issue_date;
       notes = item.notes || '';
     } else {
       name = `Contrato ISP: ${item.provider} (${item.contract_number || 's/n'})`;

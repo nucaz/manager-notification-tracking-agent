@@ -28,6 +28,20 @@ const MODULES = {
     nameField: 'provider',
     columns: ['provider', 'contract_number', 'bandwidth_down', 'bandwidth_up', 'monthly_cost', 'currency', 'end_date'],
   },
+  server: {
+    label: 'Servidores y Activos TI',
+    table: 'servers',
+    dateField: 'support_expiration_date',
+    nameField: 'name',
+    columns: ['name', 'asset_type', 'environment', 'criticality', 'responsible', 'status', 'support_expiration_date'],
+  },
+  certificate: {
+    label: 'Certificados TLS',
+    table: 'certificates',
+    dateField: 'expiration_date',
+    nameField: 'common_name',
+    columns: ['common_name', 'certificate_type', 'issuer', 'responsible', 'cost', 'currency', 'expiration_date'],
+  },
 };
 
 async function fetchModule(mod, { from, to, status }) {

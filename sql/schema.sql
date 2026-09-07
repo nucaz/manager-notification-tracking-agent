@@ -119,12 +119,69 @@ CREATE TABLE IF NOT EXISTS isp_contracts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
+-- Servidores / Activos TI (fisicos, virtuales, nube, contenedores)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS servers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,                   -- nombre / hostname del activo
+  asset_type ENUM('fisico','virtual','nube','contenedor','otro') NOT NULL DEFAULT 'otro',
+  environment ENUM('produccion','pruebas','calidad','desarrollo') NOT NULL DEFAULT 'produccion',
+  criticality ENUM('critica','alta','media','baja') NOT NULL DEFAULT 'media',
+  ip_address VARCHAR(100),
+  operating_system VARCHAR(150),
+  provider VARCHAR(150),                        -- proveedor cloud/hosting o fabricante
+  responsible VARCHAR(150),                     -- responsable interno
+  site_location VARCHAR(150),                   -- local/sede o datacenter
+  purchase_date DATE,
+  support_expiration_date DATE,                 -- vencimiento de soporte/garantia (dispara recordatorios)
+  cost DECIMAL(12,2),
+  currency VARCHAR(10) DEFAULT 'PEN',
+  status ENUM('activo','mantenimiento','baja') NOT NULL DEFAULT 'activo',
+  dependencies TEXT,                            -- que servicios/procesos dependen de este activo (texto libre)
+  glpi_computer_id INT NULL,                    -- vinculo opcional a equipo GLPI
+  glpi_contract_id INT NULL,                    -- id del objeto Contract creado/sincronizado en GLPI (soporte)
+  notes TEXT,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_server_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_server_support_expiration (support_expiration_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Certificados TLS/SSL
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS certificates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  common_name VARCHAR(255) NOT NULL,            -- dominio/subdominio cubierto
+  certificate_type ENUM('single','wildcard','san','otro') NOT NULL DEFAULT 'single',
+  issuer VARCHAR(150),                          -- entidad certificadora: Let's Encrypt, DigiCert, etc.
+  domain_id INT NULL,                           -- vinculo opcional al dominio ya registrado
+  issue_date DATE,
+  expiration_date DATE,
+  auto_renew TINYINT(1) NOT NULL DEFAULT 0,
+  cost DECIMAL(12,2),
+  currency VARCHAR(10) DEFAULT 'PEN',
+  responsible VARCHAR(150),
+  site_location VARCHAR(150),
+  status ENUM('activo','por_vencer','vencido','revocado') NOT NULL DEFAULT 'activo',
+  glpi_contract_id INT NULL,                    -- id del objeto Contract creado/sincronizado en GLPI
+  notes TEXT,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_certificate_domain FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE SET NULL,
+  CONSTRAINT fk_certificate_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_certificate_expiration (expiration_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
 -- Adjuntos: contratos, adendas, facturas — vinculados de forma polimórfica
--- a licencias, dominios o contratos ISP
+-- a licencias, dominios, contratos ISP, servidores o certificados
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS attachments (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  entity_type ENUM('license','domain','isp_contract') NOT NULL,
+  entity_type ENUM('license','domain','isp_contract','server','certificate') NOT NULL,
   entity_id INT NOT NULL,
   doc_type ENUM('contrato','adenda','factura','otro') NOT NULL DEFAULT 'otro',
   original_name VARCHAR(255) NOT NULL,
@@ -188,7 +245,7 @@ CREATE TABLE IF NOT EXISTS network_diagrams (
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS reminder_log (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  entity_type ENUM('license','domain','isp_contract') NOT NULL,
+  entity_type ENUM('license','domain','isp_contract','server','certificate') NOT NULL,
   entity_id INT NOT NULL,
   threshold_days INT NOT NULL,
   sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

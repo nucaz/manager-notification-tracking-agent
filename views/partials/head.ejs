@@ -22,6 +22,8 @@
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/licencias') ? 'active' : '' %>" href="/licencias">Licencias</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/dominios') ? 'active' : '' %>" href="/dominios">Dominios</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/isp') ? 'active' : '' %>" href="/isp">Contratos ISP</a></li>
+        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/servidores') ? 'active' : '' %>" href="/servidores">Servidores</a></li>
+        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/certificados') ? 'active' : '' %>" href="/certificados">Certificados</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/red') ? 'active' : '' %>" href="/red">Red</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/reportes') ? 'active' : '' %>" href="/reportes">Reportes</a></li>
         <% if (currentUser.role === 'admin') { %>

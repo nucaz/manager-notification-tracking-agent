@@ -13,6 +13,8 @@ const MODULES = [
   { type: 'license', table: 'software_licenses', dateField: 'expiration_date', nameField: 'product_name', label: 'Licencia de software' },
   { type: 'domain', table: 'domains', dateField: 'expiration_date', nameField: 'domain_name', label: 'Dominio' },
   { type: 'isp_contract', table: 'isp_contracts', dateField: 'end_date', nameField: 'provider', label: 'Contrato ISP' },
+  { type: 'server', table: 'servers', dateField: 'support_expiration_date', nameField: 'name', label: 'Soporte de servidor/activo' },
+  { type: 'certificate', table: 'certificates', dateField: 'expiration_date', nameField: 'common_name', label: 'Certificado TLS' },
 ];
 
 function buildEmail(items) {

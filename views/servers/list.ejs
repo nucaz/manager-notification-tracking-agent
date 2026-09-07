@@ -1,0 +1,70 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Servidores y Activos TI</h2>
+  <% if (currentUser.role !== 'lector') { %>
+    <a href="/servidores/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo activo</a>
+  <% } %>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar por nombre, IP o responsable...">
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select">
+      <option value="">Todos los estados de soporte</option>
+      <option value="vencido" <%= status === 'vencido' ? 'selected' : '' %>>Soporte vencido</option>
+      <option value="por_vencer" <%= status === 'por_vencer' ? 'selected' : '' %>>Soporte por vencer</option>
+      <option value="activo" <%= status === 'activo' ? 'selected' : '' %>>Soporte activo</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Nombre</th><th>Tipo</th><th>Ambiente</th><th>Criticidad</th>
+          <th>Responsable</th><th>Soporte vence</th><th>Estado</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.forEach(function(item) { %>
+          <tr>
+            <td><a href="/servidores/<%= item.id %>"><%= item.name %></a></td>
+            <td><%= item.asset_type %></td>
+            <td><%= item.environment %></td>
+            <td>
+              <span class="badge <%= item.criticality === 'critica' ? 'bg-danger' : item.criticality === 'alta' ? 'bg-warning text-dark' : item.criticality === 'media' ? 'bg-info text-dark' : 'bg-secondary' %>">
+                <%= item.criticality %>
+              </span>
+            </td>
+            <td><%= item.responsible || '—' %></td>
+            <td><%= item.support_expiration_date || '—' %></td>
+            <td>
+              <span class="badge <%= item.computed_status === 'vencido' ? 'bg-danger' : item.computed_status === 'por_vencer' ? 'bg-warning text-dark' : item.computed_status === 'activo' ? 'bg-success' : 'bg-secondary' %>">
+                <%= item.days_left !== null ? item.days_left + ' día(s)' : 'sin fecha' %>
+              </span>
+            </td>
+            <td class="text-end">
+              <a href="/servidores/<%= item.id %>" class="btn btn-sm btn-outline-secondary">Ver</a>
+              <% if (currentUser.role !== 'lector') { %>
+                <a href="/servidores/<%= item.id %>/editar" class="btn btn-sm btn-outline-primary">Editar</a>
+              <% } %>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="8" class="text-center text-muted py-4">No hay servidores/activos registrados.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

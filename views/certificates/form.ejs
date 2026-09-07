@@ -1,0 +1,79 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3"><%= title %></h2>
+
+<form method="post" class="card p-4" action="<%= item.id ? '/certificados/' + item.id + '/editar' : '/certificados/nuevo' %>">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <div class="row g-3">
+    <div class="col-md-5">
+      <label class="form-label">Nombre común (dominio cubierto) *</label>
+      <input type="text" name="common_name" class="form-control" required value="<%= item.common_name || '' %>" placeholder="Ej: *.depilzone.com.pe">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Tipo</label>
+      <select name="certificate_type" class="form-select">
+        <option value="single" <%= !item.certificate_type || item.certificate_type === 'single' ? 'selected' : '' %>>Single</option>
+        <option value="wildcard" <%= item.certificate_type === 'wildcard' ? 'selected' : '' %>>Wildcard</option>
+        <option value="san" <%= item.certificate_type === 'san' ? 'selected' : '' %>>SAN / Multi-dominio</option>
+        <option value="otro" <%= item.certificate_type === 'otro' ? 'selected' : '' %>>Otro</option>
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Entidad certificadora (emisor)</label>
+      <input type="text" name="issuer" class="form-control" value="<%= item.issuer || '' %>" placeholder="Ej: Let's Encrypt, DigiCert, Sectigo...">
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Dominio vinculado (opcional)</label>
+      <select name="domain_id" class="form-select">
+        <option value="">— Ninguno —</option>
+        <% domains.forEach(function(d) { %>
+          <option value="<%= d.id %>" <%= String(item.domain_id) === String(d.id) ? 'selected' : '' %>><%= d.domain_name %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Fecha de emisión</label>
+      <input type="date" name="issue_date" class="form-control" value="<%= item.issue_date || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Fecha de vencimiento</label>
+      <input type="date" name="expiration_date" class="form-control" value="<%= item.expiration_date || '' %>">
+    </div>
+
+    <div class="col-md-3 d-flex align-items-end">
+      <div class="form-check">
+        <input type="checkbox" class="form-check-input" name="auto_renew" id="auto_renew" <%= item.auto_renew ? 'checked' : '' %>>
+        <label class="form-check-label" for="auto_renew">Renovación automática</label>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Costo</label>
+      <input type="number" step="0.01" name="cost" class="form-control" value="<%= item.cost || '' %>">
+    </div>
+    <div class="col-md-1">
+      <label class="form-label">Moneda</label>
+      <input type="text" name="currency" class="form-control" value="<%= item.currency || 'PEN' %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Responsable</label>
+      <input type="text" name="responsible" class="form-control" value="<%= item.responsible || '' %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Local / sede</label>
+      <input type="text" name="site_location" class="form-control" value="<%= item.site_location || '' %>">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Notas</label>
+      <textarea name="notes" class="form-control" rows="3"><%= item.notes || '' %></textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <a href="/certificados" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

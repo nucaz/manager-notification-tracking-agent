@@ -14,6 +14,8 @@ const ENTITY_TABLES = {
   license: { table: 'software_licenses', redirectBase: '/licencias' },
   domain: { table: 'domains', redirectBase: '/dominios' },
   isp_contract: { table: 'isp_contracts', redirectBase: '/isp' },
+  server: { table: 'servers', redirectBase: '/servidores' },
+  certificate: { table: 'certificates', redirectBase: '/certificados' },
 };
 
 // Campos del registro principal que "Aplicar al registro" puede completar
@@ -22,6 +24,8 @@ const APPLY_MAP = {
   license: { amountField: 'cost', dateField: 'expiration_date', providerField: 'vendor' },
   domain: { amountField: 'renewal_cost', dateField: 'expiration_date', providerField: 'registrar' },
   isp_contract: { amountField: 'monthly_cost', dateField: 'end_date', providerField: null },
+  server: { amountField: 'cost', dateField: 'support_expiration_date', providerField: 'provider' },
+  certificate: { amountField: 'cost', dateField: 'expiration_date', providerField: 'issuer' },
 };
 
 const upload = uploader('adjuntos');

@@ -1,0 +1,108 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3"><%= title %></h2>
+
+<form method="post" class="card p-4" action="<%= item.id ? '/servidores/' + item.id + '/editar' : '/servidores/nuevo' %>">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Nombre / hostname *</label>
+      <input type="text" name="name" class="form-control" required value="<%= item.name || '' %>" placeholder="Ej: svrmonitor-dp, web-prod-01...">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Tipo de activo</label>
+      <select name="asset_type" class="form-select">
+        <option value="fisico" <%= item.asset_type === 'fisico' ? 'selected' : '' %>>Físico</option>
+        <option value="virtual" <%= item.asset_type === 'virtual' ? 'selected' : '' %>>Virtual</option>
+        <option value="nube" <%= item.asset_type === 'nube' ? 'selected' : '' %>>Nube</option>
+        <option value="contenedor" <%= item.asset_type === 'contenedor' ? 'selected' : '' %>>Contenedor</option>
+        <option value="otro" <%= !item.asset_type || item.asset_type === 'otro' ? 'selected' : '' %>>Otro</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Ambiente</label>
+      <select name="environment" class="form-select">
+        <option value="produccion" <%= !item.environment || item.environment === 'produccion' ? 'selected' : '' %>>Producción</option>
+        <option value="pruebas" <%= item.environment === 'pruebas' ? 'selected' : '' %>>Pruebas</option>
+        <option value="calidad" <%= item.environment === 'calidad' ? 'selected' : '' %>>Calidad</option>
+        <option value="desarrollo" <%= item.environment === 'desarrollo' ? 'selected' : '' %>>Desarrollo</option>
+      </select>
+    </div>
+
+    <div class="col-md-3">
+      <label class="form-label">Criticidad</label>
+      <select name="criticality" class="form-select">
+        <option value="critica" <%= item.criticality === 'critica' ? 'selected' : '' %>>Crítica</option>
+        <option value="alta" <%= item.criticality === 'alta' ? 'selected' : '' %>>Alta</option>
+        <option value="media" <%= !item.criticality || item.criticality === 'media' ? 'selected' : '' %>>Media</option>
+        <option value="baja" <%= item.criticality === 'baja' ? 'selected' : '' %>>Baja</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Estado operativo</label>
+      <select name="status" class="form-select">
+        <option value="activo" <%= !item.status || item.status === 'activo' ? 'selected' : '' %>>Activo</option>
+        <option value="mantenimiento" <%= item.status === 'mantenimiento' ? 'selected' : '' %>>En mantenimiento</option>
+        <option value="baja" <%= item.status === 'baja' ? 'selected' : '' %>>De baja</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Dirección IP</label>
+      <input type="text" name="ip_address" class="form-control" value="<%= item.ip_address || '' %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Sistema operativo</label>
+      <input type="text" name="operating_system" class="form-control" value="<%= item.operating_system || '' %>">
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Proveedor / fabricante</label>
+      <input type="text" name="provider" class="form-control" value="<%= item.provider || '' %>" placeholder="Ej: AWS, Azure, Dell, HP...">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Responsable</label>
+      <input type="text" name="responsible" class="form-control" value="<%= item.responsible || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Local / sede / datacenter</label>
+      <input type="text" name="site_location" class="form-control" value="<%= item.site_location || '' %>">
+    </div>
+
+    <div class="col-md-3">
+      <label class="form-label">Fecha de compra</label>
+      <input type="date" name="purchase_date" class="form-control" value="<%= item.purchase_date || '' %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Vencimiento de soporte/garantía</label>
+      <input type="date" name="support_expiration_date" class="form-control" value="<%= item.support_expiration_date || '' %>">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Costo</label>
+      <input type="number" step="0.01" name="cost" class="form-control" value="<%= item.cost || '' %>">
+    </div>
+    <div class="col-md-1">
+      <label class="form-label">Moneda</label>
+      <input type="text" name="currency" class="form-control" value="<%= item.currency || 'PEN' %>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">ID de equipo en GLPI (opcional)</label>
+      <input type="number" name="glpi_computer_id" class="form-control" value="<%= item.glpi_computer_id || '' %>">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Dependencias (qué servicios/procesos dependen de este activo)</label>
+      <textarea name="dependencies" class="form-control" rows="2" placeholder="Ej: aplicación de licencias, correo corporativo, servidor de archivos..."><%= item.dependencies || '' %></textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Notas</label>
+      <textarea name="notes" class="form-control" rows="3"><%= item.notes || '' %></textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <a href="/servidores" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>
