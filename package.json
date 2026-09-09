@@ -27,7 +27,11 @@
     "mysql2": "^3.11.5",
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.6",
+    "exceljs": "^4.4.0",
     "otplib": "^13.5.0",
     "qrcode": "^1.5.4"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }

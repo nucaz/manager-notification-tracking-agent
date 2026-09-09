@@ -34,7 +34,12 @@
         <tr><th>Proveedor DNS</th><td><%= item.dns_provider || '—' %></td></tr>
         <tr><th>Fecha de registro</th><td><%= item.registration_date || '—' %></td></tr>
         <tr><th>Fecha de vencimiento</th><td><%= item.expiration_date || '—' %></td></tr>
-        <tr><th>Costo de renovación</th><td><%= item.renewal_cost ? item.renewal_cost + ' ' + item.currency : '—' %></td></tr>
+        <tr><th>Costo de renovación</th><td>
+          <%= item.renewal_cost ? item.renewal_cost + ' ' + item.currency : '—' %>
+          <% if (item.renewal_cost && item.currency === 'USD' && exchangeRate) { %>
+            <span class="text-muted small">(≈ S/ <%= (item.renewal_cost * exchangeRate.rate).toFixed(2) %>, BCRP <%= exchangeRate.date.split('-').reverse().slice(0,2).join('/') %>)</span>
+          <% } %>
+        </td></tr>
         <tr><th>Renovación automática</th><td><%= item.auto_renew ? 'Sí' : 'No' %></td></tr>
         <tr><th>Responsable</th><td><%= item.responsible || '—' %></td></tr>
         <tr><th>Local / sede</th><td><%= item.site_location || '—' %></td></tr>

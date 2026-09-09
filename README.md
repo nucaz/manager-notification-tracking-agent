@@ -25,6 +25,12 @@ Aplicación web para el seguimiento de:
   equipos/entidades para vincular registros, y sincronización de licencias,
   dominios, contratos ISP, servidores/activos y certificados como objetos
   "Contract" en GLPI
+- **Tipo de cambio USD → PEN**: se muestra en el panel principal y junto a
+  cada monto en dólares, usando la API pública y gratuita del BCRP (Banco
+  Central de Reserva del Perú) — sin API key
+- **Importación masiva (CSV/Excel)**: carga por lote de licencias, dominios,
+  contratos ISP, servidores y certificados ya existentes, con plantilla
+  descargable y reporte de filas con error
 
 Construida en Node.js + Express + EJS + MySQL/MariaDB, pensada para
 desplegarse con Docker junto a tu stack GLPI + Zabbix existente.

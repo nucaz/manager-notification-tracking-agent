@@ -3,14 +3,39 @@ const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const { daysUntil, statusFromDays } = require('../services/expirationService');
+const exchangeRateService = require('../services/exchangeRateService');
+const importService = require('../services/importService');
+const { importUploader } = require('../services/uploadService');
 
 const router = express.Router();
-router.use(requireAuth, verifyCsrfToken);
+// verifyCsrfToken NO va aca a nivel de router: /importar es multipart y
+// necesita que multer parsee el body antes de verificar el token (ver
+// src/routes/attachments.js). Se aplica explicito en cada ruta POST.
+router.use(requireAuth);
 
 const FIELDS = [
   'name', 'asset_type', 'environment', 'criticality', 'ip_address', 'operating_system',
   'provider', 'responsible', 'site_location', 'purchase_date', 'support_expiration_date',
   'cost', 'currency', 'status', 'dependencies', 'glpi_computer_id', 'notes',
+];
+
+const IMPORT_COLUMNS = [
+  { header: 'Nombre / hostname', field: 'name', required: true },
+  { header: 'Tipo de activo', field: 'asset_type' },
+  { header: 'Ambiente', field: 'environment' },
+  { header: 'Criticidad', field: 'criticality' },
+  { header: 'Dirección IP', field: 'ip_address' },
+  { header: 'Sistema operativo', field: 'operating_system' },
+  { header: 'Proveedor / fabricante', field: 'provider' },
+  { header: 'Responsable', field: 'responsible' },
+  { header: 'Local / sede / datacenter', field: 'site_location' },
+  { header: 'Fecha de compra', field: 'purchase_date', type: 'date' },
+  { header: 'Vencimiento de soporte/garantía', field: 'support_expiration_date', type: 'date' },
+  { header: 'Costo', field: 'cost', type: 'number' },
+  { header: 'Moneda', field: 'currency' },
+  { header: 'Estado operativo', field: 'status' },
+  { header: 'Dependencias', field: 'dependencies' },
+  { header: 'Notas', field: 'notes' },
 ];
 
 function readForm(body) {
@@ -49,7 +74,7 @@ router.get('/nuevo', canWrite, (req, res) => {
   res.render('servers/form', { title: 'Nuevo servidor / activo', item: {}, errors: [] });
 });
 
-router.post('/nuevo', canWrite, async (req, res, next) => {
+router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const data = readForm(req.body);
     if (!data.name) {
@@ -83,7 +108,7 @@ router.get('/:id/editar', canWrite, async (req, res, next) => {
   }
 });
 
-router.post('/:id/editar', canWrite, async (req, res, next) => {
+router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const data = readForm(req.body);
     const cols = Object.keys(data);
@@ -97,11 +122,60 @@ router.post('/:id/editar', canWrite, async (req, res, next) => {
   }
 });
 
-router.post('/:id/eliminar', canWrite, async (req, res, next) => {
+router.post('/:id/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     await pool.query('DELETE FROM servers WHERE id = ?', [req.params.id]);
     req.flash('success', 'Activo eliminado.');
     res.redirect('/servidores');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Nota: /importar y /importar/plantilla van antes de /:id a proposito
+// (ver src/routes/attachments.js) para que Express no confunda "importar"
+// con un id.
+router.get('/importar', canWrite, (req, res) => {
+  res.render('import', {
+    title: 'Importar servidores y activos TI',
+    listUrl: '/servidores',
+    actionUrl: '/servidores/importar',
+    templateUrl: '/servidores/importar/plantilla',
+    columns: IMPORT_COLUMNS,
+    results: null,
+  });
+});
+
+router.get('/importar/plantilla', canWrite, async (req, res, next) => {
+  try {
+    const buffer = await importService.buildTemplateBuffer(IMPORT_COLUMNS);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="plantilla_servidores.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToken, async (req, res, next) => {
+  try {
+    if (!req.file) {
+      req.flash('error', 'Debes seleccionar un archivo.');
+      return res.redirect('/servidores/importar');
+    }
+    const rows = await importService.parseSpreadsheet(req.file.buffer, req.file.originalname);
+    const results = await importService.importRows(rows, IMPORT_COLUMNS, {
+      table: 'servers',
+      userId: req.session.user.id,
+    });
+    res.render('import', {
+      title: 'Importar servidores y activos TI',
+      listUrl: '/servidores',
+      actionUrl: '/servidores/importar',
+      templateUrl: '/servidores/importar/plantilla',
+      columns: IMPORT_COLUMNS,
+      results,
+    });
   } catch (err) {
     next(err);
   }
@@ -119,10 +193,12 @@ router.get('/:id', async (req, res, next) => {
       [req.params.id]
     );
     const days = daysUntil(rows[0].support_expiration_date);
+    const exchangeRate = rows[0].currency === 'USD' ? await exchangeRateService.getUsdPenRate() : null;
     res.render('servers/detail', {
       title: rows[0].name,
       item: { ...rows[0], days_left: days, computed_status: statusFromDays(days) },
       attachments,
+      exchangeRate,
     });
   } catch (err) {
     next(err);

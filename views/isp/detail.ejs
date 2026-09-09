@@ -33,7 +33,12 @@
         <tr><th style="width:220px;">N° de contrato</th><td><%= item.contract_number || '—' %></td></tr>
         <tr><th>Tipo de servicio</th><td><%= item.service_type || '—' %></td></tr>
         <tr><th>Ancho de banda</th><td><%= (item.bandwidth_down || '—') + ' bajada / ' + (item.bandwidth_up || '—') + ' subida' %></td></tr>
-        <tr><th>Costo mensual</th><td><%= item.monthly_cost ? item.monthly_cost + ' ' + item.currency : '—' %></td></tr>
+        <tr><th>Costo mensual</th><td>
+          <%= item.monthly_cost ? item.monthly_cost + ' ' + item.currency : '—' %>
+          <% if (item.monthly_cost && item.currency === 'USD' && exchangeRate) { %>
+            <span class="text-muted small">(≈ S/ <%= (item.monthly_cost * exchangeRate.rate).toFixed(2) %>, BCRP <%= exchangeRate.date.split('-').reverse().slice(0,2).join('/') %>)</span>
+          <% } %>
+        </td></tr>
         <tr><th>Fecha de inicio</th><td><%= item.start_date || '—' %></td></tr>
         <tr><th>Fecha de vencimiento</th><td><%= item.end_date || '—' %></td></tr>
         <tr><th>Renovación automática</th><td><%= item.auto_renew ? 'Sí' : 'No' %></td></tr>

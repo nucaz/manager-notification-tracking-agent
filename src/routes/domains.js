@@ -3,13 +3,33 @@ const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const { daysUntil, statusFromDays } = require('../services/expirationService');
+const exchangeRateService = require('../services/exchangeRateService');
+const importService = require('../services/importService');
+const { importUploader } = require('../services/uploadService');
 
 const router = express.Router();
-router.use(requireAuth, verifyCsrfToken);
+// verifyCsrfToken NO va aca a nivel de router: /importar es multipart y
+// necesita que multer parsee el body antes de verificar el token (ver
+// src/routes/attachments.js). Se aplica explicito en cada ruta POST.
+router.use(requireAuth);
 
 const FIELDS = [
   'domain_name', 'registrar', 'dns_provider', 'registration_date', 'expiration_date',
   'renewal_cost', 'currency', 'auto_renew', 'responsible', 'site_location', 'notes',
+];
+
+const IMPORT_COLUMNS = [
+  { header: 'Nombre de dominio', field: 'domain_name', required: true },
+  { header: 'Registrador', field: 'registrar' },
+  { header: 'Proveedor DNS', field: 'dns_provider' },
+  { header: 'Fecha de registro', field: 'registration_date', type: 'date' },
+  { header: 'Fecha de vencimiento', field: 'expiration_date', type: 'date' },
+  { header: 'Costo de renovación', field: 'renewal_cost', type: 'number' },
+  { header: 'Moneda', field: 'currency' },
+  { header: 'Renovación automática', field: 'auto_renew', type: 'bool' },
+  { header: 'Responsable', field: 'responsible' },
+  { header: 'Local / sede', field: 'site_location' },
+  { header: 'Notas', field: 'notes' },
 ];
 
 function readForm(body) {
@@ -49,7 +69,7 @@ router.get('/nuevo', canWrite, (req, res) => {
   res.render('domains/form', { title: 'Nuevo dominio', item: {}, errors: [] });
 });
 
-router.post('/nuevo', canWrite, async (req, res, next) => {
+router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const data = readForm(req.body);
     if (!data.domain_name) {
@@ -83,7 +103,7 @@ router.get('/:id/editar', canWrite, async (req, res, next) => {
   }
 });
 
-router.post('/:id/editar', canWrite, async (req, res, next) => {
+router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const data = readForm(req.body);
     const cols = Object.keys(data);
@@ -97,11 +117,60 @@ router.post('/:id/editar', canWrite, async (req, res, next) => {
   }
 });
 
-router.post('/:id/eliminar', canWrite, async (req, res, next) => {
+router.post('/:id/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     await pool.query('DELETE FROM domains WHERE id = ?', [req.params.id]);
     req.flash('success', 'Dominio eliminado.');
     res.redirect('/dominios');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Nota: /importar y /importar/plantilla van antes de /:id a proposito
+// (ver src/routes/attachments.js) para que Express no confunda "importar"
+// con un id.
+router.get('/importar', canWrite, (req, res) => {
+  res.render('import', {
+    title: 'Importar dominios',
+    listUrl: '/dominios',
+    actionUrl: '/dominios/importar',
+    templateUrl: '/dominios/importar/plantilla',
+    columns: IMPORT_COLUMNS,
+    results: null,
+  });
+});
+
+router.get('/importar/plantilla', canWrite, async (req, res, next) => {
+  try {
+    const buffer = await importService.buildTemplateBuffer(IMPORT_COLUMNS);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="plantilla_dominios.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToken, async (req, res, next) => {
+  try {
+    if (!req.file) {
+      req.flash('error', 'Debes seleccionar un archivo.');
+      return res.redirect('/dominios/importar');
+    }
+    const rows = await importService.parseSpreadsheet(req.file.buffer, req.file.originalname);
+    const results = await importService.importRows(rows, IMPORT_COLUMNS, {
+      table: 'domains',
+      userId: req.session.user.id,
+    });
+    res.render('import', {
+      title: 'Importar dominios',
+      listUrl: '/dominios',
+      actionUrl: '/dominios/importar',
+      templateUrl: '/dominios/importar/plantilla',
+      columns: IMPORT_COLUMNS,
+      results,
+    });
   } catch (err) {
     next(err);
   }
@@ -119,10 +188,12 @@ router.get('/:id', async (req, res, next) => {
       [req.params.id]
     );
     const days = daysUntil(rows[0].expiration_date);
+    const exchangeRate = rows[0].currency === 'USD' ? await exchangeRateService.getUsdPenRate() : null;
     res.render('domains/detail', {
       title: rows[0].domain_name,
       item: { ...rows[0], days_left: days, computed_status: statusFromDays(days) },
       attachments,
+      exchangeRate,
     });
   } catch (err) {
     next(err);

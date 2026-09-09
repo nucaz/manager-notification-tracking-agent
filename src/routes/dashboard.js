@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth } = require('../middleware/auth');
 const { daysUntil, statusFromDays } = require('../services/expirationService');
+const exchangeRateService = require('../services/exchangeRateService');
 
 const router = express.Router();
 
@@ -54,12 +55,14 @@ router.get('/', requireAuth, async (req, res, next) => {
       .slice(0, 15);
 
     const [diagramCountRows] = await pool.query('SELECT COUNT(*) AS c FROM network_diagrams');
+    const exchangeRate = await exchangeRateService.getUsdPenRate();
 
     res.render('dashboard', {
       title: 'Panel principal',
       counts,
       upcoming,
       diagramCount: diagramCountRows[0].c,
+      exchangeRate,
     });
   } catch (err) {
     next(err);

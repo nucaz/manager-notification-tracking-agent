@@ -36,7 +36,11 @@
     </div>
     <div class="col-md-1">
       <label class="form-label">Moneda</label>
-      <input type="text" name="currency" class="form-control" value="<%= item.currency || 'PEN' %>">
+      <select name="currency" class="form-select">
+        <option value="PEN" <%= (!item.currency || item.currency === 'PEN') ? 'selected' : '' %>>PEN — Sol</option>
+        <option value="USD" <%= item.currency === 'USD' ? 'selected' : '' %>>USD — Dólar</option>
+        <option value="EUR" <%= item.currency === 'EUR' ? 'selected' : '' %>>EUR — Euro</option>
+      </select>
     </div>
 
     <div class="col-md-3">

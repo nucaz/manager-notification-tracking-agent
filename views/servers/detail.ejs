@@ -43,7 +43,12 @@
         <tr><th>Local / sede / datacenter</th><td><%= item.site_location || '—' %></td></tr>
         <tr><th>Fecha de compra</th><td><%= item.purchase_date || '—' %></td></tr>
         <tr><th>Vencimiento de soporte/garantía</th><td><%= item.support_expiration_date || '—' %></td></tr>
-        <tr><th>Costo</th><td><%= item.cost ? item.cost + ' ' + item.currency : '—' %></td></tr>
+        <tr><th>Costo</th><td>
+          <%= item.cost ? item.cost + ' ' + item.currency : '—' %>
+          <% if (item.cost && item.currency === 'USD' && exchangeRate) { %>
+            <span class="text-muted small">(≈ S/ <%= (item.cost * exchangeRate.rate).toFixed(2) %>, BCRP <%= exchangeRate.date.split('-').reverse().slice(0,2).join('/') %>)</span>
+          <% } %>
+        </td></tr>
         <tr><th>Equipo GLPI vinculado</th><td><%= item.glpi_computer_id || '—' %></td></tr>
         <tr><th>Contrato GLPI sincronizado</th><td><%= item.glpi_contract_id || '—' %></td></tr>
         <tr><th>Dependencias</th><td><%= item.dependencies || '—' %></td></tr>

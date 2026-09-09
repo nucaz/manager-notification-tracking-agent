@@ -48,4 +48,21 @@ function uploader(kind) {
   });
 }
 
-module.exports = { uploader, DIRS, UPLOAD_ROOT };
+// Para importacion masiva (CSV/Excel): el archivo solo se parsea en
+// memoria, nunca se guarda en disco. Solo .xlsx (no el formato binario
+// .xls antiguo, que la libreria de parseo no soporta).
+const IMPORT_ALLOWED_EXT = new Set(['.csv', '.xlsx']);
+
+const importUploader = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!IMPORT_ALLOWED_EXT.has(ext)) {
+      return cb(new Error(`Tipo de archivo no permitido para importar: ${ext}`));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: env.uploadMaxMb * 1024 * 1024 },
+});
+
+module.exports = { uploader, importUploader, DIRS, UPLOAD_ROOT };

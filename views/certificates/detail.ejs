@@ -36,7 +36,12 @@
         <tr><th>Fecha de emisión</th><td><%= item.issue_date || '—' %></td></tr>
         <tr><th>Fecha de vencimiento</th><td><%= item.expiration_date || '—' %></td></tr>
         <tr><th>Renovación automática</th><td><%= item.auto_renew ? 'Sí' : 'No' %></td></tr>
-        <tr><th>Costo</th><td><%= item.cost ? item.cost + ' ' + item.currency : '—' %></td></tr>
+        <tr><th>Costo</th><td>
+          <%= item.cost ? item.cost + ' ' + item.currency : '—' %>
+          <% if (item.cost && item.currency === 'USD' && exchangeRate) { %>
+            <span class="text-muted small">(≈ S/ <%= (item.cost * exchangeRate.rate).toFixed(2) %>, BCRP <%= exchangeRate.date.split('-').reverse().slice(0,2).join('/') %>)</span>
+          <% } %>
+        </td></tr>
         <tr><th>Responsable</th><td><%= item.responsible || '—' %></td></tr>
         <tr><th>Local / sede</th><td><%= item.site_location || '—' %></td></tr>
         <tr><th>Contrato GLPI sincronizado</th><td><%= item.glpi_contract_id || '—' %></td></tr>
