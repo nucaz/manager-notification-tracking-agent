@@ -14,8 +14,36 @@
       <input type="text" name="asset_code" class="form-control" value="<%= item.asset_code || '' %>" placeholder="Ej: A-00868">
     </div>
     <div class="col-md-4">
+      <label class="form-label">Marca</label>
+      <% const marcaEsOtro = item.brand && !marcas.includes(item.brand); %>
+      <select name="brand" id="brand_select" class="form-select" onchange="document.getElementById('brand_otro').hidden = this.value !== '__otro__';">
+        <option value="">— Seleccionar —</option>
+        <% marcas.forEach(function(m) { %>
+          <option value="<%= m %>" <%= item.brand === m ? 'selected' : '' %>><%= m %></option>
+        <% }); %>
+        <option value="<%= marcaEsOtro ? item.brand : '__otro__' %>" <%= marcaEsOtro ? 'selected' : '' %>>
+          <%= marcaEsOtro ? item.brand : 'Otro (especificar)...' %>
+        </option>
+      </select>
+      <input type="text" id="brand_otro" class="form-control mt-2" placeholder="Especificar marca..." <%= marcaEsOtro ? '' : 'hidden' %>
+        value="<%= marcaEsOtro ? item.brand : '' %>"
+        oninput="var o=document.querySelector('#brand_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
+    </div>
+    <div class="col-md-4">
       <label class="form-label">Modelo</label>
-      <input type="text" name="model" class="form-control" value="<%= item.model || '' %>" placeholder="Ej: A76, Samsung, Oppo...">
+      <% const modeloEsOtro = item.model && !modelos.includes(item.model); %>
+      <select name="model" id="model_select" class="form-select" onchange="document.getElementById('model_otro').hidden = this.value !== '__otro__';">
+        <option value="">— Seleccionar —</option>
+        <% modelos.forEach(function(m) { %>
+          <option value="<%= m %>" <%= item.model === m ? 'selected' : '' %>><%= m %></option>
+        <% }); %>
+        <option value="<%= modeloEsOtro ? item.model : '__otro__' %>" <%= modeloEsOtro ? 'selected' : '' %>>
+          <%= modeloEsOtro ? item.model : 'Otro (especificar)...' %>
+        </option>
+      </select>
+      <input type="text" id="model_otro" class="form-control mt-2" placeholder="Especificar modelo..." <%= modeloEsOtro ? '' : 'hidden' %>
+        value="<%= modeloEsOtro ? item.model : '' %>"
+        oninput="var o=document.querySelector('#model_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
     </div>
 
     <div class="col-md-3 d-flex align-items-end">
@@ -41,11 +69,35 @@
 
     <div class="col-md-6">
       <label class="form-label">Área *</label>
-      <input type="text" name="area" class="form-control" required value="<%= item.area || '' %>" placeholder="Ej: ADMINISTRADORAS, VENTAS, SISTEMAS...">
+      <% const areaEsOtro = item.area && !areas.includes(item.area); %>
+      <select name="area" id="area_select" class="form-select" required onchange="document.getElementById('area_otro').hidden = this.value !== '__otro__';">
+        <option value="">— Seleccionar —</option>
+        <% areas.forEach(function(a) { %>
+          <option value="<%= a %>" <%= item.area === a ? 'selected' : '' %>><%= a %></option>
+        <% }); %>
+        <option value="<%= areaEsOtro ? item.area : '__otro__' %>" <%= areaEsOtro ? 'selected' : '' %>>
+          <%= areaEsOtro ? item.area : 'Otro (especificar)...' %>
+        </option>
+      </select>
+      <input type="text" id="area_otro" class="form-control mt-2" placeholder="Especificar área..." <%= areaEsOtro ? '' : 'hidden' %>
+        value="<%= areaEsOtro ? item.area : '' %>"
+        oninput="var o=document.querySelector('#area_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
     </div>
     <div class="col-md-6">
       <label class="form-label">Sede</label>
-      <input type="text" name="sede" class="form-control" value="<%= item.sede || '' %>" placeholder="Ej: SURCO, MEGA PLAZA, IZAGUIRRE...">
+      <% const sedeEsOtro = item.sede && !sedes.includes(item.sede); %>
+      <select name="sede" id="sede_select" class="form-select" onchange="document.getElementById('sede_otro').hidden = this.value !== '__otro__';">
+        <option value="">— Seleccionar —</option>
+        <% sedes.forEach(function(s) { %>
+          <option value="<%= s %>" <%= item.sede === s ? 'selected' : '' %>><%= s %></option>
+        <% }); %>
+        <option value="<%= sedeEsOtro ? item.sede : '__otro__' %>" <%= sedeEsOtro ? 'selected' : '' %>>
+          <%= sedeEsOtro ? item.sede : 'Otro (especificar)...' %>
+        </option>
+      </select>
+      <input type="text" id="sede_otro" class="form-control mt-2" placeholder="Especificar sede..." <%= sedeEsOtro ? '' : 'hidden' %>
+        value="<%= sedeEsOtro ? item.sede : '' %>"
+        oninput="var o=document.querySelector('#sede_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
     </div>
 
     <div class="col-12">

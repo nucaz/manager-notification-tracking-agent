@@ -184,6 +184,7 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   phone_number VARCHAR(30),                     -- numero de linea, NULL si no tiene chip
   has_chip TINYINT(1) NOT NULL DEFAULT 0,
   asset_code VARCHAR(30),                       -- codigo interno, ej: A-00868
+  brand VARCHAR(100),                           -- marca, ej: Samsung, Oppo
   model VARCHAR(100),
   area VARCHAR(100) NOT NULL,                   -- area/departamento (texto libre)
   sede VARCHAR(100),                            -- sede fisica (texto libre)
@@ -226,6 +227,23 @@ CREATE TABLE IF NOT EXISTS mobile_device_area_audits (
   updated_by INT NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_area_audit_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Catalogos genericos (maestros): sede, area, marca, modelo, etc.
+-- Los modulos que los usan (por ahora, Celulares) guardan el VALOR como
+-- texto libre, no una FK — el catalogo sugiere/estandariza, no restringe
+-- a nivel de base de datos (para no romper datos ya importados).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS catalog_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  catalog_type VARCHAR(50) NOT NULL,
+  value VARCHAR(150) NOT NULL,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_catalog_item_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY uniq_catalog_value (catalog_type, value)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
@@ -327,3 +345,36 @@ INSERT INTO settings (`key`, `value`) VALUES
   ('gemini_api_key', ''),
   ('gemini_model', 'gemini-2.5-flash')
 ON DUPLICATE KEY UPDATE `key`=`key`;
+
+-- ---------------------------------------------------------------------
+-- Catalogos iniciales (valores ya usados en las hojas de la organizacion)
+-- ---------------------------------------------------------------------
+INSERT IGNORE INTO catalog_items (catalog_type, value) VALUES
+  ('sede', 'SURCO'),
+  ('sede', 'MEGA PLAZA'),
+  ('sede', 'IZAGUIRRE'),
+  ('sede', 'PUEBLO LIBRE'),
+  ('area', 'ADMINISTRADORAS'),
+  ('area', 'BO'),
+  ('area', 'ESPECIALISTAS PL'),
+  ('area', 'VENTAS'),
+  ('area', 'CAPACITACION'),
+  ('area', 'CAPACITACION ESPECIALISTA'),
+  ('area', 'CM'),
+  ('area', 'MARKETING'),
+  ('area', 'CONEXION'),
+  ('area', 'TESORERIA'),
+  ('area', 'LOGISTICA'),
+  ('area', 'RRHH'),
+  ('area', 'CONTABILIDAD'),
+  ('area', 'SEGURIDAD'),
+  ('area', 'SISTEMAS'),
+  ('area', 'GERENCIA'),
+  ('area', 'MANTENIMIENTO'),
+  ('marca', 'Samsung'),
+  ('marca', 'Oppo'),
+  ('marca', 'Motorola'),
+  ('marca', 'Xiaomi'),
+  ('modelo', 'A76'),
+  ('modelo', 'A75'),
+  ('modelo', 'A55');

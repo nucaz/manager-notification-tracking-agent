@@ -10,11 +10,14 @@ Aplicación web para el seguimiento de:
   responsable, dependencias y vencimiento de soporte/garantía
 - **Certificados TLS**: dominio cubierto, emisor, tipo (single/wildcard/SAN),
   vencimiento y vínculo opcional con el módulo de Dominios
-- **Celulares**: inventario de equipos móviles (IMEI, código, modelo, si
-  tiene chip y su número), con área/sede, asignación a personas con
-  **historial completo** (quién tuvo cada equipo y cuándo), reasignación y
-  devolución a stock, y un **resumen por área** con checklist de auditoría
-  física (estatus, última fecha, observación)
+- **Celulares**: inventario de equipos móviles (IMEI, código, marca,
+  modelo, si tiene chip y su número), con área/sede, asignación a
+  personas con **historial completo** (quién tuvo cada equipo y cuándo),
+  reasignación y devolución a stock, y un **resumen por área** con
+  checklist de auditoría física (estatus, última fecha, observación)
+- **Catálogos** (Configuración → Gestionar catálogos, solo admin): listas
+  de sedes, áreas, marcas y modelos reutilizables desde los formularios
+  (por ahora, en Celulares) para estandarizar la carga de datos
 - **Adjuntos**: contratos, adendas y facturas vinculados a cada registro
 - **Extracción de facturas con IA (Gemini)**: al adjuntar una factura/recibo
   (PDF o imagen), un botón "Extraer datos con IA" lee el documento y

@@ -4,6 +4,7 @@ const { requireAuth, canWrite } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const importService = require('../services/importService');
 const { importUploader } = require('../services/uploadService');
+const catalogService = require('../services/catalogService');
 
 const router = express.Router();
 // verifyCsrfToken NO va aca a nivel de router: /importar es multipart y
@@ -12,15 +13,26 @@ const router = express.Router();
 router.use(requireAuth);
 
 const FIELDS = [
-  'imei', 'phone_number', 'has_chip', 'asset_code', 'model',
+  'imei', 'phone_number', 'has_chip', 'asset_code', 'brand', 'model',
   'area', 'sede', 'status', 'notes',
 ];
+
+async function loadCatalogOptions() {
+  const [sedes, areas, marcas, modelos] = await Promise.all([
+    catalogService.getActive('sede'),
+    catalogService.getActive('area'),
+    catalogService.getActive('marca'),
+    catalogService.getActive('modelo'),
+  ]);
+  return { sedes, areas, marcas, modelos };
+}
 
 const IMPORT_COLUMNS = [
   { header: 'IMEI', field: 'imei', required: true },
   { header: 'Número', field: 'phone_number' },
   { header: 'Tiene chip', field: 'has_chip', type: 'bool' },
   { header: 'Código', field: 'asset_code' },
+  { header: 'Marca', field: 'brand' },
   { header: 'Modelo', field: 'model' },
   { header: 'Área', field: 'area', required: true },
   { header: 'Sede', field: 'sede' },
@@ -88,8 +100,13 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/nuevo', canWrite, (req, res) => {
-  res.render('mobileDevices/form', { title: 'Nuevo celular', item: {}, errors: [] });
+router.get('/nuevo', canWrite, async (req, res, next) => {
+  try {
+    const catalogs = await loadCatalogOptions();
+    res.render('mobileDevices/form', { title: 'Nuevo celular', item: {}, errors: [], ...catalogs });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
@@ -120,7 +137,8 @@ router.get('/:id/editar', canWrite, async (req, res, next) => {
       req.flash('error', 'Celular no encontrado.');
       return res.redirect('/celulares');
     }
-    res.render('mobileDevices/form', { title: 'Editar celular', item: rows[0], errors: [] });
+    const catalogs = await loadCatalogOptions();
+    res.render('mobileDevices/form', { title: 'Editar celular', item: rows[0], errors: [], ...catalogs });
   } catch (err) {
     next(err);
   }
@@ -258,13 +276,14 @@ router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToke
       try {
         const [result] = await pool.query(
           `INSERT INTO mobile_devices
-            (imei, phone_number, has_chip, asset_code, model, area, sede, status, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (imei, phone_number, has_chip, asset_code, brand, model, area, sede, status, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             imei,
             row['Número'] || null,
             hasChip,
             row['Código'] || null,
+            row['Marca'] || null,
             row['Modelo'] || null,
             area,
             row['Sede'] || null,

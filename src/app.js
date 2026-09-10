@@ -18,6 +18,7 @@ const attachmentRoutes = require('./routes/attachments');
 const networkRoutes = require('./routes/network');
 const glpiRoutes = require('./routes/glpi');
 const settingsRoutes = require('./routes/settings');
+const catalogRoutes = require('./routes/catalogs');
 const reportRoutes = require('./routes/reports');
 const usersRoutes = require('./routes/users');
 
@@ -74,6 +75,7 @@ app.use('/celulares', mobileDeviceRoutes);
 app.use('/adjuntos', attachmentRoutes);
 app.use('/red', networkRoutes);
 app.use('/glpi', glpiRoutes);
+app.use('/configuracion/catalogos', catalogRoutes);
 app.use('/configuracion', settingsRoutes);
 app.use('/usuarios', usersRoutes);
 app.use('/reportes', reportRoutes);

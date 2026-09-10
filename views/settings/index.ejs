@@ -1,6 +1,9 @@
 <%- include('../partials/head', { title: title }) %>
 
-<h2 class="mb-3">Configuración</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Configuración</h2>
+  <a href="/configuracion/catalogos" class="btn btn-outline-secondary"><i class="bi bi-list-check"></i> Gestionar catálogos</a>
+</div>
 
 <form method="post" action="/configuracion">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
