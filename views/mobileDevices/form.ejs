@@ -1,0 +1,63 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3"><%= title %></h2>
+
+<form method="post" class="card p-4" action="<%= item.id ? '/celulares/' + item.id + '/editar' : '/celulares/nuevo' %>">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label">IMEI *</label>
+      <input type="text" name="imei" class="form-control" required value="<%= item.imei || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Código de activo</label>
+      <input type="text" name="asset_code" class="form-control" value="<%= item.asset_code || '' %>" placeholder="Ej: A-00868">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Modelo</label>
+      <input type="text" name="model" class="form-control" value="<%= item.model || '' %>" placeholder="Ej: A76, Samsung, Oppo...">
+    </div>
+
+    <div class="col-md-3 d-flex align-items-end">
+      <div class="form-check">
+        <input type="checkbox" class="form-check-input" name="has_chip" id="has_chip" <%= item.has_chip ? 'checked' : '' %>>
+        <label class="form-check-label" for="has_chip">Tiene chip</label>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Número de línea</label>
+      <input type="text" name="phone_number" class="form-control" value="<%= item.phone_number || '' %>">
+    </div>
+    <div class="col-md-5">
+      <label class="form-label">Estado</label>
+      <select name="status" class="form-select">
+        <option value="en_stock" <%= !item.status || item.status === 'en_stock' ? 'selected' : '' %>>En stock</option>
+        <option value="asignado" <%= item.status === 'asignado' ? 'selected' : '' %>>Asignado</option>
+        <option value="en_reparacion" <%= item.status === 'en_reparacion' ? 'selected' : '' %>>En reparación</option>
+        <option value="de_baja" <%= item.status === 'de_baja' ? 'selected' : '' %>>De baja</option>
+      </select>
+      <div class="form-text">La asignación/reasignación a una persona se hace desde el detalle del celular, no aquí.</div>
+    </div>
+
+    <div class="col-md-6">
+      <label class="form-label">Área *</label>
+      <input type="text" name="area" class="form-control" required value="<%= item.area || '' %>" placeholder="Ej: ADMINISTRADORAS, VENTAS, SISTEMAS...">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Sede</label>
+      <input type="text" name="sede" class="form-control" value="<%= item.sede || '' %>" placeholder="Ej: SURCO, MEGA PLAZA, IZAGUIRRE...">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Notas</label>
+      <textarea name="notes" class="form-control" rows="3"><%= item.notes || '' %></textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <a href="/celulares" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

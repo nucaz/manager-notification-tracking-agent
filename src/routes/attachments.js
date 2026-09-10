@@ -16,16 +16,21 @@ const ENTITY_TABLES = {
   isp_contract: { table: 'isp_contracts', redirectBase: '/isp' },
   server: { table: 'servers', redirectBase: '/servidores' },
   certificate: { table: 'certificates', redirectBase: '/certificados' },
+  mobile_device: { table: 'mobile_devices', redirectBase: '/celulares' },
 };
 
 // Campos del registro principal que "Aplicar al registro" puede completar
 // con los datos extraidos por IA. Solo se llenan si el campo esta vacio.
+// mobile_device no tiene extraccion por IA (no se pidio): mapping en null
+// para que el botón "Aplicar al registro" simplemente no encuentre nada
+// que completar, en vez de romper.
 const APPLY_MAP = {
   license: { amountField: 'cost', dateField: 'expiration_date', providerField: 'vendor' },
   domain: { amountField: 'renewal_cost', dateField: 'expiration_date', providerField: 'registrar' },
   isp_contract: { amountField: 'monthly_cost', dateField: 'end_date', providerField: null },
   server: { amountField: 'cost', dateField: 'support_expiration_date', providerField: 'provider' },
   certificate: { amountField: 'cost', dateField: 'expiration_date', providerField: 'issuer' },
+  mobile_device: { amountField: null, dateField: null, providerField: null },
 };
 
 const upload = uploader('adjuntos');

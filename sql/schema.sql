@@ -176,12 +176,65 @@ CREATE TABLE IF NOT EXISTS certificates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
+-- Celulares / activos moviles
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mobile_devices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  imei VARCHAR(30) NOT NULL,
+  phone_number VARCHAR(30),                     -- numero de linea, NULL si no tiene chip
+  has_chip TINYINT(1) NOT NULL DEFAULT 0,
+  asset_code VARCHAR(30),                       -- codigo interno, ej: A-00868
+  model VARCHAR(100),
+  area VARCHAR(100) NOT NULL,                   -- area/departamento (texto libre)
+  sede VARCHAR(100),                            -- sede fisica (texto libre)
+  status ENUM('en_stock','asignado','en_reparacion','de_baja') NOT NULL DEFAULT 'en_stock',
+  notes TEXT,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mobile_device_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_mobile_device_area (area),
+  INDEX idx_mobile_device_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Historial de asignaciones de celulares. A lo sumo una fila con
+-- returned_date NULL por device_id (la asignacion activa); esa regla se
+-- aplica en la app, no como constraint de BD.
+CREATE TABLE IF NOT EXISTS mobile_device_assignments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  device_id INT NOT NULL,
+  holder_name VARCHAR(150) NOT NULL,
+  cargo VARCHAR(150),
+  turno VARCHAR(50),
+  assigned_date DATE,
+  returned_date DATE NULL,                      -- NULL = asignacion activa
+  observacion TEXT,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_assignment_device FOREIGN KEY (device_id) REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  CONSTRAINT fk_assignment_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_assignment_device (device_id, returned_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Checklist fisico por area (hoja "RESUMEN" del Excel original). Una fila
+-- por area, se auto-crea (INSERT IGNORE) cuando aparece un area nueva.
+CREATE TABLE IF NOT EXISTS mobile_device_area_audits (
+  area VARCHAR(100) PRIMARY KEY,
+  estatus ENUM('pendiente','verificado','con_diferencias') NOT NULL DEFAULT 'pendiente',
+  ultima_fecha DATE,
+  observacion TEXT,
+  updated_by INT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_area_audit_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
 -- Adjuntos: contratos, adendas, facturas — vinculados de forma polimórfica
--- a licencias, dominios, contratos ISP, servidores o certificados
+-- a licencias, dominios, contratos ISP, servidores, certificados o celulares
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS attachments (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  entity_type ENUM('license','domain','isp_contract','server','certificate') NOT NULL,
+  entity_type ENUM('license','domain','isp_contract','server','certificate','mobile_device') NOT NULL,
   entity_id INT NOT NULL,
   doc_type ENUM('contrato','adenda','factura','otro') NOT NULL DEFAULT 'otro',
   original_name VARCHAR(255) NOT NULL,

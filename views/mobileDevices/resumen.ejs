@@ -1,0 +1,76 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Resumen de celulares</h2>
+  <a href="/celulares" class="btn btn-outline-secondary">Volver al listado</a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number"><%= totalEquipos %></div>
+      <div class="text-muted">Total de equipos</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number text-success"><%= totalAsignados %></div>
+      <div class="text-muted">Actualmente asignados</div>
+    </div>
+  </div>
+</div>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th>Área</th><th>Equipos</th><th>Asignados</th>
+          <th>Estatus (check list físico)</th><th>Última fecha</th><th>Observación</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% counts.forEach(function(c, idx) { %>
+          <% const audit = auditsByArea[c.area] || {}; const formId = 'form-area-' + idx; %>
+          <tr>
+            <td><a href="/celulares?area=<%= encodeURIComponent(c.area) %>"><%= c.area %></a></td>
+            <td><%= c.total %></td>
+            <td><%= c.asignados %></td>
+            <% if (currentUser.role !== 'lector') { %>
+              <td>
+                <select name="estatus" form="<%= formId %>" class="form-select form-select-sm">
+                  <option value="pendiente" <%= (!audit.estatus || audit.estatus === 'pendiente') ? 'selected' : '' %>>Pendiente</option>
+                  <option value="verificado" <%= audit.estatus === 'verificado' ? 'selected' : '' %>>Verificado</option>
+                  <option value="con_diferencias" <%= audit.estatus === 'con_diferencias' ? 'selected' : '' %>>Con diferencias</option>
+                </select>
+              </td>
+              <td><input type="date" name="ultima_fecha" form="<%= formId %>" class="form-control form-control-sm" value="<%= audit.ultima_fecha || '' %>"></td>
+              <td><input type="text" name="observacion" form="<%= formId %>" class="form-control form-control-sm" value="<%= audit.observacion || '' %>"></td>
+              <td>
+                <button type="submit" form="<%= formId %>" class="btn btn-sm btn-outline-primary">Guardar</button>
+              </td>
+            <% } else { %>
+              <td><%= audit.estatus || 'pendiente' %></td>
+              <td><%= audit.ultima_fecha || '—' %></td>
+              <td><%= audit.observacion || '—' %></td>
+              <td></td>
+            <% } %>
+          </tr>
+        <% }); %>
+        <% if (counts.length === 0) { %>
+          <tr><td colspan="7" class="text-center text-muted py-4">No hay celulares registrados todavía.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<% if (currentUser.role !== 'lector') { %>
+  <% counts.forEach(function(c, idx) { %>
+    <form id="form-area-<%= idx %>" method="post" action="/celulares/resumen/<%= encodeURIComponent(c.area) %>/actualizar" hidden>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    </form>
+  <% }); %>
+<% } %>
+
+<%- include('../partials/foot') %>

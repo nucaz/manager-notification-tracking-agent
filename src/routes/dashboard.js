@@ -28,6 +28,7 @@ router.get('/', requireAuth, async (req, res, next) => {
     const [isp] = await pool.query('SELECT * FROM isp_contracts');
     const [servers] = await pool.query('SELECT * FROM servers');
     const [certificates] = await pool.query('SELECT * FROM certificates');
+    const [mobileDeviceCountRows] = await pool.query('SELECT COUNT(*) AS c FROM mobile_devices');
 
     const all = [
       ...enrich(licenses, 'expiration_date', 'license', 'Licencia', '/licencias'),
@@ -47,6 +48,7 @@ router.get('/', requireAuth, async (req, res, next) => {
       isp: isp.length,
       servers: servers.length,
       certificates: certificates.length,
+      mobileDevices: mobileDeviceCountRows[0].c,
     };
 
     const upcoming = all

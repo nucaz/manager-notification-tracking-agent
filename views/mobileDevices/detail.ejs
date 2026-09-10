@@ -1,0 +1,150 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h2 class="mb-0"><%= item.imei %></h2>
+    <span class="badge <%= item.status === 'asignado' ? 'bg-success' : item.status === 'en_stock' ? 'bg-secondary' : item.status === 'en_reparacion' ? 'bg-warning text-dark' : 'bg-danger' %>">
+      <%= item.status %>
+    </span>
+  </div>
+  <div>
+    <% if (currentUser.role !== 'lector') { %>
+      <a href="/celulares/<%= item.id %>/editar" class="btn btn-outline-primary">Editar</a>
+      <form action="/celulares/<%= item.id %>/eliminar" method="post" class="d-inline"
+            onsubmit="return confirm('¿Eliminar este celular? Esta acción no se puede deshacer.');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-outline-danger" type="submit">Eliminar</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-7">
+    <div class="card p-3 mb-3">
+      <h5>Detalle</h5>
+      <table class="table table-sm">
+        <tr><th style="width:220px;">Código de activo</th><td><%= item.asset_code || '—' %></td></tr>
+        <tr><th>Modelo</th><td><%= item.model || '—' %></td></tr>
+        <tr><th>Tiene chip</th><td><%= item.has_chip ? 'Sí' : 'No' %></td></tr>
+        <tr><th>Número de línea</th><td><%= item.phone_number || '—' %></td></tr>
+        <tr><th>Área</th><td><%= item.area %></td></tr>
+        <tr><th>Sede</th><td><%= item.sede || '—' %></td></tr>
+        <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
+      </table>
+    </div>
+
+    <div class="card p-3">
+      <h5>Historial de asignaciones</h5>
+      <% if (history.length === 0) { %>
+        <p class="text-muted mb-0">Sin asignaciones anteriores.</p>
+      <% } else { %>
+        <table class="table table-sm">
+          <thead><tr><th>Usuario</th><th>Cargo</th><th>Turno</th><th>Desde</th><th>Hasta</th><th>Observación</th></tr></thead>
+          <tbody>
+            <% history.forEach(function(h) { %>
+              <tr>
+                <td><%= h.holder_name %></td>
+                <td><%= h.cargo || '—' %></td>
+                <td><%= h.turno || '—' %></td>
+                <td><%= h.assigned_date || '—' %></td>
+                <td><%= h.returned_date %></td>
+                <td><%= h.observacion || '—' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="col-md-5">
+    <div class="card p-3 mb-3">
+      <h5>Asignación actual</h5>
+      <% if (currentAssignment) { %>
+        <table class="table table-sm">
+          <tr><th style="width:140px;">Usuario</th><td><%= currentAssignment.holder_name %></td></tr>
+          <tr><th>Cargo</th><td><%= currentAssignment.cargo || '—' %></td></tr>
+          <tr><th>Turno</th><td><%= currentAssignment.turno || '—' %></td></tr>
+          <tr><th>Fecha de entrega</th><td><%= currentAssignment.assigned_date || '—' %></td></tr>
+          <tr><th>Observación</th><td><%= currentAssignment.observacion || '—' %></td></tr>
+        </table>
+      <% } else { %>
+        <p class="text-muted">Sin asignar (en stock).</p>
+      <% } %>
+
+      <% if (currentUser.role !== 'lector') { %>
+        <% if (currentAssignment) { %>
+          <form action="/celulares/<%= item.id %>/devolver" method="post" class="mb-2"
+                onsubmit="return confirm('¿Devolver este celular a stock?');">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">Devolver a stock</button>
+          </form>
+        <% } %>
+        <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#formAsignar">
+          <%= currentAssignment ? 'Reasignar' : 'Asignar' %>
+        </button>
+        <div class="collapse mt-2" id="formAsignar">
+          <form action="/celulares/<%= item.id %>/asignar" method="post">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="mb-2">
+              <label class="form-label small">Usuario *</label>
+              <input type="text" name="holder_name" class="form-control form-control-sm" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Cargo</label>
+              <input type="text" name="cargo" class="form-control form-control-sm">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Turno</label>
+              <input type="text" name="turno" class="form-control form-control-sm" placeholder="Mañana, Tarde...">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Fecha de entrega</label>
+              <input type="date" name="assigned_date" class="form-control form-control-sm">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Observación</label>
+              <input type="text" name="observacion" class="form-control form-control-sm">
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary"><%= currentAssignment ? 'Confirmar reasignación' : 'Confirmar asignación' %></button>
+          </form>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="card p-3">
+      <h5>Adjuntos</h5>
+      <% if (currentUser.role !== 'lector') { %>
+        <form action="/adjuntos/subir/mobile_device/<%= item.id %>" method="post" enctype="multipart/form-data" class="mb-3 border-bottom pb-3">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="mb-2">
+            <select name="doc_type" class="form-select form-select-sm">
+              <option value="contrato">Contrato</option>
+              <option value="adenda">Adenda</option>
+              <option value="factura">Factura</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <input type="text" name="description" class="form-control form-control-sm" placeholder="Descripción (opcional)">
+          </div>
+          <div class="mb-2">
+            <input type="file" name="file" class="form-control form-control-sm" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary">Subir archivo</button>
+        </form>
+      <% } %>
+      <ul class="list-group list-group-flush">
+        <% attachments.forEach(function(a) { %>
+          <%- include('../partials/attachment_item', { a: a }) %>
+        <% }); %>
+        <% if (attachments.length === 0) { %>
+          <li class="list-group-item px-0 text-muted">Sin archivos adjuntos.</li>
+        <% } %>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

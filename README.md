@@ -10,6 +10,11 @@ Aplicación web para el seguimiento de:
   responsable, dependencias y vencimiento de soporte/garantía
 - **Certificados TLS**: dominio cubierto, emisor, tipo (single/wildcard/SAN),
   vencimiento y vínculo opcional con el módulo de Dominios
+- **Celulares**: inventario de equipos móviles (IMEI, código, modelo, si
+  tiene chip y su número), con área/sede, asignación a personas con
+  **historial completo** (quién tuvo cada equipo y cuándo), reasignación y
+  devolución a stock, y un **resumen por área** con checklist de auditoría
+  física (estatus, última fecha, observación)
 - **Adjuntos**: contratos, adendas y facturas vinculados a cada registro
 - **Extracción de facturas con IA (Gemini)**: al adjuntar una factura/recibo
   (PDF o imagen), un botón "Extraer datos con IA" lee el documento y
@@ -29,8 +34,8 @@ Aplicación web para el seguimiento de:
   cada monto en dólares, usando la API pública y gratuita del BCRP (Banco
   Central de Reserva del Perú) — sin API key
 - **Importación masiva (CSV/Excel)**: carga por lote de licencias, dominios,
-  contratos ISP, servidores y certificados ya existentes, con plantilla
-  descargable y reporte de filas con error
+  contratos ISP, servidores, certificados y celulares ya existentes, con
+  plantilla descargable y reporte de filas con error
 
 Construida en Node.js + Express + EJS + MySQL/MariaDB, pensada para
 desplegarse con Docker junto a tu stack GLPI + Zabbix existente.

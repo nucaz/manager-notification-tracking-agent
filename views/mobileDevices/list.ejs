@@ -1,0 +1,89 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Celulares</h2>
+  <% if (currentUser.role !== 'lector') { %>
+    <div>
+      <a href="/celulares/resumen" class="btn btn-outline-secondary"><i class="bi bi-bar-chart"></i> Resumen</a>
+      <a href="/celulares/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar</a>
+      <a href="/celulares/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo celular</a>
+    </div>
+  <% } else { %>
+    <a href="/celulares/resumen" class="btn btn-outline-secondary"><i class="bi bi-bar-chart"></i> Resumen</a>
+  <% } %>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar por IMEI, código, número o usuario...">
+  </div>
+  <div class="col-auto">
+    <select name="area" class="form-select">
+      <option value="">Todas las áreas</option>
+      <% areas.forEach(function(a) { %>
+        <option value="<%= a %>" <%= area === a ? 'selected' : '' %>><%= a %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="sede" class="form-select">
+      <option value="">Todas las sedes</option>
+      <% sedes.forEach(function(s) { %>
+        <option value="<%= s %>" <%= sede === s ? 'selected' : '' %>><%= s %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select">
+      <option value="">Todos los estados</option>
+      <option value="en_stock" <%= status === 'en_stock' ? 'selected' : '' %>>En stock</option>
+      <option value="asignado" <%= status === 'asignado' ? 'selected' : '' %>>Asignado</option>
+      <option value="en_reparacion" <%= status === 'en_reparacion' ? 'selected' : '' %>>En reparación</option>
+      <option value="de_baja" <%= status === 'de_baja' ? 'selected' : '' %>>De baja</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>IMEI</th><th>Código</th><th>Modelo</th><th>Área</th><th>Sede</th>
+          <th>Usuario asignado</th><th>Estado</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.forEach(function(item) { %>
+          <tr>
+            <td><a href="/celulares/<%= item.id %>"><%= item.imei %></a></td>
+            <td><%= item.asset_code || '—' %></td>
+            <td><%= item.model || '—' %></td>
+            <td><%= item.area %></td>
+            <td><%= item.sede || '—' %></td>
+            <td><%= item.holder_name || '—' %></td>
+            <td>
+              <span class="badge <%= item.status === 'asignado' ? 'bg-success' : item.status === 'en_stock' ? 'bg-secondary' : item.status === 'en_reparacion' ? 'bg-warning text-dark' : 'bg-danger' %>">
+                <%= item.status %>
+              </span>
+            </td>
+            <td class="text-end">
+              <a href="/celulares/<%= item.id %>" class="btn btn-sm btn-outline-secondary">Ver</a>
+              <% if (currentUser.role !== 'lector') { %>
+                <a href="/celulares/<%= item.id %>/editar" class="btn btn-sm btn-outline-primary">Editar</a>
+              <% } %>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="8" class="text-center text-muted py-4">No hay celulares registrados.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>
