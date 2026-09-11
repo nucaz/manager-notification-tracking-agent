@@ -13,8 +13,12 @@ Aplicación web para el seguimiento de:
 - **Celulares**: inventario de equipos móviles (IMEI, código, marca,
   modelo, si tiene chip y su número), con área/sede, asignación a
   personas con **historial completo** (quién tuvo cada equipo y cuándo),
-  reasignación y devolución a stock, y un **resumen por área** con
-  checklist de auditoría física (estatus, última fecha, observación)
+  reasignación (busca al empleado por DNI y actualiza el área/sede del
+  equipo) y devolución a stock, y un **resumen por área** con checklist
+  de auditoría física (estatus, última fecha, observación)
+- **Empleados**: directorio reutilizable por DNI (nombres, apellidos,
+  área, sede, cargo) — se alimenta automáticamente al asignar un celular,
+  o se gestiona directo desde su propia pantalla
 - **Catálogos** (Configuración → Gestionar catálogos, solo admin): listas
   de sedes, áreas, marcas y modelos reutilizables desde los formularios
   (por ahora, en Celulares) para estandarizar la carga de datos

@@ -1,0 +1,70 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3"><%= title %></h2>
+
+<form method="post" class="card p-4" action="<%= item.id ? '/empleados/' + item.id + '/editar' : '/empleados/nuevo' %>">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label">DNI *</label>
+      <input type="text" name="dni" class="form-control" required value="<%= item.dni || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Nombres *</label>
+      <input type="text" name="first_name" class="form-control" required value="<%= item.first_name || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Apellidos *</label>
+      <input type="text" name="last_name" class="form-control" required value="<%= item.last_name || '' %>">
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Área</label>
+      <% const areaEsOtro = item.area && !areas.includes(item.area); %>
+      <select name="area" id="area_select" class="form-select" onchange="document.getElementById('area_otro').hidden = this.value !== '__otro__';">
+        <option value="">— Seleccionar —</option>
+        <% areas.forEach(function(a) { %>
+          <option value="<%= a %>" <%= item.area === a ? 'selected' : '' %>><%= a %></option>
+        <% }); %>
+        <option value="<%= areaEsOtro ? item.area : '__otro__' %>" <%= areaEsOtro ? 'selected' : '' %>>
+          <%= areaEsOtro ? item.area : 'Otro (especificar)...' %>
+        </option>
+      </select>
+      <input type="text" id="area_otro" class="form-control mt-2" placeholder="Especificar área..." <%= areaEsOtro ? '' : 'hidden' %>
+        value="<%= areaEsOtro ? item.area : '' %>"
+        oninput="var o=document.querySelector('#area_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Sede</label>
+      <% const sedeEsOtro = item.sede && !sedes.includes(item.sede); %>
+      <select name="sede" id="sede_select" class="form-select" onchange="document.getElementById('sede_otro').hidden = this.value !== '__otro__';">
+        <option value="">— Seleccionar —</option>
+        <% sedes.forEach(function(s) { %>
+          <option value="<%= s %>" <%= item.sede === s ? 'selected' : '' %>><%= s %></option>
+        <% }); %>
+        <option value="<%= sedeEsOtro ? item.sede : '__otro__' %>" <%= sedeEsOtro ? 'selected' : '' %>>
+          <%= sedeEsOtro ? item.sede : 'Otro (especificar)...' %>
+        </option>
+      </select>
+      <input type="text" id="sede_otro" class="form-control mt-2" placeholder="Especificar sede..." <%= sedeEsOtro ? '' : 'hidden' %>
+        value="<%= sedeEsOtro ? item.sede : '' %>"
+        oninput="var o=document.querySelector('#sede_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Cargo</label>
+      <input type="text" name="cargo" class="form-control" value="<%= item.cargo || '' %>" placeholder="Ej: Administradora de sede">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Notas</label>
+      <textarea name="notes" class="form-control" rows="3"><%= item.notes || '' %></textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <a href="/empleados" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

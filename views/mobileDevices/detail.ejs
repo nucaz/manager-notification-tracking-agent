@@ -41,11 +41,12 @@
         <p class="text-muted mb-0">Sin asignaciones anteriores.</p>
       <% } else { %>
         <table class="table table-sm">
-          <thead><tr><th>Usuario</th><th>Cargo</th><th>Turno</th><th>Desde</th><th>Hasta</th><th>Observación</th></tr></thead>
+          <thead><tr><th>Usuario</th><th>DNI</th><th>Cargo</th><th>Turno</th><th>Desde</th><th>Hasta</th><th>Observación</th></tr></thead>
           <tbody>
             <% history.forEach(function(h) { %>
               <tr>
                 <td><%= h.holder_name %></td>
+                <td><%= h.dni || '—' %></td>
                 <td><%= h.cargo || '—' %></td>
                 <td><%= h.turno || '—' %></td>
                 <td><%= h.assigned_date || '—' %></td>
@@ -65,6 +66,7 @@
       <% if (currentAssignment) { %>
         <table class="table table-sm">
           <tr><th style="width:140px;">Usuario</th><td><%= currentAssignment.holder_name %></td></tr>
+          <tr><th>DNI</th><td><%= currentAssignment.dni || '—' %></td></tr>
           <tr><th>Cargo</th><td><%= currentAssignment.cargo || '—' %></td></tr>
           <tr><th>Turno</th><td><%= currentAssignment.turno || '—' %></td></tr>
           <tr><th>Fecha de entrega</th><td><%= currentAssignment.assigned_date || '—' %></td></tr>
@@ -85,16 +87,68 @@
         <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#formAsignar">
           <%= currentAssignment ? 'Reasignar' : 'Asignar' %>
         </button>
-        <div class="collapse mt-2" id="formAsignar">
+        <div class="collapse mt-2 <%= dniQuery ? 'show' : '' %>" id="formAsignar">
+          <form method="get" action="/celulares/<%= item.id %>" class="d-flex gap-2 mb-3">
+            <input type="text" name="dni" class="form-control form-control-sm" placeholder="Buscar empleado por DNI..." value="<%= dniQuery %>">
+            <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">Buscar</button>
+          </form>
+
           <form action="/celulares/<%= item.id %>/asignar" method="post">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <div class="mb-2">
-              <label class="form-label small">Usuario *</label>
-              <input type="text" name="holder_name" class="form-control form-control-sm" required>
+              <label class="form-label small">DNI *</label>
+              <input type="text" name="dni" class="form-control form-control-sm" required
+                value="<%= foundEmployee ? foundEmployee.dni : dniQuery %>">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Nombres *</label>
+              <input type="text" name="first_name" class="form-control form-control-sm" required
+                value="<%= foundEmployee ? foundEmployee.first_name : '' %>">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Apellidos *</label>
+              <input type="text" name="last_name" class="form-control form-control-sm" required
+                value="<%= foundEmployee ? foundEmployee.last_name : '' %>">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Área *</label>
+              <% const assignArea = foundEmployee ? (foundEmployee.area || '') : ''; %>
+              <% const assignAreaEsOtro = assignArea && !areas.includes(assignArea); %>
+              <select name="area" id="assign_area_select" class="form-select form-select-sm" required
+                      onchange="document.getElementById('assign_area_otro').hidden = this.value !== '__otro__';">
+                <option value="">— Seleccionar —</option>
+                <% areas.forEach(function(a) { %>
+                  <option value="<%= a %>" <%= assignArea === a ? 'selected' : '' %>><%= a %></option>
+                <% }); %>
+                <option value="<%= assignAreaEsOtro ? assignArea : '__otro__' %>" <%= assignAreaEsOtro ? 'selected' : '' %>>
+                  <%= assignAreaEsOtro ? assignArea : 'Otro (especificar)...' %>
+                </option>
+              </select>
+              <input type="text" id="assign_area_otro" class="form-control form-control-sm mt-1" placeholder="Especificar área..." <%= assignAreaEsOtro ? '' : 'hidden' %>
+                value="<%= assignAreaEsOtro ? assignArea : '' %>"
+                oninput="var o=document.querySelector('#assign_area_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Sede</label>
+              <% const assignSede = foundEmployee ? (foundEmployee.sede || '') : ''; %>
+              <% const assignSedeEsOtro = assignSede && !sedes.includes(assignSede); %>
+              <select name="sede" id="assign_sede_select" class="form-select form-select-sm"
+                      onchange="document.getElementById('assign_sede_otro').hidden = this.value !== '__otro__';">
+                <option value="">— Seleccionar —</option>
+                <% sedes.forEach(function(s) { %>
+                  <option value="<%= s %>" <%= assignSede === s ? 'selected' : '' %>><%= s %></option>
+                <% }); %>
+                <option value="<%= assignSedeEsOtro ? assignSede : '__otro__' %>" <%= assignSedeEsOtro ? 'selected' : '' %>>
+                  <%= assignSedeEsOtro ? assignSede : 'Otro (especificar)...' %>
+                </option>
+              </select>
+              <input type="text" id="assign_sede_otro" class="form-control form-control-sm mt-1" placeholder="Especificar sede..." <%= assignSedeEsOtro ? '' : 'hidden' %>
+                value="<%= assignSedeEsOtro ? assignSede : '' %>"
+                oninput="var o=document.querySelector('#assign_sede_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
             </div>
             <div class="mb-2">
               <label class="form-label small">Cargo</label>
-              <input type="text" name="cargo" class="form-control form-control-sm">
+              <input type="text" name="cargo" class="form-control form-control-sm" value="<%= foundEmployee ? (foundEmployee.cargo || '') : '' %>">
             </div>
             <div class="mb-2">
               <label class="form-label small">Turno</label>

@@ -5,6 +5,7 @@ const { verifyCsrfToken } = require('../middleware/csrf');
 const importService = require('../services/importService');
 const { importUploader } = require('../services/uploadService');
 const catalogService = require('../services/catalogService');
+const employeeService = require('../services/employeeService');
 
 const router = express.Router();
 // verifyCsrfToken NO va aca a nivel de router: /importar es multipart y
@@ -168,25 +169,36 @@ router.post('/:id/eliminar', canWrite, verifyCsrfToken, async (req, res, next) =
   }
 });
 
-// Asigna (o reasigna, si ya habia una asignacion activa) el celular a una persona.
+// Asigna (o reasigna, si ya habia una asignacion activa) el celular a una
+// persona. La persona se identifica por DNI: si ya existe en el
+// directorio de empleados se actualiza (por si cambio de area/sede/cargo),
+// si no existe se crea. El area/sede del equipo se actualizan tambien,
+// para reflejar donde esta realmente hoy.
 router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
-    const { holder_name, cargo, turno, assigned_date, observacion } = req.body;
-    if (!holder_name) {
-      req.flash('error', 'El nombre del usuario es obligatorio.');
+    const { dni, first_name, last_name, area, sede, cargo, turno, assigned_date, observacion } = req.body;
+    if (!dni || !first_name || !last_name || !area) {
+      req.flash('error', 'DNI, nombres, apellidos y área son obligatorios.');
       return res.redirect(`/celulares/${req.params.id}`);
     }
+    const employeeId = await employeeService.upsert(
+      { dni, first_name, last_name, area, sede, cargo },
+      req.session.user.id
+    );
+    const holderName = `${first_name} ${last_name}`;
+
     await pool.query(
       'UPDATE mobile_device_assignments SET returned_date = CURDATE() WHERE device_id = ? AND returned_date IS NULL',
       [req.params.id]
     );
     await pool.query(
       `INSERT INTO mobile_device_assignments
-        (device_id, holder_name, cargo, turno, assigned_date, observacion, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (device_id, employee_id, holder_name, cargo, turno, assigned_date, observacion, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.params.id,
-        holder_name,
+        employeeId,
+        holderName,
         cargo || null,
         turno || null,
         assigned_date || null,
@@ -194,7 +206,11 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
         req.session.user.id,
       ]
     );
-    await pool.query('UPDATE mobile_devices SET status = "asignado" WHERE id = ?', [req.params.id]);
+    await pool.query('UPDATE mobile_devices SET status = "asignado", area = ?, sede = ? WHERE id = ?', [
+      area,
+      sede || null,
+      req.params.id,
+    ]);
     req.flash('success', 'Celular asignado correctamente.');
     res.redirect(`/celulares/${req.params.id}`);
   } catch (err) {
@@ -385,7 +401,10 @@ router.get('/:id', async (req, res, next) => {
       return res.redirect('/celulares');
     }
     const [assignments] = await pool.query(
-      'SELECT * FROM mobile_device_assignments WHERE device_id = ? ORDER BY created_at DESC',
+      `SELECT a.*, e.dni
+       FROM mobile_device_assignments a
+       LEFT JOIN employees e ON e.id = a.employee_id
+       WHERE a.device_id = ? ORDER BY a.created_at DESC`,
       [req.params.id]
     );
     const currentAssignment = assignments.find((a) => !a.returned_date) || null;
@@ -394,12 +413,29 @@ router.get('/:id', async (req, res, next) => {
       'SELECT * FROM attachments WHERE entity_type = "mobile_device" AND entity_id = ? ORDER BY uploaded_at DESC',
       [req.params.id]
     );
+    const catalogs = await loadCatalogOptions();
+
+    // Busqueda de empleado por DNI (recarga de pagina con ?dni=), para
+    // precargar el formulario de asignar/reasignar sin retipear.
+    let foundEmployee = null;
+    const dniQuery = (req.query.dni || '').trim();
+    if (dniQuery) {
+      foundEmployee = await employeeService.findByDni(dniQuery);
+      if (!foundEmployee) {
+        req.flash('error', `No se encontró ningún empleado con DNI "${dniQuery}". Completa los datos para crearlo.`);
+      }
+    }
+
     res.render('mobileDevices/detail', {
       title: `Celular ${rows[0].imei}`,
       item: rows[0],
       currentAssignment,
       history,
       attachments,
+      areas: catalogs.areas,
+      sedes: catalogs.sedes,
+      dniQuery,
+      foundEmployee,
     });
   } catch (err) {
     next(err);

@@ -198,13 +198,33 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   INDEX idx_mobile_device_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Directorio de empleados (DNI, nombres, apellidos, area/sede/cargo).
+-- Reutilizado al asignar celulares (y a futuro otros activos) para no
+-- retipear y estandarizar el dato de la persona.
+CREATE TABLE IF NOT EXISTS employees (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  dni VARCHAR(20) NOT NULL,
+  first_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  area VARCHAR(100),
+  sede VARCHAR(100),
+  cargo VARCHAR(150),
+  notes TEXT,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_employee_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY uniq_employee_dni (dni)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Historial de asignaciones de celulares. A lo sumo una fila con
 -- returned_date NULL por device_id (la asignacion activa); esa regla se
 -- aplica en la app, no como constraint de BD.
 CREATE TABLE IF NOT EXISTS mobile_device_assignments (
   id INT AUTO_INCREMENT PRIMARY KEY,
   device_id INT NOT NULL,
-  holder_name VARCHAR(150) NOT NULL,
+  employee_id INT NULL,                         -- vinculo al directorio de empleados
+  holder_name VARCHAR(150) NOT NULL,            -- snapshot inmutable (nombres+apellidos al momento de asignar)
   cargo VARCHAR(150),
   turno VARCHAR(50),
   assigned_date DATE,
@@ -213,6 +233,7 @@ CREATE TABLE IF NOT EXISTS mobile_device_assignments (
   created_by INT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_assignment_device FOREIGN KEY (device_id) REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  CONSTRAINT fk_assignment_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
   CONSTRAINT fk_assignment_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_assignment_device (device_id, returned_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
