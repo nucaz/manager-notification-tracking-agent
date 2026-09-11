@@ -101,6 +101,92 @@ async function searchComputers(query, limit = 20) {
   });
 }
 
+// Busca/lista equipos (Computer) en GLPI con paginacion real, usando el
+// header Content-Range ("inicio-fin/total") para saber el total sin traer
+// todo. Usado por /glpi/inventario.
+async function listComputers({ query, start = 0, limit = 20 } = {}) {
+  return withSession(async (http, cfg, sessionToken) => {
+    const res = await http.get('/search/Computer', {
+      headers: { 'App-Token': cfg.appToken, 'Session-Token': sessionToken },
+      params: {
+        criteria: query
+          ? [{ field: 1, searchtype: 'contains', value: query }]
+          : undefined,
+        range: `${start}-${start + limit - 1}`,
+        forcedisplay: [2, 1, 80], // id, name, entity
+      },
+    });
+    if (res.status !== 200 && res.status !== 206) {
+      throw new Error(`Error listando equipos en GLPI (HTTP ${res.status})`);
+    }
+    const contentRange = res.headers['content-range'] || '';
+    const total = parseInt(contentRange.split('/')[1], 10);
+    return {
+      items: res.data.data || [],
+      total: Number.isNaN(total) ? (res.data.data || []).length : total,
+    };
+  });
+}
+
+// Datos generales de un equipo (nombre, entidad, SO, serie, etc.), con
+// expand_dropdowns para que los campos tipo dropdown vengan como texto
+// legible en vez de un id crudo.
+async function getComputerDetail(id) {
+  return withSession(async (http, cfg, sessionToken) => {
+    const res = await http.get(`/Computer/${id}`, {
+      headers: { 'App-Token': cfg.appToken, 'Session-Token': sessionToken },
+      params: { expand_dropdowns: true },
+    });
+    if (res.status !== 200) {
+      throw new Error(`Error obteniendo el equipo en GLPI (HTTP ${res.status})`);
+    }
+    return res.data;
+  });
+}
+
+// Software instalado en un equipo. GLPI modela esto como
+// Software -> SoftwareVersion -> Item_SoftwareVersion (la relacion con el
+// equipo). El conteo es el largo de esa lista; el nombre de cada software
+// se resuelve por separado (SoftwareVersion.name es solo la version, el
+// nombre del producto vive en softwares_id, que expand_dropdowns convierte
+// a texto). Si una fila puntual no se puede resolver, se omite en vez de
+// romper el listado completo.
+async function getComputerSoftware(id, { max = 100 } = {}) {
+  return withSession(async (http, cfg, sessionToken) => {
+    const headers = { 'App-Token': cfg.appToken, 'Session-Token': sessionToken };
+    const res = await http.get(`/Computer/${id}/Item_SoftwareVersion`, { headers });
+    if (res.status !== 200 && res.status !== 206) {
+      throw new Error(`Error obteniendo el software instalado (HTTP ${res.status})`);
+    }
+    const rows = Array.isArray(res.data) ? res.data : [];
+    const total = rows.length;
+    const truncated = total > max;
+    const toResolve = rows.slice(0, max);
+
+    const resolved = await Promise.all(
+      toResolve.map(async (row) => {
+        const versionId = row.softwareversions_id;
+        if (!versionId) return null;
+        try {
+          const versionRes = await http.get(`/SoftwareVersion/${versionId}`, {
+            headers,
+            params: { expand_dropdowns: true },
+          });
+          if (versionRes.status !== 200) return null;
+          return {
+            name: versionRes.data.softwares_id || versionRes.data.name || 'Software desconocido',
+            version: versionRes.data.name || '',
+          };
+        } catch (_) {
+          return null;
+        }
+      })
+    );
+
+    return { items: resolved.filter(Boolean), total, truncated };
+  });
+}
+
 // Lista entidades GLPI (para asociar licencias/dominios a una entidad/sucursal)
 async function listEntities(limit = 100) {
   return withSession(async (http, cfg, sessionToken) => {
@@ -167,6 +253,9 @@ module.exports = {
   getConfig,
   testConnection,
   searchComputers,
+  listComputers,
+  getComputerDetail,
+  getComputerSoftware,
   listEntities,
   createContract,
   createSoftwareLicense,

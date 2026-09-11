@@ -1,0 +1,61 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Inventario GLPI</h2>
+</div>
+
+<% if (connectionError) { %>
+  <div class="alert alert-danger">
+    No se pudo conectar con GLPI: <%= connectionError %>
+    <div class="small mt-1">Revisa la configuración de GLPI en <a href="/configuracion">Configuración</a>.</div>
+  </div>
+<% } else { %>
+  <form class="row g-2 mb-3" method="get">
+    <div class="col-auto">
+      <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar equipo por nombre...">
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-outline-secondary" type="submit">Buscar</button>
+    </div>
+  </form>
+
+  <div class="card p-3">
+    <p class="text-muted small">Total de equipos en GLPI: <strong><%= total %></strong></p>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr><th>ID</th><th>Nombre</th><th>Entidad</th><th></th></tr></thead>
+        <tbody>
+          <% items.forEach(function(c) { %>
+            <tr>
+              <td><%= c['2'] %></td>
+              <td><%= c['1'] %></td>
+              <td><%= c['80'] || '—' %></td>
+              <td class="text-end">
+                <a href="/glpi/inventario/<%= c['2'] %>" class="btn btn-sm btn-outline-secondary">Ver software</a>
+              </td>
+            </tr>
+          <% }); %>
+          <% if (items.length === 0) { %>
+            <tr><td colspan="4" class="text-center text-muted py-4">No se encontraron equipos.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <% if (totalPages > 1) { %>
+      <nav>
+        <ul class="pagination pagination-sm mb-0">
+          <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
+            <a class="page-link" href="?q=<%= encodeURIComponent(q) %>&page=<%= page - 1 %>">Anterior</a>
+          </li>
+          <li class="page-item disabled"><span class="page-link">Página <%= page %> de <%= totalPages %></span></li>
+          <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
+            <a class="page-link" href="?q=<%= encodeURIComponent(q) %>&page=<%= page + 1 %>">Siguiente</a>
+          </li>
+        </ul>
+      </nav>
+    <% } %>
+  </div>
+<% } %>
+
+<%- include('../partials/foot') %>

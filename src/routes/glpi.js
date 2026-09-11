@@ -37,6 +37,63 @@ router.get('/api/entidades', async (req, res) => {
   }
 });
 
+// Inventario de GLPI (solo lectura): listado/busqueda de equipos y su
+// software instalado. No requiere canWrite - es de consulta, visible para
+// los 3 roles, igual que Reportes.
+router.get('/inventario', async (req, res, next) => {
+  try {
+    const q = req.query.q || '';
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = 20;
+    const start = (page - 1) * limit;
+
+    const { items, total } = await glpiClient.listComputers({ query: q, start, limit });
+    res.render('glpi/inventario', {
+      title: 'Inventario GLPI',
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+      q,
+      connectionError: null,
+    });
+  } catch (err) {
+    res.render('glpi/inventario', {
+      title: 'Inventario GLPI',
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+      q: req.query.q || '',
+      connectionError: err.message,
+    });
+  }
+});
+
+router.get('/inventario/:id', async (req, res, next) => {
+  try {
+    const [computer, software] = await Promise.all([
+      glpiClient.getComputerDetail(req.params.id),
+      glpiClient.getComputerSoftware(req.params.id),
+    ]);
+    res.render('glpi/computer', {
+      title: computer.name || `Equipo #${req.params.id}`,
+      computer,
+      software,
+      connectionError: null,
+    });
+  } catch (err) {
+    res.render('glpi/computer', {
+      title: 'Equipo GLPI',
+      computer: null,
+      software: null,
+      connectionError: err.message,
+    });
+  }
+});
+
 const ENTITY_TABLES = {
   license: { table: 'software_licenses' },
   domain: { table: 'domains' },

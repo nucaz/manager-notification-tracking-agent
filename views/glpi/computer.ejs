@@ -1,0 +1,53 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0"><%= title %></h2>
+  <a href="/glpi/inventario" class="btn btn-outline-secondary">Volver al inventario</a>
+</div>
+
+<% if (connectionError) { %>
+  <div class="alert alert-danger">
+    No se pudo obtener la información desde GLPI: <%= connectionError %>
+  </div>
+<% } else { %>
+  <div class="row g-3">
+    <div class="col-md-5">
+      <div class="card p-3">
+        <h5>Datos del equipo</h5>
+        <table class="table table-sm">
+          <tr><th style="width:160px;">Nombre</th><td><%= computer.name || '—' %></td></tr>
+          <tr><th>Entidad</th><td><%= computer.entities_id || '—' %></td></tr>
+          <tr><th>Sistema operativo</th><td><%= computer.operatingsystems_id || '—' %></td></tr>
+          <tr><th>N° de serie</th><td><%= computer.serial || '—' %></td></tr>
+          <tr><th>Modelo</th><td><%= computer.computermodels_id || '—' %></td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="col-md-7">
+      <div class="card p-3">
+        <h5>
+          Software instalado
+          <span class="badge bg-primary"><%= software.total %></span>
+        </h5>
+        <% if (software.truncated) { %>
+          <p class="text-muted small">Mostrando los primeros <%= software.items.length %> de <%= software.total %>.</p>
+        <% } %>
+        <% if (software.items.length === 0) { %>
+          <p class="text-muted mb-0">No se encontró software instalado registrado en GLPI para este equipo.</p>
+        <% } else { %>
+          <table class="table table-sm">
+            <thead><tr><th>Software</th><th>Versión</th></tr></thead>
+            <tbody>
+              <% software.items.forEach(function(s) { %>
+                <tr><td><%= s.name %></td><td><%= s.version || '—' %></td></tr>
+              <% }); %>
+            </tbody>
+          </table>
+        <% } %>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<%- include('../partials/foot') %>

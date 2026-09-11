@@ -34,9 +34,11 @@ Aplicación web para el seguimiento de:
 - **Recordatorios automáticos por correo** antes de cada vencimiento
 - **Reportes y consultas** con exportación a CSV
 - **Integración con GLPI vía API REST**: prueba de conexión, búsqueda de
-  equipos/entidades para vincular registros, y sincronización de licencias,
+  equipos/entidades para vincular registros, sincronización de licencias,
   dominios, contratos ISP, servidores/activos y certificados como objetos
-  "Contract" en GLPI
+  "Contract" en GLPI, e **Inventario GLPI** (solo lectura): listado/
+  búsqueda de computadoras registradas en GLPI y el software instalado en
+  cada una (nombre, versión y cantidad) — ver nota en la sección 8
 - **Tipo de cambio USD → PEN**: se muestra en el panel principal y junto a
   cada monto en dólares, usando la API pública y gratuita del BCRP (Banco
   Central de Reserva del Perú) — sin API key
@@ -220,6 +222,18 @@ La aplicación exige **2FA obligatorio** (TOTP) para los tres roles
   formulario especializado para licencias, dominios, contratos ISP,
   adjuntos y diagramas de red — con un puente hacia GLPI vía su API REST
   documentada en https://github.com/glpi-project/glpi/blob/main/apirest.md
+- **Inventario GLPI** (menú "Inventario GLPI", los 3 roles pueden verlo,
+  es de solo lectura): busca/lista las computadoras registradas en GLPI y,
+  al entrar al detalle de una, muestra su software instalado (nombre,
+  versión y cantidad total). No modifica nada en GLPI ni en esta app —
+  solo consulta. Si un equipo tiene muchísimo software instalado, se
+  muestran como máximo los primeros 100 (se indica si quedó algo afuera).
+  ⚠️ Esta funcionalidad se construyó siguiendo al pie de la letra la
+  documentación oficial de la API de GLPI, pero **no se pudo probar contra
+  un servidor GLPI real** (no había uno accesible desde el entorno donde
+  se desarrolló — mismo caso que `geminiClient.js`, ver sección 5). Si al
+  usarla contra tu GLPI real algo no calza (por ejemplo, el nombre de un
+  campo cambió entre versiones de GLPI), avísame para ajustarlo.
 
 ## 9. Copias de seguridad
 

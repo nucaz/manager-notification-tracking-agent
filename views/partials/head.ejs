@@ -27,6 +27,7 @@
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/celulares') ? 'active' : '' %>" href="/celulares">Celulares</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/empleados') ? 'active' : '' %>" href="/empleados">Empleados</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/red') ? 'active' : '' %>" href="/red">Red</a></li>
+        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/glpi/inventario') ? 'active' : '' %>" href="/glpi/inventario">Inventario GLPI</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/reportes') ? 'active' : '' %>" href="/reportes">Reportes</a></li>
         <% if (currentUser.role === 'admin') { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/usuarios') ? 'active' : '' %>" href="/usuarios">Usuarios</a></li>
