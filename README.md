@@ -125,15 +125,30 @@ npm run send-reminders:dry-run     # solo muestra qué se enviaría, sin enviar
 Una vez dentro de la app (como usuario `admin`), ve a **Configuración** para
 completar (sin tocar archivos ni reiniciar contenedores):
 
-- **Integración GLPI**: URL base de la API REST (ej.
-  `https://svrmonitor-dp.ad.depilzone.com.pe/apirest.php`), App-Token y
-  User-Token. El botón "Probar ahora" valida la conexión.
-  - El App-Token se genera en GLPI: *Configuración → General → pestaña API*
-    (habilitar la API REST y generar/copiar el App-Token).
-  - El User-Token se genera desde el perfil del usuario de servicio en GLPI:
-    *Preferencias → pestaña "Claves API personales"*.
-  - Ese usuario de GLPI debe tener perfil con permisos sobre `Contract`,
-    `Computer` y `Entity` en las entidades donde quieras buscar/crear datos.
+- **Integración GLPI**: URL base de la API REST **"Legacy"** de GLPI —
+  copia el valor exacto que muestra tu propio servidor en
+  *Configuración → General → pestaña API → sección "Legacy API" → "URL of
+  the API"* (no la sección "API" nueva de arriba, esa es la v2.x y no la
+  soporta esta app). La ruta varía según la versión de GLPI: en instalaciones
+  viejas suele ser `/apirest.php`, en GLPI 10/11 (con la API nueva ya
+  habilitada en paralelo) suele ser `/api.php/v1` — agrégale tu dominio real
+  delante, ej. `https://tu-servidor.tudominio.com/api.php/v1`.
+  - El **App-Token** viene de un "API client" (en esa misma pantalla, más
+    abajo, "API clients (Legacy API)") — si usas uno ya existente, revisa
+    que no tenga restringido el rango de IP a `localhost` únicamente, o
+    las llamadas desde donde corra esta app van a ser rechazadas; si hace
+    falta, crea un cliente API nuevo sin esa restricción (o con el rango
+    de IP correcto).
+  - En esa misma pantalla, confirma que **"Enable login with external
+    token"** esté activado (esta app se autentica con User-Token, no con
+    usuario/contraseña).
+  - El **User-Token** se genera desde el perfil del usuario de servicio en
+    GLPI: *Preferencias → pestaña "Claves API personales"*.
+  - Ese usuario de GLPI debe tener perfil con permisos de **lectura**
+    sobre `Computer`, `Software`, `SoftwareVersion` y `Entity` (para el
+    Inventario GLPI), y de **escritura** sobre `Contract` (para
+    "Sincronizar con GLPI").
+  - El botón "Probar ahora" valida la conexión.
 - **SMTP**: host, puerto, usuario/contraseña y remitente. Botones para
   "Verificar conexión" y "Enviar correo de prueba".
 - **Recordatorios**: umbrales de días antes del vencimiento (por defecto
