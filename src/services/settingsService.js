@@ -20,6 +20,10 @@ const DEFAULTS = {
   ai_provider: 'gemini',
   gemini_api_key: '',
   gemini_model: 'gemini-2.5-flash',
+  whatsapp_phone_number_id: '',
+  whatsapp_access_token: '',
+  whatsapp_verify_token: '',
+  whatsapp_app_secret: '',
 };
 
 async function getAll() {

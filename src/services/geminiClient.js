@@ -149,6 +149,42 @@ async function extractInvoiceData(buffer, mimeType) {
   return normalize(parsed);
 }
 
+// Llamada de texto generica (sin adjuntos): envia un prompt y devuelve el
+// texto de la respuesta. Usada por el agente de WhatsApp para interpretar
+// preguntas - reutiliza extractJson() para parsear la respuesta cuando se
+// le pide JSON estructurado, igual que ya se hace con las facturas.
+async function askText(prompt) {
+  const { apiKey, model } = await getConfig();
+  if (!apiKey) {
+    throw new Error('La API key de Gemini no esta configurada. Ve a Configuracion y agrega tu API key.');
+  }
+  const url = `${API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  let response;
+  try {
+    response = await axios.post(
+      url,
+      { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0 } },
+      { timeout: 30000, validateStatus: () => true }
+    );
+  } catch (err) {
+    throw new Error(`No se pudo contactar a la API de Gemini: ${err.message}`);
+  }
+  if (response.status !== 200) {
+    const apiMsg =
+      (response.data && response.data.error && response.data.error.message) ||
+      JSON.stringify(response.data);
+    throw new Error(`Gemini respondió con error (HTTP ${response.status}): ${apiMsg}`);
+  }
+  const candidate = response.data && response.data.candidates && response.data.candidates[0];
+  const text =
+    candidate && candidate.content && candidate.content.parts &&
+    candidate.content.parts.map((p) => p.text || '').join('');
+  if (!text) {
+    throw new Error('Gemini no devolvió texto interpretable.');
+  }
+  return text;
+}
+
 // Llamada minima para verificar que la API key funciona, usada desde Configuracion
 async function testConnection() {
   const { apiKey, model } = await getConfig();
@@ -170,4 +206,4 @@ async function testConnection() {
   return true;
 }
 
-module.exports = { extractInvoiceData, testConnection, EXTRACTION_FIELDS };
+module.exports = { extractInvoiceData, testConnection, askText, extractJson, EXTRACTION_FIELDS };

@@ -24,21 +24,24 @@ router.get('/nuevo', (req, res) => {
 
 router.post('/nuevo', async (req, res, next) => {
   try {
-    const { full_name, email, password, role } = req.body;
+    const { full_name, email, password, role, whatsapp_number } = req.body;
     if (!full_name || !email || !password) {
       req.flash('error', 'Nombre, correo y contraseña son obligatorios.');
       return res.redirect('/usuarios/nuevo');
     }
     const hash = await bcrypt.hash(password, 12);
     await pool.query(
-      'INSERT INTO users (full_name, email, password_hash, role, active) VALUES (?, ?, ?, ?, 1)',
-      [full_name, email, hash, role || 'lector']
+      'INSERT INTO users (full_name, email, password_hash, role, whatsapp_number, active) VALUES (?, ?, ?, ?, ?, 1)',
+      [full_name, email, hash, role || 'lector', whatsapp_number || null]
     );
     req.flash('success', 'Usuario creado correctamente.');
     res.redirect('/usuarios');
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      req.flash('error', 'Ya existe un usuario con ese correo.');
+      const msg = /whatsapp_number/.test(err.sqlMessage || '')
+        ? 'Ese número de WhatsApp ya está vinculado a otro usuario.'
+        : 'Ya existe un usuario con ese correo.';
+      req.flash('error', msg);
       return res.redirect('/usuarios/nuevo');
     }
     next(err);
@@ -60,22 +63,29 @@ router.get('/:id/editar', async (req, res, next) => {
 
 router.post('/:id/editar', async (req, res, next) => {
   try {
-    const { full_name, email, password, role, active } = req.body;
+    const { full_name, email, password, role, active, whatsapp_number } = req.body;
     if (password) {
       const hash = await bcrypt.hash(password, 12);
       await pool.query(
-        'UPDATE users SET full_name = ?, email = ?, password_hash = ?, role = ?, active = ? WHERE id = ?',
-        [full_name, email, hash, role, active ? 1 : 0, req.params.id]
+        'UPDATE users SET full_name = ?, email = ?, password_hash = ?, role = ?, whatsapp_number = ?, active = ? WHERE id = ?',
+        [full_name, email, hash, role, whatsapp_number || null, active ? 1 : 0, req.params.id]
       );
     } else {
       await pool.query(
-        'UPDATE users SET full_name = ?, email = ?, role = ?, active = ? WHERE id = ?',
-        [full_name, email, role, active ? 1 : 0, req.params.id]
+        'UPDATE users SET full_name = ?, email = ?, role = ?, whatsapp_number = ?, active = ? WHERE id = ?',
+        [full_name, email, role, whatsapp_number || null, active ? 1 : 0, req.params.id]
       );
     }
     req.flash('success', 'Usuario actualizado correctamente.');
     res.redirect('/usuarios');
   } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      const msg = /whatsapp_number/.test(err.sqlMessage || '')
+        ? 'Ese número de WhatsApp ya está vinculado a otro usuario.'
+        : 'Ya existe otro usuario con ese correo.';
+      req.flash('error', msg);
+      return res.redirect(`/usuarios/${req.params.id}/editar`);
+    }
     next(err);
   }
 });

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   otp_secret VARCHAR(64) NULL,                  -- secreto TOTP (base32), NULL hasta enrolar
   otp_enabled TINYINT(1) NOT NULL DEFAULT 0,     -- 1 una vez confirmado el enrolamiento 2FA
   otp_confirmed_at DATETIME NULL,
+  whatsapp_number VARCHAR(20) NULL UNIQUE,       -- formato E.164 sin "+", ej: 51987654321
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -268,6 +269,22 @@ CREATE TABLE IF NOT EXISTS catalog_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
+-- Bitacora del agente de WhatsApp: quien pregunto que y que se le
+-- respondio. Es un canal publico (webhook de internet), asi que queda
+-- este registro por trazabilidad/auditoria.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS whatsapp_message_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  phone_number VARCHAR(20) NOT NULL,
+  user_id INT NULL,                             -- NULL si el numero no estaba autorizado
+  direction ENUM('entrante','saliente') NOT NULL,
+  message_text TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_whatsapp_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_whatsapp_log_phone (phone_number)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
 -- Adjuntos: contratos, adendas, facturas — vinculados de forma polimórfica
 -- a licencias, dominios, contratos ISP, servidores, certificados o celulares
 -- ---------------------------------------------------------------------
@@ -364,7 +381,11 @@ INSERT INTO settings (`key`, `value`) VALUES
   ('app_name', 'Gestión de Licencias, Dominios y Contratos'),
   ('ai_provider', 'gemini'),
   ('gemini_api_key', ''),
-  ('gemini_model', 'gemini-2.5-flash')
+  ('gemini_model', 'gemini-2.5-flash'),
+  ('whatsapp_phone_number_id', ''),
+  ('whatsapp_access_token', ''),
+  ('whatsapp_verify_token', ''),
+  ('whatsapp_app_secret', '')
 ON DUPLICATE KEY UPDATE `key`=`key`;
 
 -- ---------------------------------------------------------------------

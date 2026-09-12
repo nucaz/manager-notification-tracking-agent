@@ -88,6 +88,32 @@
       </div>
 
       <div class="card p-3 mb-3">
+        <h5>Agente de WhatsApp (Meta Cloud API)</h5>
+        <div class="mb-2">
+          <label class="form-label">ID de número de teléfono</label>
+          <input type="text" name="whatsapp_phone_number_id" class="form-control" value="<%= settings.whatsapp_phone_number_id %>">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Token de acceso</label>
+          <input type="password" name="whatsapp_access_token" class="form-control" value="<%= settings.whatsapp_access_token %>">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Token de verificación del webhook</label>
+          <input type="text" name="whatsapp_verify_token" class="form-control" value="<%= settings.whatsapp_verify_token %>" placeholder="Inventa un texto cualquiera">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">App Secret</label>
+          <input type="password" name="whatsapp_app_secret" class="form-control" value="<%= settings.whatsapp_app_secret %>">
+        </div>
+        <div class="form-text">
+          En Meta for Developers, configura la URL del webhook como
+          <code>https://tu-dominio/webhook/whatsapp</code> con el "Token de verificación" de arriba.
+          Solo los usuarios con número de WhatsApp vinculado (ver Usuarios) y rol admin/editor pueden
+          consultar al agente.
+        </div>
+      </div>
+
+      <div class="card p-3 mb-3">
         <h5>Recordatorios automáticos</h5>
         <div class="mb-2">
           <label class="form-label">Umbrales de días antes del vencimiento</label>
@@ -113,10 +139,15 @@
       <h6>Probar conexión con GLPI</h6>
       <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
     </form>
-    <form action="/configuracion/probar-gemini" method="post" class="card p-3">
+    <form action="/configuracion/probar-gemini" method="post" class="card p-3 mb-2">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <h6>Verificar API key de Gemini</h6>
       <button type="submit" class="btn btn-outline-secondary btn-sm">Verificar ahora</button>
+    </form>
+    <form action="/configuracion/probar-whatsapp" method="post" class="card p-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h6>Probar conexión con WhatsApp</h6>
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
     </form>
   </div>
   <div class="col-md-6">

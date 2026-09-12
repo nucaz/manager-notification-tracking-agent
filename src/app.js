@@ -22,12 +22,23 @@ const settingsRoutes = require('./routes/settings');
 const catalogRoutes = require('./routes/catalogs');
 const reportRoutes = require('./routes/reports');
 const usersRoutes = require('./routes/users');
+const whatsappWebhookRoutes = require('./routes/whatsappWebhook');
 
 const app = express();
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
 app.set('trust proxy', 1);
+
+// Webhook de WhatsApp: montado ANTES de los parsers globales, con su
+// propio parser que ademas guarda el body crudo (req.rawBody) - hace
+// falta sin modificar para verificar la firma HMAC de Meta. No lleva
+// sesion/CSRF: lo llama Meta, no un usuario logueado.
+app.use(
+  '/webhook/whatsapp',
+  express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }),
+  whatsappWebhookRoutes
+);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());

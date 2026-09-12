@@ -4,6 +4,7 @@ const { verifyCsrfToken } = require('../middleware/csrf');
 const settingsService = require('../services/settingsService');
 const mailer = require('../services/mailer');
 const geminiClient = require('../services/geminiClient');
+const whatsappClient = require('../services/whatsappClient');
 
 const router = express.Router();
 router.use(requireAuth, verifyCsrfToken);
@@ -25,6 +26,7 @@ router.post('/', isAdmin, async (req, res, next) => {
       'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from',
       'reminder_thresholds_days', 'reminder_recipients', 'reminder_send_hour',
       'ai_provider', 'gemini_api_key', 'gemini_model',
+      'whatsapp_phone_number_id', 'whatsapp_access_token', 'whatsapp_verify_token', 'whatsapp_app_secret',
     ];
     const pairs = {};
     for (const key of keys) {
@@ -71,6 +73,16 @@ router.post('/probar-gemini', isAdmin, async (req, res) => {
     req.flash('success', 'Conexión con Gemini exitosa. La API key funciona.');
   } catch (err) {
     req.flash('error', `No se pudo conectar con Gemini: ${err.message}`);
+  }
+  res.redirect('/configuracion');
+});
+
+router.post('/probar-whatsapp', isAdmin, async (req, res) => {
+  try {
+    const info = await whatsappClient.testConnection();
+    req.flash('success', `Conexión con WhatsApp exitosa (${info.verified_name || info.display_phone_number || 'OK'}).`);
+  } catch (err) {
+    req.flash('error', `No se pudo conectar con WhatsApp: ${err.message}`);
   }
   res.redirect('/configuracion');
 });

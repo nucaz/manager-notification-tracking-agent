@@ -45,6 +45,10 @@ Aplicación web para el seguimiento de:
 - **Importación masiva (CSV/Excel)**: carga por lote de licencias, dominios,
   contratos ISP, servidores, certificados y celulares ya existentes, con
   plantilla descargable y reporte de filas con error
+- **Agente conversacional por WhatsApp**: consulta vencimientos, celulares
+  (por IMEI) y empleados directamente por WhatsApp usando la API oficial
+  de Meta, disponible solo para números autorizados (admin/editor) — ver
+  sección 9
 
 Construida en Node.js + Express + EJS + MySQL/MariaDB, pensada para
 desplegarse con Docker junto a tu stack GLPI + Zabbix existente.
@@ -250,14 +254,76 @@ La aplicación exige **2FA obligatorio** (TOTP) para los tres roles
   usarla contra tu GLPI real algo no calza (por ejemplo, el nombre de un
   campo cambió entre versiones de GLPI), avísame para ajustarlo.
 
-## 9. Copias de seguridad
+## 9. Agente conversacional por WhatsApp (Meta Cloud API)
+
+Permite consultar la app por WhatsApp (vencimientos, celulares por IMEI,
+empleados, resumen de celulares por área) mediante un agente con IA que
+interpreta la pregunta y ejecuta una herramienta fija contra la base de
+datos — la IA **nunca genera SQL libre**, solo elige entre un catálogo
+cerrado de consultas seguras y sus argumentos.
+
+**Seguridad del diseño** (decisiones explícitas del proyecto):
+
+- Solo responde a **números de teléfono autorizados**: deben estar
+  vinculados a un usuario existente con rol `admin` o `editor` y activo
+  (campo "Número de WhatsApp" en Usuarios → Nuevo/Editar, formato E.164
+  sin `+`, ej. `51987654321`). Cualquier otro número recibe un mensaje
+  genérico de "no disponible", sin confirmar ni negar nada sobre el bot.
+- Las respuestas pueden incluir **datos personales** (por ejemplo, el DNI
+  de la persona que tiene asignado un celular) porque solo llegan a
+  usuarios ya autorizados dentro de la organización — no lo trates como
+  un canal público.
+- Se usa **exclusivamente la API oficial de Meta** (WhatsApp Cloud API).
+  Se descartó a propósito cualquier librería no oficial (whatsapp-web.js,
+  Baileys, etc.) porque viola los términos de servicio de WhatsApp y
+  arriesga el bloqueo del número.
+- Toda conversación (entrante y saliente) queda registrada en la tabla
+  `whatsapp_message_log` para auditoría.
+
+**Qué puede responder hoy**: cantidad y listado de vencimientos próximos
+(licencias, dominios, contratos ISP, servidores, certificados), búsqueda
+de un celular por IMEI (con su asignación actual), búsqueda de un
+empleado por DNI o nombre, y el resumen de celulares por área.
+
+**Configuración** (menú Configuración → tarjeta "Agente de WhatsApp"):
+
+1. Crea una cuenta de **Meta for Developers** y una app de tipo
+   "Business", agrega el producto **WhatsApp**.
+2. En el panel de WhatsApp de tu app obtendrás el **ID de número de
+   teléfono** (`phone_number_id`) y un **token de acceso** temporal (para
+   producción, genera uno permanente vinculado a un System User de tu
+   Business Manager). Cópialos en la tarjeta de Configuración.
+3. Inventa tú mismo un **token de verificación del webhook** (cualquier
+   texto) y ponlo también en Configuración.
+4. En el panel de Meta, configura la URL del webhook como
+   `https://tu-dominio-publico/webhook/whatsapp` usando ese mismo token
+   de verificación, y suscribe el campo `messages`.
+5. Copia el **App Secret** de tu app de Meta (Configuración básica) a la
+   tarjeta de Configuración — se usa para verificar que cada mensaje
+   entrante realmente viene de Meta (firma `X-Hub-Signature-256`).
+6. Usa el botón "Probar conexión con WhatsApp" para confirmar que el
+   `phone_number_id` y el token de acceso son válidos.
+7. El webhook necesita ser alcanzable por HTTPS público — mismo
+   requisito de reverse proxy/subdominio que ya aplica al resto de la
+   app.
+
+⚠️ Esta funcionalidad se construyó siguiendo la documentación oficial de
+Meta (verificación del webhook, formato de mensajes entrantes, firma de
+seguridad y envío de mensajes), y se verificó todo lo que no requiere
+credenciales reales (firma HMAC, handshake del webhook, autorización de
+números, despacho de herramientas). **No se pudo probar contra un número
+de WhatsApp real** porque el proyecto todavía no tiene cuenta de Meta
+Business configurada — mismo caso que GLPI (sección 8) y Gemini (sección
+5). Si al conectarlo con Meta real algo no calza, avísame para ajustarlo.
+
+## 10. Copias de seguridad
 
 - **Base de datos**: `docker compose exec db mariadb-dump -u root -p licencias_app > backup.sql`
 - **Archivos adjuntos y diagramas de red**: viven en el volumen Docker
   `uploads_data` (montado en `/app/uploads` dentro del contenedor). Inclúyelo
   en tu rutina de backups del servidor.
 
-## 10. Estructura del proyecto
+## 11. Estructura del proyecto
 
 ```
 sql/schema.sql        Esquema de base de datos (se aplica con npm run migrate)
