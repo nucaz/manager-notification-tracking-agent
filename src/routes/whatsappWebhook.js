@@ -2,11 +2,11 @@
 // usuario logueado de la app. Por eso NO lleva requireAuth ni el CSRF de
 // sesion (Meta no manda cookie de sesion ni token _csrf): la seguridad
 // acá es la verificacion de firma HMAC (verifySignature) y, mas adentro,
-// la lista de numeros autorizados que ya aplica whatsappAgent.
+// la lista de contactos autorizados que ya aplica chatAgent.
 const express = require('express');
 const settingsService = require('../services/settingsService');
 const whatsappClient = require('../services/whatsappClient');
-const whatsappAgent = require('../services/whatsappAgent');
+const chatAgent = require('../services/chatAgent');
 
 const router = express.Router();
 
@@ -65,7 +65,7 @@ router.post('/', async (req, res) => {
     const text = message.text && message.text.body;
     if (!from || !text) return;
 
-    const reply = await whatsappAgent.answerQuestion(from, text);
+    const reply = await chatAgent.answerQuestion('whatsapp', from, text);
     await whatsappClient.sendTextMessage(from, reply);
   } catch (err) {
     console.error('[whatsapp] Error procesando mensaje entrante:', err.message);

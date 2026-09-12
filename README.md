@@ -45,10 +45,11 @@ Aplicación web para el seguimiento de:
 - **Importación masiva (CSV/Excel)**: carga por lote de licencias, dominios,
   contratos ISP, servidores, certificados y celulares ya existentes, con
   plantilla descargable y reporte de filas con error
-- **Agente conversacional por WhatsApp**: consulta vencimientos, celulares
-  (por IMEI) y empleados directamente por WhatsApp usando la API oficial
-  de Meta, disponible solo para números autorizados (admin/editor) — ver
-  sección 9
+- **Agente conversacional por WhatsApp y/o Telegram**: consulta
+  vencimientos, celulares (por IMEI) y empleados directamente por
+  WhatsApp (API oficial de Meta) o Telegram (Bot API, gratis y sin
+  necesidad de exponer la app a internet), disponible solo para contactos
+  autorizados (admin/editor) — ver sección 9
 
 Construida en Node.js + Express + EJS + MySQL/MariaDB, pensada para
 desplegarse con Docker junto a tu stack GLPI + Zabbix existente.
@@ -254,36 +255,43 @@ La aplicación exige **2FA obligatorio** (TOTP) para los tres roles
   usarla contra tu GLPI real algo no calza (por ejemplo, el nombre de un
   campo cambió entre versiones de GLPI), avísame para ajustarlo.
 
-## 9. Agente conversacional por WhatsApp (Meta Cloud API)
+## 9. Agente conversacional por WhatsApp y/o Telegram
 
-Permite consultar la app por WhatsApp (vencimientos, celulares por IMEI,
-empleados, resumen de celulares por área) mediante un agente con IA que
-interpreta la pregunta y ejecuta una herramienta fija contra la base de
-datos — la IA **nunca genera SQL libre**, solo elige entre un catálogo
-cerrado de consultas seguras y sus argumentos.
+Permite consultar la app por WhatsApp y/o Telegram (vencimientos,
+celulares por IMEI, empleados, resumen de celulares por área) mediante un
+agente con IA que interpreta la pregunta y ejecuta una herramienta fija
+contra la base de datos — la IA **nunca genera SQL libre**, solo elige
+entre un catálogo cerrado de consultas seguras y sus argumentos. Los dos
+canales son independientes: puedes activar solo uno, o ambos a la vez, y
+un mismo usuario puede tener vinculados ambos.
 
-**Seguridad del diseño** (decisiones explícitas del proyecto):
+**Seguridad del diseño** (decisiones explícitas del proyecto, iguales
+para los dos canales):
 
-- Solo responde a **números de teléfono autorizados**: deben estar
-  vinculados a un usuario existente con rol `admin` o `editor` y activo
-  (campo "Número de WhatsApp" en Usuarios → Nuevo/Editar, formato E.164
-  sin `+`, ej. `51987654321`). Cualquier otro número recibe un mensaje
-  genérico de "no disponible", sin confirmar ni negar nada sobre el bot.
+- Solo responde a **contactos autorizados**: un número de WhatsApp o un
+  ID de chat de Telegram vinculado a un usuario existente con rol `admin`
+  o `editor` y activo (campos en Usuarios → Nuevo/Editar). Cualquier otro
+  contacto recibe un mensaje genérico de "no disponible", sin confirmar
+  ni negar nada sobre el bot.
 - Las respuestas pueden incluir **datos personales** (por ejemplo, el DNI
   de la persona que tiene asignado un celular) porque solo llegan a
   usuarios ya autorizados dentro de la organización — no lo trates como
   un canal público.
-- Se usa **exclusivamente la API oficial de Meta** (WhatsApp Cloud API).
-  Se descartó a propósito cualquier librería no oficial (whatsapp-web.js,
-  Baileys, etc.) porque viola los términos de servicio de WhatsApp y
-  arriesga el bloqueo del número.
-- Toda conversación (entrante y saliente) queda registrada en la tabla
-  `whatsapp_message_log` para auditoría.
+- Se usa **exclusivamente la API oficial** de cada plataforma (WhatsApp
+  Cloud API de Meta, Bot API de Telegram). Se descartó a propósito
+  cualquier librería no oficial (whatsapp-web.js, Baileys, clientes
+  MTProto con `api_id`/`api_hash`, etc.) porque automatizar una cuenta así
+  viola los términos de servicio y arriesga el bloqueo del número/cuenta.
+- Toda conversación (entrante y saliente, de cualquiera de los dos
+  canales) queda registrada en la tabla `agent_message_log` para
+  auditoría, con una columna `channel` que distingue el origen.
 
 **Qué puede responder hoy**: cantidad y listado de vencimientos próximos
 (licencias, dominios, contratos ISP, servidores, certificados), búsqueda
 de un celular por IMEI (con su asignación actual), búsqueda de un
 empleado por DNI o nombre, y el resumen de celulares por área.
+
+### 9.1 WhatsApp (Meta Cloud API)
 
 **Configuración** (menú Configuración → tarjeta "Agente de WhatsApp"):
 
@@ -311,10 +319,45 @@ empleado por DNI o nombre, y el resumen de celulares por área.
 Meta (verificación del webhook, formato de mensajes entrantes, firma de
 seguridad y envío de mensajes), y se verificó todo lo que no requiere
 credenciales reales (firma HMAC, handshake del webhook, autorización de
-números, despacho de herramientas). **No se pudo probar contra un número
-de WhatsApp real** porque el proyecto todavía no tiene cuenta de Meta
-Business configurada — mismo caso que GLPI (sección 8) y Gemini (sección
-5). Si al conectarlo con Meta real algo no calza, avísame para ajustarlo.
+contactos, despacho de herramientas). **No se pudo probar contra un
+número de WhatsApp real** porque el proyecto todavía no tiene cuenta de
+Meta Business configurada — mismo caso que GLPI (sección 8) y Gemini
+(sección 5). Si al conectarlo con Meta real algo no calza, avísame para
+ajustarlo.
+
+### 9.2 Telegram (Bot API)
+
+Alternativa gratuita y más simple: no requiere cuenta de negocio, no
+tiene proceso de verificación, y **no necesita exponer la app a
+internet** — funciona por sondeo periódico (la app le pregunta a Telegram
+cada pocos segundos si hay mensajes nuevos), no por webhook público. Ideal
+si el volumen de consultas es bajo, como aquí.
+
+**Configuración** (menú Configuración → tarjeta "Bot de Telegram"):
+
+1. En Telegram, habla con **[@BotFather](https://t.me/BotFather)** y
+   crea un bot nuevo (`/newbot`). Te dará un **token** con el formato
+   `123456:ABC-DEF...`.
+2. Pega ese token en la tarjeta de Configuración y guarda. Deja marcada
+   la casilla "Sondeo activo".
+3. Usa el botón "Probar conexión con Telegram" para confirmar que el
+   token es válido.
+4. Para vincular un usuario de la app: pídele que le escriba `/start` al
+   bot desde su cuenta de Telegram — el bot le responderá con su **ID de
+   chat** (un número). Ese ID se pega en el campo "ID de chat de
+   Telegram" del perfil del usuario (Usuarios → Editar).
+
+⚠️ Esta funcionalidad se construyó siguiendo la documentación oficial de
+Telegram (`core.telegram.org/bots/api`: creación del bot vía BotFather,
+formato de `getUpdates`/mensajes entrantes, endpoint `sendMessage`, y el
+hecho de que el Bot API es gratuito y no requiere `api_id`/`api_hash` de
+la API cruda de MTProto — esa es para otro caso de uso, automatizar
+cuentas de usuario, no bots). Se verificó toda la lógica propia sin
+depender de un bot real (autorización de contactos, manejo de `/start`,
+despacho de herramientas, persistencia del offset de sondeo) simulando
+las respuestas de la API de Telegram. **No se probó contra un bot real**
+porque el proyecto todavía no tiene un token de BotFather — en cuanto lo
+tengas, probamos la conexión real.
 
 ## 10. Copias de seguridad
 

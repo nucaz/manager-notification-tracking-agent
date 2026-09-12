@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   otp_enabled TINYINT(1) NOT NULL DEFAULT 0,     -- 1 una vez confirmado el enrolamiento 2FA
   otp_confirmed_at DATETIME NULL,
   whatsapp_number VARCHAR(20) NULL UNIQUE,       -- formato E.164 sin "+", ej: 51987654321
+  telegram_chat_id VARCHAR(32) NULL UNIQUE,      -- id numerico de chat de Telegram (lo revela el bot con /start)
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -269,19 +270,21 @@ CREATE TABLE IF NOT EXISTS catalog_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
--- Bitacora del agente de WhatsApp: quien pregunto que y que se le
--- respondio. Es un canal publico (webhook de internet), asi que queda
--- este registro por trazabilidad/auditoria.
+-- Bitacora del agente conversacional (WhatsApp y/o Telegram): quien
+-- pregunto que y que se le respondio, por canal. Ambos son canales
+-- accesibles desde fuera de la red interna, asi que queda este registro
+-- por trazabilidad/auditoria.
 -- ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS whatsapp_message_log (
+CREATE TABLE IF NOT EXISTS agent_message_log (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  phone_number VARCHAR(20) NOT NULL,
-  user_id INT NULL,                             -- NULL si el numero no estaba autorizado
+  channel ENUM('whatsapp','telegram') NOT NULL,
+  contact VARCHAR(32) NOT NULL,                 -- numero de WhatsApp o chat_id de Telegram
+  user_id INT NULL,                             -- NULL si el contacto no estaba autorizado
   direction ENUM('entrante','saliente') NOT NULL,
   message_text TEXT,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_whatsapp_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-  INDEX idx_whatsapp_log_phone (phone_number)
+  CONSTRAINT fk_agent_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_agent_log_contact (channel, contact)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
@@ -385,7 +388,10 @@ INSERT INTO settings (`key`, `value`) VALUES
   ('whatsapp_phone_number_id', ''),
   ('whatsapp_access_token', ''),
   ('whatsapp_verify_token', ''),
-  ('whatsapp_app_secret', '')
+  ('whatsapp_app_secret', ''),
+  ('telegram_bot_token', ''),
+  ('telegram_polling_enabled', 'true'),
+  ('telegram_last_update_id', '0')
 ON DUPLICATE KEY UPDATE `key`=`key`;
 
 -- ---------------------------------------------------------------------

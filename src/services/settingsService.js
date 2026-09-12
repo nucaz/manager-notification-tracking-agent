@@ -24,6 +24,9 @@ const DEFAULTS = {
   whatsapp_access_token: '',
   whatsapp_verify_token: '',
   whatsapp_app_secret: '',
+  telegram_bot_token: '',
+  telegram_polling_enabled: 'true',
+  telegram_last_update_id: '0',
 };
 
 async function getAll() {

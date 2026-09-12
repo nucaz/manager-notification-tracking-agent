@@ -22,6 +22,14 @@
     <div class="form-text">Si lo completas, este usuario podrá consultar la app por WhatsApp (solo admin/editor).</div>
   </div>
   <div class="mb-3">
+    <label class="form-label">ID de chat de Telegram (opcional)</label>
+    <input type="text" name="telegram_chat_id" class="form-control" value="<%= item.telegram_chat_id || '' %>" placeholder="Ej: 123456789">
+    <div class="form-text">
+      El usuario obtiene su ID escribiéndole <code>/start</code> al bot de Telegram (ver Configuración).
+      Si lo completas, podrá consultar la app por Telegram (solo admin/editor).
+    </div>
+  </div>
+  <div class="mb-3">
     <label class="form-label">Rol</label>
     <select name="role" class="form-select">
       <option value="lector" <%= item.role === 'lector' ? 'selected' : '' %>>Lector (solo ver)</option>

@@ -7,6 +7,13 @@ const { verifyCsrfToken } = require('../middleware/csrf');
 const router = express.Router();
 router.use(requireAuth, isAdmin, verifyCsrfToken);
 
+function duplicateFieldMessage(err) {
+  const msg = err.sqlMessage || '';
+  if (/whatsapp_number/.test(msg)) return 'Ese número de WhatsApp ya está vinculado a otro usuario.';
+  if (/telegram_chat_id/.test(msg)) return 'Ese ID de chat de Telegram ya está vinculado a otro usuario.';
+  return 'Ya existe un usuario con ese correo.';
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
@@ -24,24 +31,21 @@ router.get('/nuevo', (req, res) => {
 
 router.post('/nuevo', async (req, res, next) => {
   try {
-    const { full_name, email, password, role, whatsapp_number } = req.body;
+    const { full_name, email, password, role, whatsapp_number, telegram_chat_id } = req.body;
     if (!full_name || !email || !password) {
       req.flash('error', 'Nombre, correo y contraseña son obligatorios.');
       return res.redirect('/usuarios/nuevo');
     }
     const hash = await bcrypt.hash(password, 12);
     await pool.query(
-      'INSERT INTO users (full_name, email, password_hash, role, whatsapp_number, active) VALUES (?, ?, ?, ?, ?, 1)',
-      [full_name, email, hash, role || 'lector', whatsapp_number || null]
+      'INSERT INTO users (full_name, email, password_hash, role, whatsapp_number, telegram_chat_id, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
+      [full_name, email, hash, role || 'lector', whatsapp_number || null, telegram_chat_id || null]
     );
     req.flash('success', 'Usuario creado correctamente.');
     res.redirect('/usuarios');
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      const msg = /whatsapp_number/.test(err.sqlMessage || '')
-        ? 'Ese número de WhatsApp ya está vinculado a otro usuario.'
-        : 'Ya existe un usuario con ese correo.';
-      req.flash('error', msg);
+      req.flash('error', duplicateFieldMessage(err));
       return res.redirect('/usuarios/nuevo');
     }
     next(err);
@@ -63,27 +67,24 @@ router.get('/:id/editar', async (req, res, next) => {
 
 router.post('/:id/editar', async (req, res, next) => {
   try {
-    const { full_name, email, password, role, active, whatsapp_number } = req.body;
+    const { full_name, email, password, role, active, whatsapp_number, telegram_chat_id } = req.body;
     if (password) {
       const hash = await bcrypt.hash(password, 12);
       await pool.query(
-        'UPDATE users SET full_name = ?, email = ?, password_hash = ?, role = ?, whatsapp_number = ?, active = ? WHERE id = ?',
-        [full_name, email, hash, role, whatsapp_number || null, active ? 1 : 0, req.params.id]
+        'UPDATE users SET full_name = ?, email = ?, password_hash = ?, role = ?, whatsapp_number = ?, telegram_chat_id = ?, active = ? WHERE id = ?',
+        [full_name, email, hash, role, whatsapp_number || null, telegram_chat_id || null, active ? 1 : 0, req.params.id]
       );
     } else {
       await pool.query(
-        'UPDATE users SET full_name = ?, email = ?, role = ?, whatsapp_number = ?, active = ? WHERE id = ?',
-        [full_name, email, role, whatsapp_number || null, active ? 1 : 0, req.params.id]
+        'UPDATE users SET full_name = ?, email = ?, role = ?, whatsapp_number = ?, telegram_chat_id = ?, active = ? WHERE id = ?',
+        [full_name, email, role, whatsapp_number || null, telegram_chat_id || null, active ? 1 : 0, req.params.id]
       );
     }
     req.flash('success', 'Usuario actualizado correctamente.');
     res.redirect('/usuarios');
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      const msg = /whatsapp_number/.test(err.sqlMessage || '')
-        ? 'Ese número de WhatsApp ya está vinculado a otro usuario.'
-        : 'Ya existe otro usuario con ese correo.';
-      req.flash('error', msg);
+      req.flash('error', duplicateFieldMessage(err));
       return res.redirect(`/usuarios/${req.params.id}/editar`);
     }
     next(err);

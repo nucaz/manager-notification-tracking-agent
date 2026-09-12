@@ -114,6 +114,24 @@
       </div>
 
       <div class="card p-3 mb-3">
+        <h5>Bot de Telegram</h5>
+        <div class="mb-2">
+          <label class="form-label">Token del bot</label>
+          <input type="password" name="telegram_bot_token" class="form-control" value="<%= settings.telegram_bot_token %>" placeholder="123456:ABC-DEF...">
+        </div>
+        <div class="form-check my-2">
+          <input type="checkbox" class="form-check-input" name="telegram_polling_enabled" id="telegram_polling_enabled" <%= String(settings.telegram_polling_enabled) === 'true' ? 'checked' : '' %>>
+          <label class="form-check-label" for="telegram_polling_enabled">Sondeo activo (revisar mensajes nuevos automáticamente)</label>
+        </div>
+        <div class="form-text">
+          Habla con <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> en Telegram
+          para crear el bot y obtener su token — es gratis, sin cuenta de negocio. Para vincular un usuario,
+          pídele que le escriba <code>/start</code> al bot: le devolverá su ID de chat, que pegas en su
+          perfil de Usuario. No necesita exponer la app a internet: funciona por sondeo periódico.
+        </div>
+      </div>
+
+      <div class="card p-3 mb-3">
         <h5>Recordatorios automáticos</h5>
         <div class="mb-2">
           <label class="form-label">Umbrales de días antes del vencimiento</label>
@@ -144,9 +162,14 @@
       <h6>Verificar API key de Gemini</h6>
       <button type="submit" class="btn btn-outline-secondary btn-sm">Verificar ahora</button>
     </form>
-    <form action="/configuracion/probar-whatsapp" method="post" class="card p-3">
+    <form action="/configuracion/probar-whatsapp" method="post" class="card p-3 mb-2">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <h6>Probar conexión con WhatsApp</h6>
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
+    </form>
+    <form action="/configuracion/probar-telegram" method="post" class="card p-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h6>Probar conexión con Telegram</h6>
       <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
     </form>
   </div>

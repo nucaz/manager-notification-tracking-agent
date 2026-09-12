@@ -5,6 +5,7 @@ const settingsService = require('../services/settingsService');
 const mailer = require('../services/mailer');
 const geminiClient = require('../services/geminiClient');
 const whatsappClient = require('../services/whatsappClient');
+const telegramClient = require('../services/telegramClient');
 
 const router = express.Router();
 router.use(requireAuth, verifyCsrfToken);
@@ -27,12 +28,14 @@ router.post('/', isAdmin, async (req, res, next) => {
       'reminder_thresholds_days', 'reminder_recipients', 'reminder_send_hour',
       'ai_provider', 'gemini_api_key', 'gemini_model',
       'whatsapp_phone_number_id', 'whatsapp_access_token', 'whatsapp_verify_token', 'whatsapp_app_secret',
+      'telegram_bot_token',
     ];
     const pairs = {};
     for (const key of keys) {
       if (req.body[key] !== undefined) pairs[key] = req.body[key];
     }
     pairs.smtp_secure = req.body.smtp_secure ? 'true' : 'false';
+    pairs.telegram_polling_enabled = req.body.telegram_polling_enabled ? 'true' : 'false';
     await settingsService.setMany(pairs);
     req.flash('success', 'Configuracion guardada correctamente.');
     res.redirect('/configuracion');
@@ -83,6 +86,16 @@ router.post('/probar-whatsapp', isAdmin, async (req, res) => {
     req.flash('success', `Conexión con WhatsApp exitosa (${info.verified_name || info.display_phone_number || 'OK'}).`);
   } catch (err) {
     req.flash('error', `No se pudo conectar con WhatsApp: ${err.message}`);
+  }
+  res.redirect('/configuracion');
+});
+
+router.post('/probar-telegram', isAdmin, async (req, res) => {
+  try {
+    const info = await telegramClient.testConnection();
+    req.flash('success', `Conexión con Telegram exitosa (bot @${info.username}).`);
+  } catch (err) {
+    req.flash('error', `No se pudo conectar con Telegram: ${err.message}`);
   }
   res.redirect('/configuracion');
 });

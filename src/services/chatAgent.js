@@ -1,16 +1,22 @@
-// Agente conversacional de WhatsApp: interpreta una pregunta en lenguaje
-// natural, la traduce a UNA herramienta fija (nunca SQL libre generado
-// por la IA - eso seria un riesgo real de fuga/inyeccion de datos) y
-// devuelve una respuesta en texto plano.
+// Agente conversacional generico (WhatsApp y Telegram comparten la misma
+// logica): interpreta una pregunta en lenguaje natural, la traduce a UNA
+// herramienta fija (nunca SQL libre generado por la IA - eso seria un
+// riesgo real de fuga/inyeccion de datos) y devuelve una respuesta en
+// texto plano.
 //
-// Solo pueden usarlo numeros de telefono vinculados a un usuario
-// admin/editor activo (users.whatsapp_number) - cualquier otro numero
+// Solo pueden usarlo contactos (numero de WhatsApp o chat_id de Telegram)
+// vinculados a un usuario admin/editor activo - cualquier otro contacto
 // recibe una respuesta generica de "sin acceso", sin tocar ninguna
 // herramienta ni exponer que existe un asistente con datos de la empresa.
 const pool = require('../db/pool');
 const geminiClient = require('./geminiClient');
 const employeeService = require('./employeeService');
 const { daysUntil, statusFromDays } = require('./expirationService');
+
+const CHANNEL_COLUMNS = {
+  whatsapp: 'whatsapp_number',
+  telegram: 'telegram_chat_id',
+};
 
 const EXPIRATION_MODULES = [
   { table: 'software_licenses', dateField: 'expiration_date', nameField: 'product_name', label: 'Licencia' },
@@ -117,7 +123,7 @@ function buildPrompt(question) {
   const toolList = Object.entries(TOOLS)
     .map(([name, t]) => `- "${name}": ${t.description}`)
     .join('\n');
-  return `Eres el asistente de WhatsApp de un sistema interno de gestión de licencias, dominios, contratos ISP, servidores, certificados, celulares y empleados.
+  return `Eres el asistente de un sistema interno de gestión de licencias, dominios, contratos ISP, servidores, certificados, celulares y empleados. Te consultan por WhatsApp o Telegram.
 
 Herramientas disponibles:
 ${toolList}
@@ -136,31 +142,38 @@ async function interpretQuestion(question) {
   return { tool: parsed.tool || 'desconocido', args: parsed.args || {} };
 }
 
-async function findAuthorizedUser(phoneNumber) {
+function columnFor(channel) {
+  const column = CHANNEL_COLUMNS[channel];
+  if (!column) throw new Error(`Canal desconocido: ${channel}`);
+  return column;
+}
+
+async function findAuthorizedUser(channel, contact) {
+  const column = columnFor(channel);
   const [rows] = await pool.query(
-    `SELECT * FROM users WHERE whatsapp_number = ? AND active = 1 AND role IN ('admin','editor') LIMIT 1`,
-    [phoneNumber]
+    `SELECT * FROM users WHERE ${column} = ? AND active = 1 AND role IN ('admin','editor') LIMIT 1`,
+    [contact]
   );
   return rows[0] || null;
 }
 
-async function logMessage(phoneNumber, userId, direction, text) {
+async function logMessage(channel, contact, userId, direction, text) {
   await pool.query(
-    'INSERT INTO whatsapp_message_log (phone_number, user_id, direction, message_text) VALUES (?, ?, ?, ?)',
-    [phoneNumber, userId || null, direction, text]
+    'INSERT INTO agent_message_log (channel, contact, user_id, direction, message_text) VALUES (?, ?, ?, ?, ?)',
+    [channel, contact, userId || null, direction, text]
   );
 }
 
 // Punto de entrada: valida autorizacion, interpreta, ejecuta la
 // herramienta y arma la respuesta. Nunca deja que un error interno
 // llegue sin manejar - siempre devuelve un texto para responder.
-async function answerQuestion(phoneNumber, question) {
-  await logMessage(phoneNumber, null, 'entrante', question);
+async function answerQuestion(channel, contact, question) {
+  await logMessage(channel, contact, null, 'entrante', question);
 
-  const user = await findAuthorizedUser(phoneNumber);
+  const user = await findAuthorizedUser(channel, contact);
   if (!user) {
-    const reply = 'Este asistente no está disponible para este número.';
-    await logMessage(phoneNumber, null, 'saliente', reply);
+    const reply = 'Este asistente no está disponible para este contacto.';
+    await logMessage(channel, contact, null, 'saliente', reply);
     return reply;
   }
 
@@ -175,7 +188,7 @@ async function answerQuestion(phoneNumber, question) {
     reply = `Ocurrió un error al procesar tu pregunta: ${err.message}`;
   }
 
-  await logMessage(phoneNumber, user.id, 'saliente', reply);
+  await logMessage(channel, contact, user.id, 'saliente', reply);
   return reply;
 }
 
