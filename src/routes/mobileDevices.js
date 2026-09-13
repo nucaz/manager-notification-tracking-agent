@@ -169,6 +169,21 @@ router.post('/:id/eliminar', canWrite, verifyCsrfToken, async (req, res, next) =
   }
 });
 
+router.post('/eliminar-multiple', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const ids = [].concat(req.body.ids || []).map((id) => parseInt(id, 10)).filter(Number.isInteger);
+    if (ids.length === 0) {
+      req.flash('error', 'No seleccionaste ningún celular para eliminar.');
+      return res.redirect('/celulares');
+    }
+    const [result] = await pool.query('DELETE FROM mobile_devices WHERE id IN (?)', [ids]);
+    req.flash('success', `${result.affectedRows} celular(es) eliminado(s).`);
+    res.redirect('/celulares');
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Asigna (o reasigna, si ya habia una asignacion activa) el celular a una
 // persona. La persona se identifica por DNI: si ya existe en el
 // directorio de empleados se actualiza (por si cambio de area/sede/cargo),
