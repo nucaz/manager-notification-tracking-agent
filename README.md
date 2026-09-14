@@ -360,12 +360,79 @@ las respuestas de la API de Telegram. **No se probó contra un bot real**
 porque el proyecto todavía no tiene un token de BotFather — en cuanto lo
 tengas, probamos la conexión real.
 
-## 10. Copias de seguridad
+## 10. Copias de seguridad y migración a otro servidor
 
-- **Base de datos**: `docker compose exec db mariadb-dump -u root -p licencias_app > backup.sql`
-- **Archivos adjuntos y diagramas de red**: viven en el volumen Docker
-  `uploads_data` (montado en `/app/uploads` dentro del contenedor). Inclúyelo
-  en tu rutina de backups del servidor.
+Toda la app vive en tres sitios: la **base de datos** (datos + configuración
+completa: GLPI, SMTP, Gemini, WhatsApp, Telegram — todo lo que se edita
+desde Configuración se guarda en la tabla `settings`, así que un dump de
+la BD ya incluye la configuración, no hace falta copiarla aparte), el
+**volumen de archivos** `uploads_data` (adjuntos y diagramas de red), y el
+archivo **`.env`** (credenciales de infraestructura: contraseña de BD,
+`SESSION_SECRET`, puerto, límite de subida — esto no vive en la BD y hay
+que recrearlo a mano en el servidor nuevo).
+
+Este procedimiento fue **verificado de punta a punta**: se hizo un backup
+completo, se restauró en un stack Docker completamente aparte (simulando
+un segundo servidor, con su propio contenedor de base de datos y su
+propio volumen de archivos) y se confirmó que usuarios, 2FA, celulares,
+configuración y el contenido exacto de un archivo adjunto llegaron
+idénticos.
+
+### 10.1 Backup (en el servidor de origen)
+
+```bash
+# 1) Volcado completo de la base de datos (usa el usuario root de MariaDB,
+#    con la MARIADB_ROOT_PASSWORD que tengas en tu .env o docker-compose.yml)
+docker compose exec -T db mariadb-dump -u root -p licencias_app > backup.sql
+
+# 2) Volumen de archivos (adjuntos + diagramas de red) a un .tgz portable
+docker run --rm -v glpi-licencias-app_uploads_data:/data -v "$(pwd)":/backup \
+  alpine tar czf /backup/uploads_backup.tgz -C /data .
+```
+
+Guarda `backup.sql`, `uploads_backup.tgz` y una copia de tu `.env` (por
+referencia, para no perder de vista qué SMTP/GLPI usabas antes — aunque
+esos valores ya viajan dentro del dump) en un lugar seguro fuera del
+servidor.
+
+### 10.2 Restauración en el servidor nuevo
+
+```bash
+# 1) Clona el repositorio y crea un .env nuevo (mismo formato que
+#    .env.example) — usa una contraseña de BD y un SESSION_SECRET
+#    NUEVOS, no hace falta que coincidan con los del servidor viejo;
+#    ajusta APP_BASE_URL al dominio/puerto real del servidor nuevo.
+git clone <tu-repo> && cd glpi-licencias-app
+cp .env.example .env   # y edítalo
+
+# 2) Levanta los contenedores (crea una base de datos vacía)
+docker compose up -d --build
+
+# 3) Restaura el dump completo directamente (esto recrea todas las
+#    tablas con los datos originales — NO ejecutes "npm run migrate" ni
+#    "npm run seed" antes o después, el dump ya trae todo)
+docker compose exec -T db mariadb -u root -p licencias_app < backup.sql
+
+# 4) Restaura los archivos al volumen (todavía vacío) del contenedor nuevo
+docker run --rm -v glpi-licencias-app_uploads_data:/data -v "$(pwd)":/backup \
+  alpine tar xzf /backup/uploads_backup.tgz -C /data
+
+# 5) Reinicia la app para que tome la base de datos ya poblada
+docker compose restart app
+```
+
+### 10.3 Verificación post-migración
+
+- Inicia sesión con las mismas credenciales de siempre — el secreto TOTP
+  viajó con la BD, así que tu app autenticadora **sigue funcionando sin
+  volver a escanear el QR**.
+- Entra a Configuración y confirma que GLPI/SMTP/Gemini/WhatsApp/Telegram
+  ya aparecen con los valores del servidor anterior (vinieron en el dump).
+- Abre un registro con un adjunto (por ejemplo, un contrato en Licencias)
+  y confirma que el archivo se descarga correctamente.
+- Ten en cuenta que las **sesiones activas no migran** (se guardan en
+  memoria del proceso, no en la BD): todos los usuarios deberán volver a
+  iniciar sesión en el servidor nuevo, aunque su 2FA ya esté configurado.
 
 ## 11. Estructura del proyecto
 
