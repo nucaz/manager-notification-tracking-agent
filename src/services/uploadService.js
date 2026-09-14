@@ -65,4 +65,21 @@ const importUploader = multer({
   limits: { fileSize: env.uploadMaxMb * 1024 * 1024 },
 });
 
-module.exports = { uploader, importUploader, DIRS, UPLOAD_ROOT };
+// Para restaurar un backup de base de datos desde Configuracion: solo
+// .sql, en memoria (se pasa directo a mariadb-dump por stdin, nunca se
+// guarda en disco). Limite generoso (no ligado a UPLOAD_MAX_MB, que esta
+// pensado para adjuntos normales) porque un dump completo puede pesar
+// bastante mas que una factura o un diagrama.
+const sqlRestoreUploader = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext !== '.sql') {
+      return cb(new Error('Solo se acepta un archivo .sql (el backup.sql que trae el respaldo descargado).'));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 500 * 1024 * 1024 },
+});
+
+module.exports = { uploader, importUploader, sqlRestoreUploader, DIRS, UPLOAD_ROOT };

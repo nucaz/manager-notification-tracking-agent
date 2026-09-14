@@ -378,7 +378,35 @@ propio volumen de archivos) y se confirmó que usuarios, 2FA, celulares,
 configuración y el contenido exacto de un archivo adjunto llegaron
 idénticos.
 
-### 10.1 Backup (en el servidor de origen)
+### 10.1 Desde la interfaz web (recomendado para el día a día)
+
+En Configuración → tarjeta "Respaldo y migración" (solo admin):
+
+- **Descargar respaldo completo (.zip)**: descarga un archivo con
+  `backup.sql` (toda la base de datos: datos + configuración completa) y
+  la carpeta `uploads/` (adjuntos y diagramas de red) — todo en un clic,
+  sin necesidad de terminal ni acceso al servidor.
+- **Restaurar base de datos**: sube el `backup.sql` (el que viene dentro
+  del .zip anterior) para sobrescribir la base de datos actual con ese
+  contenido. Es una acción **destructiva** — por eso pide escribir
+  exactamente `RESTAURAR TODO` para confirmar, además de requerir sesión
+  de administrador. Solo restaura la base de datos: los archivos
+  adjuntos/diagramas siguen necesitando el paso por terminal de la
+  sección 10.2 (menos frecuente — normalmente solo migras archivos una
+  vez, al cambiar de servidor).
+- Cada restauración queda registrada en los logs del contenedor (`docker
+  compose logs app`) con qué usuario la ejecutó y el nombre del archivo.
+
+Requiere que la imagen tenga instalado `mariadb-client` (ya viene en el
+`Dockerfile` de este proyecto — si construyes tu propia imagen a partir de
+otra base, agrégalo tú).
+
+### 10.2 Por línea de comandos (para automatizar, o para migrar también los archivos)
+
+Útil para backups programados (cron) o para el paso de migrar el volumen
+de archivos, que la interfaz web todavía no cubre.
+
+#### Backup (en el servidor de origen)
 
 ```bash
 # 1) Volcado completo de la base de datos (usa el usuario root de MariaDB,
@@ -395,7 +423,7 @@ referencia, para no perder de vista qué SMTP/GLPI usabas antes — aunque
 esos valores ya viajan dentro del dump) en un lugar seguro fuera del
 servidor.
 
-### 10.2 Restauración en el servidor nuevo
+#### Restauración en el servidor nuevo
 
 ```bash
 # 1) Clona el repositorio y crea un .env nuevo (mismo formato que
@@ -421,7 +449,7 @@ docker run --rm -v glpi-licencias-app_uploads_data:/data -v "$(pwd)":/backup \
 docker compose restart app
 ```
 
-### 10.3 Verificación post-migración
+### 10.3 Verificación post-migración (aplica a cualquiera de los dos métodos)
 
 - Inicia sesión con las mismas credenciales de siempre — el secreto TOTP
   viajó con la BD, así que tu app autenticadora **sigue funcionando sin

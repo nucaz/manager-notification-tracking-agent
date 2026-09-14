@@ -190,4 +190,45 @@
   </div>
 </div>
 
+<div class="card p-3 mt-3">
+  <h5>Respaldo y migración</h5>
+  <p class="text-muted">
+    El respaldo incluye <strong>todos los datos y toda la configuración</strong>
+    (licencias, dominios, celulares, empleados, usuarios, y también lo que
+    ves en esta página: GLPI, SMTP, Gemini, WhatsApp, Telegram — todo vive
+    en la base de datos) más los archivos adjuntos y diagramas de red.
+    Útil para migrar la app a otro servidor.
+  </p>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <a href="/configuracion/respaldo/descargar" class="btn btn-outline-primary">
+        <i class="bi bi-download"></i> Descargar respaldo completo (.zip)
+      </a>
+    </div>
+    <div class="col-md-6">
+      <form action="/configuracion/respaldo/restaurar" method="post" enctype="multipart/form-data"
+        class="border border-danger rounded p-3"
+        onsubmit="return confirm('Esto va a SOBRESCRIBIR toda la base de datos actual con el contenido del archivo. ¿Continuar?');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <h6 class="text-danger">Restaurar base de datos</h6>
+        <p class="form-text mt-0">
+          Sobrescribe <strong>todos</strong> los datos y la configuración actuales con los del
+          archivo <code>backup.sql</code> (el que viene dentro del .zip descargado). No incluye
+          los archivos adjuntos — para eso, restaura el volumen <code>uploads_data</code> por
+          terminal (ver README, sección 10).
+        </p>
+        <div class="mb-2">
+          <label class="form-label">Archivo backup.sql</label>
+          <input type="file" name="file" accept=".sql" class="form-control" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Escribe <code>RESTAURAR TODO</code> para confirmar</label>
+          <input type="text" name="confirmacion" class="form-control" placeholder="RESTAURAR TODO" required>
+        </div>
+        <button type="submit" class="btn btn-danger btn-sm">Restaurar ahora</button>
+      </form>
+    </div>
+  </div>
+</div>
+
 <%- include('../partials/foot') %>
