@@ -108,6 +108,31 @@ ejemplo `licencias.ad.depilzone.com.pe`) que haga proxy_pass hacia
 - El puerto de la app (por defecto `8090`) es configurable en
   `docker-compose.yml` si ya está en uso.
 
+### Actualizar a una versión nueva del código (migraciones)
+
+```bash
+git pull
+docker compose up -d --build
+docker compose exec app npm run migrate
+```
+
+`npm run migrate` es **incremental y seguro de correr siempre**, tanto en
+una base de datos nueva como en una que ya está en producción con datos:
+
+- `sql/schema.sql` es la línea base completa (se aplica como la migración
+  `0001_baseline`) — dejará lista una base de datos **nueva** de un solo
+  saque.
+- Cualquier cambio de esquema posterior (columna o tabla nueva) que
+  afecte a una instalación **ya desplegada** viene, además, como un
+  archivo numerado en `sql/migrations/` (ver `sql/migrations/README.md`).
+  Cada uno se aplica **una sola vez** — queda registrado en la tabla
+  `schema_migrations` — así que correr `migrate` de más nunca duplica ni
+  rompe nada.
+
+En otras palabras: después de un `git pull`, siempre es correcto (y
+necesario) volver a correr `npm run migrate` — no se salta nada que ya
+estuviera aplicado, y sí aplica lo que sea nuevo.
+
 ## 3. Desarrollo / pruebas locales sin Docker
 
 ```bash
@@ -437,8 +462,11 @@ cp .env.example .env   # y edítalo
 docker compose up -d --build
 
 # 3) Restaura el dump completo directamente (esto recrea todas las
-#    tablas con los datos originales — NO ejecutes "npm run migrate" ni
-#    "npm run seed" antes o después, el dump ya trae todo)
+#    tablas con los datos originales — no hace falta "npm run seed", el
+#    dump ya trae los usuarios reales. Si el dump es de una version del
+#    codigo mas vieja que la que estas desplegando, corre "npm run
+#    migrate" despues para aplicar las migraciones que falten - es
+#    incremental y seguro, no duplica ni pisa nada de lo restaurado)
 docker compose exec -T db mariadb -u root -p licencias_app < backup.sql
 
 # 4) Restaura los archivos al volumen (todavía vacío) del contenedor nuevo
@@ -465,7 +493,8 @@ docker compose restart app
 ## 11. Estructura del proyecto
 
 ```
-sql/schema.sql        Esquema de base de datos (se aplica con npm run migrate)
+sql/schema.sql        Esquema base completo (migracion "0001_baseline")
+sql/migrations/        Migraciones incrementales numeradas (npm run migrate aplica todo)
 src/config/           Configuración desde variables de entorno
 src/db/               Pool de conexión, migración, seed del admin y reset-2fa
 src/services/         Cliente GLPI, cliente Gemini (extracción IA), envío de correo, configuración, subida de archivos, TOTP (2FA)

@@ -2,6 +2,18 @@
 -- Esquema de base de datos: Licencias, Dominios, Contratos ISP y Red
 -- Aplicación complementaria a GLPI (integración vía API REST)
 -- =====================================================================
+--
+-- Este archivo es la LINEA BASE completa (se aplica como la migracion
+-- "0001_baseline" - ver src/db/migrate.js): siempre debe reflejar el
+-- esquema completo y actualizado, para que una base de datos nueva quede
+-- lista de un solo saque. TODO CAMBIO a este archivo (columna nueva,
+-- tabla nueva, indice nuevo) en una tabla que ya pudo existir en una base
+-- de datos ya desplegada TAMBIEN necesita su propio archivo incremental
+-- en sql/migrations/000X_descripcion.sql (con SOLO el cambio puntual,
+-- usando clausulas idempotentes de MariaDB: ADD COLUMN IF NOT EXISTS,
+-- CREATE TABLE IF NOT EXISTS, etc.) - de lo contrario, un servidor en
+-- produccion que ya tenia la tabla se queda sin la columna nueva al
+-- correr "npm run migrate". Ver sql/migrations/README.md.
 
 SET NAMES utf8mb4;
 SET time_zone = '-05:00';
