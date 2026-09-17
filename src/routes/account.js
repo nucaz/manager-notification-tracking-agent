@@ -5,6 +5,9 @@ const { requireAuth } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const auditService = require('../services/auditService');
 const trustedDeviceService = require('../services/trustedDeviceService');
+const backupCodesService = require('../services/backupCodesService');
+const otpService = require('../services/otpService');
+const settingsService = require('../services/settingsService');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -18,7 +21,8 @@ router.get('/', async (req, res, next) => {
        ORDER BY created_at DESC LIMIT 10`,
       [req.session.user.id]
     );
-    res.render('account/index', { title: 'Mi cuenta', trusted, recentLogins });
+    const backupCodesRemaining = await backupCodesService.remainingCount(req.session.user.id);
+    res.render('account/index', { title: 'Mi cuenta', trusted, recentLogins, backupCodesRemaining });
   } catch (err) {
     next(err);
   }
@@ -51,6 +55,62 @@ router.post('/dispositivos/:id/revocar', verifyCsrfToken, async (req, res, next)
   try {
     await trustedDeviceService.revoke(req.session.user.id, req.params.id);
     req.flash('success', 'Dispositivo revocado — la próxima vez te pedirá el código otra vez ahí.');
+    res.redirect('/mi-cuenta');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Regenerar códigos de respaldo: invalida los anteriores (si quedaba
+// alguno) y muestra los nuevos una sola vez, vía la misma pantalla que
+// usa el enrolamiento inicial (session.newBackupCodes).
+router.post('/2fa/regenerar-codigos', verifyCsrfToken, async (req, res, next) => {
+  try {
+    const codes = await backupCodesService.replaceCodesForUser(req.session.user.id);
+    await auditService.log(req, { user: req.session.user, action: 'backup_codes_regenerated' });
+    req.session.newBackupCodes = { codes, nextUrl: '/mi-cuenta' };
+    res.redirect('/2fa/codigos-respaldo');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Reconfigurar 2FA en caliente (usuario ya logueado, con o sin acceso a
+// su app autenticadora anterior): genera un secreto nuevo y pide
+// confirmarlo con un código antes de reemplazar el que ya tenía activo.
+router.get('/2fa/reconfigurar', async (req, res, next) => {
+  try {
+    if (!req.session.pending2faReconfigureSecret) {
+      req.session.pending2faReconfigureSecret = otpService.generateSecret();
+    }
+    const appName = (await settingsService.get('app_name')) || 'Gestion de Licencias';
+    const otpauthUrl = otpService.keyUri(req.session.user.email, req.session.pending2faReconfigureSecret, appName);
+    const qrDataUrl = await otpService.qrDataUrl(otpauthUrl);
+    res.render('account/reconfigure2fa', {
+      title: 'Reconfigurar verificación en dos pasos',
+      qrDataUrl,
+      secret: req.session.pending2faReconfigureSecret,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/2fa/reconfigurar', verifyCsrfToken, async (req, res, next) => {
+  try {
+    const secret = req.session.pending2faReconfigureSecret;
+    if (!secret) return res.redirect('/mi-cuenta/2fa/reconfigurar');
+
+    const valid = await otpService.verifyToken(secret, req.body.code);
+    if (!valid) {
+      req.flash('error', 'El código ingresado no es válido. Intenta de nuevo.');
+      return res.redirect('/mi-cuenta/2fa/reconfigurar');
+    }
+
+    await pool.query('UPDATE users SET otp_secret = ?, otp_confirmed_at = NOW() WHERE id = ?', [secret, req.session.user.id]);
+    delete req.session.pending2faReconfigureSecret;
+    await auditService.log(req, { user: req.session.user, action: 'account_2fa_reconfigure' });
+    req.flash('success', 'Tu verificación en dos pasos quedó reconfigurada con el nuevo código.');
     res.redirect('/mi-cuenta');
   } catch (err) {
     next(err);

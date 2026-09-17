@@ -51,12 +51,14 @@ Aplicación web para el seguimiento de:
   WhatsApp (API oficial de Meta) o Telegram (Bot API, gratis y sin
   necesidad de exponer la app a internet), disponible solo para contactos
   autorizados (admin/editor) — ver sección 9
-- **Seguridad y control de acceso**: 2FA obligatorio, bloqueo de cuenta
-  tras intentos fallidos, "confiar en este navegador" para saltar el 2FA
-  en equipos de confianza, autoservicio de "Mi cuenta" (cambiar
-  contraseña propia, ver/revocar dispositivos de confianza), permisos por
-  módulo configurables por rol, y un log de auditoría de solo-lectura
-  (quién hizo qué, cuándo y desde dónde) — ver sección 6.1 y 7
+- **Seguridad y control de acceso**: 2FA obligatorio con códigos de
+  respaldo de un solo uso (recuperación de cuenta sin depender de otro
+  admin ni del servidor), bloqueo de cuenta tras intentos fallidos,
+  "confiar en este navegador" para saltar el 2FA en equipos de confianza,
+  autoservicio de "Mi cuenta" (cambiar contraseña propia, reconfigurar el
+  2FA, ver/revocar dispositivos de confianza), permisos por módulo
+  configurables por rol, y un log de auditoría de solo-lectura (quién
+  hizo qué, cuándo y desde dónde) — ver sección 6.1 y 7
 
 Construida en Node.js + Express + EJS + MySQL/MariaDB, pensada para
 desplegarse con Docker junto a tu stack GLPI + Zabbix existente.
@@ -278,11 +280,16 @@ La aplicación exige **2FA obligatorio** (TOTP) para los tres roles
   queda activo el 2FA y se completa el inicio de sesión.
 - **Logins siguientes**: después de la contraseña, se pide el código de 6
   dígitos vigente.
-- **Si un usuario pierde su dispositivo**: un `admin` puede restablecer su
-  2FA desde **Usuarios** → botón "Restablecer 2FA" — la próxima vez que esa
-  persona inicie sesión, se le pedirá configurar el 2FA de nuevo desde cero.
-- **Si el único admin pierde su dispositivo** (nadie más puede restablecerlo
-  desde la UI): con acceso al servidor, corre
+- **Si pierdes tu dispositivo (con autoservicio, recomendado)**: usa uno
+  de tus **códigos de respaldo** (ver 7.5) en la pantalla de verificación
+  — no necesitas ni otro admin ni acceso al servidor.
+- **Si un usuario pierde su dispositivo y no le quedan códigos de
+  respaldo**: un `admin` puede restablecer su 2FA desde **Usuarios** →
+  botón "Restablecer 2FA" — la próxima vez que esa persona inicie sesión,
+  se le pedirá configurar el 2FA de nuevo desde cero.
+- **Si el único admin pierde su dispositivo y no le quedan códigos de
+  respaldo** (nadie más puede restablecerlo desde la UI): con acceso al
+  servidor, corre
   `docker compose exec app npm run reset-2fa -- correo@ejemplo.com`
   (o `npm run reset-2fa -- correo@ejemplo.com` en desarrollo local sin
   Docker).
@@ -319,6 +326,10 @@ cuenta** (el nombre/rol arriba a la derecha) para:
 - Cambiar su propia contraseña (pide la actual para confirmar).
 - Ver y revocar sus dispositivos de confianza.
 - Ver sus últimos inicios de sesión (éxitos y fallos).
+- **Reconfigurar 2FA (nuevo QR)**: reemplaza el secreto TOTP actual por
+  uno nuevo sin necesidad de un admin — útil si cambiaste de celular.
+- **Generar códigos de respaldo nuevos**: invalida los códigos actuales
+  y muestra un set nuevo (ver 7.5).
 
 ### 7.4 Auditoría
 
@@ -329,6 +340,27 @@ desbloqueos de cuenta, cambios de permisos, y descargas/restauraciones
 de respaldo — con fecha, correo, acción, objetivo, detalle e IP.
 Filtrable por acción, correo y rango de fechas. Nunca se edita ni borra
 desde la aplicación, solo se agrega.
+
+### 7.5 Códigos de respaldo
+
+Al activar el 2FA por primera vez (y cada vez que los regeneras desde
+**Mi cuenta**), la app te muestra **10 códigos de un solo uso** — es la
+**única vez** que se ven, así que guárdalos en un lugar seguro (gestor de
+contraseñas, impreso, etc.) apenas aparezcan.
+
+Si pierdes tu celular, en la pantalla de verificación en dos pasos abre
+"¿Perdiste tu celular? Usa un código de respaldo" e ingresa uno (no
+importa mayúsculas/minúsculas ni el guion). Cada código sirve una sola
+vez — una vez usado, queda invalidado. Esto resuelve el caso del **admin
+único sin acceso al servidor**: ya no depende de otro admin ni de la
+terminal para recuperar el acceso.
+
+Solo se guarda el *hash* de cada código (igual que una contraseña o el
+token de "confiar en este navegador") — el valor real nunca queda en la
+base de datos, solo existe en pantalla en el momento de generarlo.
+
+Si se te acaban los códigos (o los perdiste junto con el celular),
+recurre a los pasos de arriba (otro admin, o el comando por terminal).
 
 ## 8. Integración con GLPI — cómo funciona
 

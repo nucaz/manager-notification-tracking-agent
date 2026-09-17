@@ -5,6 +5,8 @@ const otpService = require('../services/otpService');
 const settingsService = require('../services/settingsService');
 const auditService = require('../services/auditService');
 const trustedDeviceService = require('../services/trustedDeviceService');
+const backupCodesService = require('../services/backupCodesService');
+const { requireAuth } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 
 const router = express.Router();
@@ -35,9 +37,11 @@ async function loadPendingUser(req) {
 }
 
 // via: 'trusted_device' (salto el codigo por cookie de confianza),
-// '2fa_setup' (primer enrolamiento) o '2fa_verify' (codigo normal) - solo
-// para el detalle del log de auditoria.
-function completeLogin(req, res, user, { via = '2fa_verify' } = {}) {
+// '2fa_setup' (primer enrolamiento), '2fa_verify' (codigo normal) o
+// 'backup_code' (recuperacion) - solo para el detalle del log de
+// auditoria. backupCodes: si viene (solo en el enrolamiento inicial), se
+// muestran una vez despues de completar el login.
+function completeLogin(req, res, user, { via = '2fa_verify', backupCodes = null } = {}) {
   const sessionUser = {
     id: user.id,
     full_name: user.full_name,
@@ -51,6 +55,10 @@ function completeLogin(req, res, user, { via = '2fa_verify' } = {}) {
     }
     req.session.user = sessionUser;
     auditService.log(req, { user: sessionUser, action: 'login', detail: via });
+    if (backupCodes) {
+      req.session.newBackupCodes = { codes: backupCodes, nextUrl: '/' };
+      return res.redirect('/2fa/codigos-respaldo');
+    }
     res.redirect('/');
   });
 }
@@ -102,8 +110,9 @@ router.post('/configurar', requirePending, otpLimiter, verifyCsrfToken, async (r
     if (req.body.confiar) {
       await trustedDeviceService.trustThisDevice(req, res, user.id);
     }
+    const backupCodes = await backupCodesService.replaceCodesForUser(user.id);
     req.flash('success', 'Verificacion en dos pasos activada correctamente.');
-    completeLogin(req, res, user, { via: '2fa_setup' });
+    completeLogin(req, res, user, { via: '2fa_setup', backupCodes });
   } catch (err) {
     next(err);
   }
@@ -142,6 +151,44 @@ router.post('/verificar', requirePending, otpLimiter, verifyCsrfToken, async (re
   } catch (err) {
     next(err);
   }
+});
+
+// --- Recuperacion con codigo de respaldo (perdiste el celular) ---------
+
+router.post('/codigo-respaldo', requirePending, otpLimiter, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const user = await loadPendingUser(req);
+    if (!user) return res.redirect('/login');
+    if (!user.otp_enabled) return res.redirect('/2fa/configurar');
+
+    const ok = await backupCodesService.verifyAndConsume(user.id, req.body.codigo);
+    if (!ok) {
+      await auditService.log(req, { user: { id: user.id, email: user.email }, action: 'login_backup_code_failed', target: user.email });
+      req.flash('error', 'Ese código de respaldo no es válido o ya fue usado.');
+      return res.redirect('/2fa/verificar');
+    }
+
+    const remaining = await backupCodesService.remainingCount(user.id);
+    req.flash(
+      'success',
+      remaining > 0
+        ? `Código de respaldo aceptado. Te quedan ${remaining} código(s) sin usar.`
+        : 'Código de respaldo aceptado. Era tu último código — ve a Mi cuenta a generar códigos nuevos.'
+    );
+    completeLogin(req, res, user, { via: 'backup_code' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Muestra los codigos de respaldo UNA sola vez (justo despues de
+// generarlos, en session.newBackupCodes) y los borra de la sesion apenas
+// se leen, para que no queden visibles si alguien vuelve con "atras".
+router.get('/codigos-respaldo', requireAuth, (req, res) => {
+  const data = req.session.newBackupCodes;
+  delete req.session.newBackupCodes;
+  if (!data) return res.redirect('/');
+  res.render('twofa/codigosRespaldo', { title: 'Códigos de respaldo', codes: data.codes, nextUrl: data.nextUrl || '/' });
 });
 
 module.exports = router;

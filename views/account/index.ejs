@@ -21,6 +21,21 @@
       </form>
     </div>
 
+    <div class="card p-3 mb-3">
+      <h5>Verificación en dos pasos</h5>
+      <p class="text-muted small">
+        Te quedan <strong><%= backupCodesRemaining %></strong> código(s) de respaldo sin usar
+        (sirven para entrar si pierdes tu celular).
+      </p>
+      <div class="d-flex gap-2 flex-wrap">
+        <a href="/mi-cuenta/2fa/reconfigurar" class="btn btn-outline-secondary btn-sm">Reconfigurar 2FA (nuevo QR)</a>
+        <form action="/mi-cuenta/2fa/regenerar-codigos" method="post" onsubmit="return confirm('Esto invalida tus códigos de respaldo actuales y genera unos nuevos. ¿Continuar?');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" class="btn btn-outline-secondary btn-sm">Generar códigos nuevos</button>
+        </form>
+      </div>
+    </div>
+
     <div class="card p-3">
       <h5>Dispositivos de confianza</h5>
       <p class="text-muted small">

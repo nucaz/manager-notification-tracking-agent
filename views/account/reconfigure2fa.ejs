@@ -1,0 +1,38 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="container" style="max-width:460px;">
+  <div class="card shadow-sm p-4">
+    <h4 class="mb-1 text-center">Reconfigurar verificación en dos pasos</h4>
+    <p class="text-muted text-center small mb-4">
+      Esto reemplaza el código de tu app autenticadora actual por uno nuevo. Útil si cambiaste de
+      celular o simplemente quieres empezar de cero.
+    </p>
+
+    <ol class="small mb-3">
+      <li>Escanea este código QR con tu app autenticadora.</li>
+      <li>Si no puedes escanearlo, ingresa la clave manual que aparece abajo.</li>
+      <li>Escribe el código de 6 dígitos que te muestra la app para confirmar.</li>
+    </ol>
+
+    <div class="text-center mb-3">
+      <img src="<%= qrDataUrl %>" alt="Código QR para reconfigurar 2FA" style="max-width:220px;">
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label small text-muted">Clave manual (si no puedes escanear el QR)</label>
+      <input type="text" class="form-control form-control-sm text-center" value="<%= secret %>" readonly>
+    </div>
+
+    <form method="post" action="/mi-cuenta/2fa/reconfigurar">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="mb-3">
+        <label class="form-label">Código de verificación</label>
+        <input type="text" name="code" class="form-control text-center" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" required autofocus>
+      </div>
+      <button type="submit" class="btn btn-primary w-100 mb-2">Confirmar y reemplazar</button>
+      <a href="/mi-cuenta" class="btn btn-outline-secondary w-100">Cancelar</a>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

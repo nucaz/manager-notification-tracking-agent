@@ -364,6 +364,24 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
+-- Codigos de respaldo de un solo uso para el 2FA: permiten que un admin
+-- unico recupere el acceso sin depender de otro admin ni de la terminal
+-- del servidor si pierde su celular. Se generan 10 al activar el 2FA (y
+-- cada vez que el usuario los regenera desde Mi cuenta), se muestran UNA
+-- sola vez, y solo se guarda el hash de cada uno (igual que una
+-- contrasena) - nunca el valor en texto plano.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS backup_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  code_hash VARCHAR(255) NOT NULL,
+  used_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_backup_code_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_backup_code_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
 -- Adjuntos: contratos, adendas, facturas — vinculados de forma polimórfica
 -- a licencias, dominios, contratos ISP, servidores, certificados o celulares
 -- ---------------------------------------------------------------------

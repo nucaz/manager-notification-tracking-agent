@@ -34,6 +34,17 @@
       </div>
       <button type="submit" class="btn btn-primary w-100">Verificar</button>
     </form>
+
+    <details class="mt-3">
+      <summary class="text-muted small">¿Perdiste tu celular? Usa un código de respaldo</summary>
+      <form method="post" action="/2fa/codigo-respaldo" class="mt-2">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="mb-2">
+          <input type="text" name="codigo" class="form-control text-center font-monospace" placeholder="XXXXX-XXXXX" required>
+        </div>
+        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Usar código de respaldo</button>
+      </form>
+    </details>
   </div>
 </div>
 </body>
