@@ -28,6 +28,10 @@
         <label class="form-label">Código de verificación</label>
         <input type="text" name="code" class="form-control text-center" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" required autofocus>
       </div>
+      <div class="form-check mb-3">
+        <input type="checkbox" class="form-check-input" name="confiar" id="confiar" value="1">
+        <label class="form-check-label small" for="confiar">Confiar en este navegador por 30 días (no pedir código aquí)</label>
+      </div>
       <button type="submit" class="btn btn-primary w-100">Verificar</button>
     </form>
   </div>

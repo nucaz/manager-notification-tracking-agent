@@ -42,6 +42,7 @@
 <% } %>
 
 <div class="row g-3 mb-4">
+  <% if (enabledModules.licencias) { %>
   <div class="col-md-4">
     <a href="/licencias" class="text-decoration-none">
       <div class="card p-3">
@@ -52,6 +53,8 @@
       </div>
     </a>
   </div>
+  <% } %>
+  <% if (enabledModules.dominios) { %>
   <div class="col-md-4">
     <a href="/dominios" class="text-decoration-none">
       <div class="card p-3">
@@ -62,6 +65,8 @@
       </div>
     </a>
   </div>
+  <% } %>
+  <% if (enabledModules.isp) { %>
   <div class="col-md-4">
     <a href="/isp" class="text-decoration-none">
       <div class="card p-3">
@@ -72,6 +77,8 @@
       </div>
     </a>
   </div>
+  <% } %>
+  <% if (enabledModules.servidores) { %>
   <div class="col-md-4">
     <a href="/servidores" class="text-decoration-none">
       <div class="card p-3">
@@ -82,6 +89,8 @@
       </div>
     </a>
   </div>
+  <% } %>
+  <% if (enabledModules.celulares) { %>
   <div class="col-md-4">
     <a href="/celulares" class="text-decoration-none">
       <div class="card p-3">
@@ -92,6 +101,8 @@
       </div>
     </a>
   </div>
+  <% } %>
+  <% if (enabledModules.certificados) { %>
   <div class="col-md-4">
     <a href="/certificados" class="text-decoration-none">
       <div class="card p-3">
@@ -102,6 +113,7 @@
       </div>
     </a>
   </div>
+  <% } %>
 </div>
 
 <div class="row g-3">

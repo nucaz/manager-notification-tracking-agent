@@ -1,0 +1,60 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Auditoría</h2>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <select name="action" class="form-select">
+      <option value="">Todas las acciones</option>
+      <% actions.forEach(function(a) { %>
+        <option value="<%= a %>" <%= action === a ? 'selected' : '' %>><%= a %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-auto">
+    <input type="text" name="email" value="<%= email %>" class="form-control" placeholder="Correo del usuario...">
+  </div>
+  <div class="col-auto">
+    <input type="date" name="desde" value="<%= desde %>" class="form-control">
+  </div>
+  <div class="col-auto">
+    <input type="date" name="hasta" value="<%= hasta %>" class="form-control">
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle table-sm">
+      <thead>
+        <tr>
+          <th>Fecha</th><th>Usuario</th><th>Acción</th><th>Objetivo</th><th>Detalle</th><th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.forEach(function(item) { %>
+          <tr>
+            <td class="text-nowrap"><%= new Date(item.created_at).toLocaleString('es-PE') %></td>
+            <td><%= item.user_email || '—' %></td>
+            <td><span class="badge bg-secondary"><%= item.action %></span></td>
+            <td><%= item.target || '—' %></td>
+            <td class="small text-muted"><%= item.detail || '' %></td>
+            <td class="small text-muted"><%= item.ip_address || '' %></td>
+          </tr>
+        <% }); %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="6" class="text-center text-muted py-4">No hay eventos que coincidan con el filtro.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+  <% if (items.length === 300) { %>
+    <div class="form-text">Se muestran los 300 eventos más recientes que coinciden con el filtro — usa los filtros para acotar.</div>
+  <% } %>
+</div>
+
+<%- include('../partials/foot') %>

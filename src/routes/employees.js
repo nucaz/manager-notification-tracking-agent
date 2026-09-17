@@ -1,12 +1,13 @@
 const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
+const { moduleRequired } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const employeeService = require('../services/employeeService');
 const catalogService = require('../services/catalogService');
 
 const router = express.Router();
-router.use(requireAuth, verifyCsrfToken);
+router.use(requireAuth, moduleRequired('empleados'), verifyCsrfToken);
 
 async function loadCatalogOptions() {
   const [sedes, areas] = await Promise.all([

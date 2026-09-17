@@ -19,25 +19,47 @@
     <div class="collapse navbar-collapse" id="navMain">
       <ul class="navbar-nav me-auto">
         <li class="nav-item"><a class="nav-link <%= currentPath === '/' ? 'active' : '' %>" href="/">Panel</a></li>
+        <% if (enabledModules.licencias) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/licencias') ? 'active' : '' %>" href="/licencias">Licencias</a></li>
+        <% } %>
+        <% if (enabledModules.dominios) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/dominios') ? 'active' : '' %>" href="/dominios">Dominios</a></li>
+        <% } %>
+        <% if (enabledModules.isp) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/isp') ? 'active' : '' %>" href="/isp">Contratos ISP</a></li>
+        <% } %>
+        <% if (enabledModules.servidores) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/servidores') ? 'active' : '' %>" href="/servidores">Servidores</a></li>
+        <% } %>
+        <% if (enabledModules.certificados) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/certificados') ? 'active' : '' %>" href="/certificados">Certificados</a></li>
+        <% } %>
+        <% if (enabledModules.celulares) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/celulares') ? 'active' : '' %>" href="/celulares">Celulares</a></li>
+        <% } %>
+        <% if (enabledModules.empleados) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/empleados') ? 'active' : '' %>" href="/empleados">Empleados</a></li>
+        <% } %>
+        <% if (enabledModules.red) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/red') ? 'active' : '' %>" href="/red">Red</a></li>
+        <% } %>
+        <% if (enabledModules.glpi_inventario) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/glpi/inventario') ? 'active' : '' %>" href="/glpi/inventario">Inventario GLPI</a></li>
+        <% } %>
+        <% if (enabledModules.reportes) { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/reportes') ? 'active' : '' %>" href="/reportes">Reportes</a></li>
+        <% } %>
         <% if (currentUser.role === 'admin') { %>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/usuarios') ? 'active' : '' %>" href="/usuarios">Usuarios</a></li>
+        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/permisos') ? 'active' : '' %>" href="/permisos">Permisos</a></li>
+        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/auditoria') ? 'active' : '' %>" href="/auditoria">Auditoría</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/configuracion') ? 'active' : '' %>" href="/configuracion">Configuración</a></li>
         <% } %>
       </ul>
-      <span class="navbar-text me-3">
+      <a href="/mi-cuenta" class="navbar-text me-3 text-decoration-none <%= currentPath.startsWith('/mi-cuenta') ? 'text-white' : '' %>">
         <i class="bi bi-person-circle"></i> <%= currentUser.full_name %>
         <span class="badge bg-secondary text-uppercase"><%= currentUser.role %></span>
-      </span>
+      </a>
       <form action="/logout" method="post" class="d-flex">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <button class="btn btn-outline-light btn-sm" type="submit">Salir</button>

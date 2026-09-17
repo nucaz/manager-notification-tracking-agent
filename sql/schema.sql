@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS users (
   otp_confirmed_at DATETIME NULL,
   whatsapp_number VARCHAR(20) NULL UNIQUE,       -- formato E.164 sin "+", ej: 51987654321
   telegram_chat_id VARCHAR(32) NULL UNIQUE,      -- id numerico de chat de Telegram (lo revela el bot con /start)
+  failed_login_attempts INT NOT NULL DEFAULT 0,  -- se resetea a 0 en cada login exitoso
+  locked TINYINT(1) NOT NULL DEFAULT 0,          -- 1 tras demasiados intentos fallidos seguidos; solo un admin lo destraba
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -297,6 +299,68 @@ CREATE TABLE IF NOT EXISTS agent_message_log (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_agent_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_agent_log_contact (channel, contact)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Auditoria: quien hizo que, desde donde. Se escribe en login (exito y
+-- fallo), cambios de configuracion, gestion de usuarios, y respaldo/
+-- restauracion de la base de datos. Solo se agrega, nunca se edita ni
+-- borra desde la app. user_id puede quedar NULL (login fallido con
+-- usuario inexistente, o el usuario fue eliminado despues) - por eso
+-- user_email queda ademas como texto plano, para que el registro siga
+-- siendo legible aunque la cuenta ya no exista.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
+  user_email VARCHAR(150) NULL,
+  action VARCHAR(64) NOT NULL,        -- ej: 'login', 'login_failed', 'settings_update', 'backup_restore'
+  target VARCHAR(255) NULL,           -- sobre que actuo, ej: nombre de un usuario o registro
+  detail TEXT NULL,
+  ip_address VARCHAR(64) NULL,
+  user_agent VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_audit_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_audit_log_action (action),
+  INDEX idx_audit_log_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Permisos por modulo: que modulos puede ABRIR cada rol configurable
+-- (editor, lector) - admin siempre ve todo, nunca aparece aca (para que
+-- nunca pueda auto-bloquearse esta misma pantalla). La ausencia de una
+-- fila para (role, module) significa "usar el default de fabrica" (ver
+-- MODULES/DEFAULT_MODULE_ACCESS en src/middleware/modules.js), NO
+-- "habilitado" - asi instalar esto no cambia el acceso de nadie hasta que
+-- un admin toque un checkbox en /permisos. Esto SOLO protege las rutas de
+-- vista de cada modulo; las rutas de escritura siguen con su propio
+-- canWrite/isAdmin de siempre, sin tocar - nunca amplia lo que un rol ya
+-- podia hacer, solo decide que pantallas puede abrir.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS role_modules (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  role ENUM('editor','lector') NOT NULL,
+  module VARCHAR(32) NOT NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  UNIQUE KEY uniq_role_module (role, module)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- "Confiar en este navegador": permite saltar el codigo TOTP por un
+-- tiempo en un equipo ya verificado una vez. Se guarda el hash del token
+-- (nunca el valor crudo), igual que una contrasena - la cookie del
+-- navegador solo tiene el valor crudo, que nunca se puede reconstruir a
+-- partir del hash guardado aca.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS trusted_devices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  token_hash VARCHAR(64) NOT NULL,
+  label VARCHAR(200) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NOT NULL,
+  CONSTRAINT fk_trusted_device_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_trusted_device_token (token_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------

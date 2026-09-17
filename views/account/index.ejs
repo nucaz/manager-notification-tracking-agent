@@ -1,0 +1,81 @@
+<%- include('../partials/head', { title: title }) %>
+
+<h2 class="mb-3">Mi cuenta</h2>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card p-3 mb-3">
+      <h5>Cambiar mi contraseña</h5>
+      <form method="post" action="/mi-cuenta/password">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="mb-2">
+          <label class="form-label">Contraseña actual</label>
+          <input type="password" name="current_password" class="form-control" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Contraseña nueva</label>
+          <input type="password" name="new_password" class="form-control" minlength="8" required>
+          <div class="form-text">Mínimo 8 caracteres.</div>
+        </div>
+        <button type="submit" class="btn btn-primary">Actualizar contraseña</button>
+      </form>
+    </div>
+
+    <div class="card p-3">
+      <h5>Dispositivos de confianza</h5>
+      <p class="text-muted small">
+        Equipos donde marcaste "confiar en este navegador" al iniciar sesión — no te piden el código
+        de verificación en dos pasos ahí hasta que venzan (30 días) o los revoques aquí.
+      </p>
+      <% if (trusted.length === 0) { %>
+        <p class="text-muted">No tienes ningún dispositivo de confianza guardado.</p>
+      <% } else { %>
+        <table class="table table-sm">
+          <thead><tr><th>Dispositivo</th><th>Vence</th><th></th></tr></thead>
+          <tbody>
+            <% trusted.forEach(function(t) { %>
+              <tr>
+                <td class="small"><%= t.label || 'Sin identificar' %></td>
+                <td class="small text-nowrap"><%= new Date(t.expires_at).toLocaleDateString('es-PE') %></td>
+                <td class="text-end">
+                  <form action="/mi-cuenta/dispositivos/<%= t.id %>/revocar" method="post" onsubmit="return confirm('¿Revocar este dispositivo?');">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn-sm btn-outline-danger">Revocar</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card p-3">
+      <h5>Mis últimos inicios de sesión</h5>
+      <% if (recentLogins.length === 0) { %>
+        <p class="text-muted">Sin registros todavía.</p>
+      <% } else { %>
+        <table class="table table-sm">
+          <thead><tr><th>Fecha</th><th>Evento</th><th>IP</th></tr></thead>
+          <tbody>
+            <% recentLogins.forEach(function(l) { %>
+              <tr>
+                <td class="small text-nowrap"><%= new Date(l.created_at).toLocaleString('es-PE') %></td>
+                <td class="small">
+                  <% if (l.action === 'login') { %><span class="badge bg-success">Inicio de sesión</span>
+                  <% } else if (l.action === 'logout') { %><span class="badge bg-secondary">Cierre de sesión</span>
+                  <% } else { %><span class="badge bg-danger">Intento fallido</span><% } %>
+                </td>
+                <td class="small text-muted"><%= l.ip_address || '' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

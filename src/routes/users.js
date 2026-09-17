@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../db/pool');
 const { requireAuth, isAdmin } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
+const auditService = require('../services/auditService');
 
 const router = express.Router();
 router.use(requireAuth, isAdmin, verifyCsrfToken);
@@ -17,7 +18,7 @@ function duplicateFieldMessage(err) {
 router.get('/', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, full_name, email, role, active, otp_enabled, created_at FROM users ORDER BY full_name'
+      'SELECT id, full_name, email, role, active, otp_enabled, locked, created_at FROM users ORDER BY full_name'
     );
     res.render('users/list', { title: 'Usuarios', items: rows });
   } catch (err) {
@@ -41,6 +42,7 @@ router.post('/nuevo', async (req, res, next) => {
       'INSERT INTO users (full_name, email, password_hash, role, whatsapp_number, telegram_chat_id, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
       [full_name, email, hash, role || 'lector', whatsapp_number || null, telegram_chat_id || null]
     );
+    await auditService.log(req, { user: req.session.user, action: 'user_create', target: email, detail: `rol: ${role || 'lector'}` });
     req.flash('success', 'Usuario creado correctamente.');
     res.redirect('/usuarios');
   } catch (err) {
@@ -80,6 +82,12 @@ router.post('/:id/editar', async (req, res, next) => {
         [full_name, email, role, whatsapp_number || null, telegram_chat_id || null, active ? 1 : 0, req.params.id]
       );
     }
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'user_update',
+      target: email,
+      detail: password ? `rol: ${role}, contraseña cambiada` : `rol: ${role}`,
+    });
     req.flash('success', 'Usuario actualizado correctamente.');
     res.redirect('/usuarios');
   } catch (err) {
@@ -93,11 +101,28 @@ router.post('/:id/editar', async (req, res, next) => {
 
 router.post('/:id/restablecer-2fa', async (req, res, next) => {
   try {
+    const [[target]] = await pool.query('SELECT email FROM users WHERE id = ?', [req.params.id]);
     await pool.query(
       'UPDATE users SET otp_secret = NULL, otp_enabled = 0, otp_confirmed_at = NULL WHERE id = ?',
       [req.params.id]
     );
+    await auditService.log(req, { user: req.session.user, action: 'user_reset_2fa', target: target && target.email });
     req.flash('success', 'Se restableció el 2FA. El usuario deberá configurarlo de nuevo en su próximo inicio de sesión.');
+    res.redirect('/usuarios');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Destraba una cuenta bloqueada por MAX_LOGIN_ATTEMPTS intentos fallidos
+// seguidos (ver src/routes/auth.js) - unica forma de volver a entrar para
+// esa cuenta, a proposito.
+router.post('/:id/desbloquear', async (req, res, next) => {
+  try {
+    const [[target]] = await pool.query('SELECT email FROM users WHERE id = ?', [req.params.id]);
+    await pool.query('UPDATE users SET locked = 0, failed_login_attempts = 0 WHERE id = ?', [req.params.id]);
+    await auditService.log(req, { user: req.session.user, action: 'user_unlock', target: target && target.email });
+    req.flash('success', 'Cuenta desbloqueada.');
     res.redirect('/usuarios');
   } catch (err) {
     next(err);
@@ -110,7 +135,9 @@ router.post('/:id/eliminar', async (req, res, next) => {
       req.flash('error', 'No puedes eliminar tu propio usuario.');
       return res.redirect('/usuarios');
     }
+    const [[target]] = await pool.query('SELECT email FROM users WHERE id = ?', [req.params.id]);
     await pool.query('DELETE FROM users WHERE id = ?', [req.params.id]);
+    await auditService.log(req, { user: req.session.user, action: 'user_delete', target: target && target.email });
     req.flash('success', 'Usuario eliminado.');
     res.redirect('/usuarios');
   } catch (err) {

@@ -1,10 +1,11 @@
 const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth } = require('../middleware/auth');
+const { moduleRequired } = require('../middleware/modules');
 const { daysUntil, statusFromDays } = require('../services/expirationService');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, moduleRequired('reportes'));
 
 const MODULES = {
   license: {

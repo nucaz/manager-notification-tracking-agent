@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
+const { moduleRequired } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const glpiClient = require('../services/glpiClient');
 
@@ -38,9 +39,11 @@ router.get('/api/entidades', async (req, res) => {
 });
 
 // Inventario de GLPI (solo lectura): listado/busqueda de equipos y su
-// software instalado. No requiere canWrite - es de consulta, visible para
-// los 3 roles, igual que Reportes.
-router.get('/inventario', async (req, res, next) => {
+// software instalado. No requiere canWrite - es de consulta. moduleRequired
+// se aplica solo a estas dos rutas (no a nivel de router), porque el resto
+// del router (sincronizar, autocompletar equipos/entidades) no es "el
+// modulo Inventario GLPI" y no debe quedar gateado por el mismo permiso.
+router.get('/inventario', moduleRequired('glpi_inventario'), async (req, res, next) => {
   try {
     const q = req.query.q || '';
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -72,7 +75,7 @@ router.get('/inventario', async (req, res, next) => {
   }
 });
 
-router.get('/inventario/:id', async (req, res, next) => {
+router.get('/inventario/:id', moduleRequired('glpi_inventario'), async (req, res, next) => {
   try {
     const [computer, software] = await Promise.all([
       glpiClient.getComputerDetail(req.params.id),

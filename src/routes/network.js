@@ -3,11 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
+const { moduleRequired } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const { uploader, DIRS } = require('../services/uploadService');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, moduleRequired('red'));
 
 const CATEGORIES = [
   { value: 'arquitectura_web', label: 'Arquitectura web' },

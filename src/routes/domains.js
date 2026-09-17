@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
+const { moduleRequired } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const { daysUntil, statusFromDays } = require('../services/expirationService');
 const exchangeRateService = require('../services/exchangeRateService');
@@ -11,7 +12,7 @@ const router = express.Router();
 // verifyCsrfToken NO va aca a nivel de router: /importar es multipart y
 // necesita que multer parsee el body antes de verificar el token (ver
 // src/routes/attachments.js). Se aplica explicito en cada ruta POST.
-router.use(requireAuth);
+router.use(requireAuth, moduleRequired('dominios'));
 
 const FIELDS = [
   'domain_name', 'registrar', 'dns_provider', 'registration_date', 'expiration_date',

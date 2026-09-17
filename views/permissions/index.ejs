@@ -1,0 +1,44 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Permisos por módulo</h2>
+</div>
+
+<div class="alert alert-info">
+  Decide qué módulos puede <strong>abrir</strong> cada rol. El administrador siempre ve todo.
+  Esto no cambia qué puede <strong>escribir</strong> cada rol (eso lo sigue decidiendo el rol mismo:
+  un lector nunca puede crear/editar/eliminar, tenga o no un módulo habilitado aquí).
+</div>
+
+<form method="post" action="/permisos">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <div class="card p-3">
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Módulo</th>
+            <% roles.forEach(function(role) { %>
+              <th class="text-center text-capitalize"><%= role %></th>
+            <% }); %>
+          </tr>
+        </thead>
+        <tbody>
+          <% matrix.forEach(function(row) { %>
+            <tr>
+              <td><%= row.label %></td>
+              <% row.roles.forEach(function(r) { %>
+                <td class="text-center">
+                  <input type="checkbox" class="form-check-input" name="m_<%= r.role %>_<%= row.key %>" value="1" <%= r.enabled ? 'checked' : '' %>>
+                </td>
+              <% }); %>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <button type="submit" class="btn btn-primary mt-3">Guardar permisos</button>
+</form>
+
+<%- include('../partials/foot') %>

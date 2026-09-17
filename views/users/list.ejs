@@ -7,7 +7,7 @@
 
 <div class="card p-3">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Activo</th><th>2FA</th><th></th></tr></thead>
+    <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Activo</th><th>2FA</th><th>Acceso</th><th></th></tr></thead>
     <tbody>
       <% items.forEach(function(u) { %>
         <tr>
@@ -22,8 +22,21 @@
               <span class="badge bg-warning text-dark">Pendiente</span>
             <% } %>
           </td>
+          <td>
+            <% if (u.locked) { %>
+              <span class="badge bg-danger">Bloqueado</span>
+            <% } else { %>
+              <span class="text-muted">—</span>
+            <% } %>
+          </td>
           <td class="text-end">
             <a href="/usuarios/<%= u.id %>/editar" class="btn btn-sm btn-outline-primary">Editar</a>
+            <% if (u.locked) { %>
+              <form action="/usuarios/<%= u.id %>/desbloquear" method="post" class="d-inline" onsubmit="return confirm('¿Desbloquear esta cuenta?');">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn btn-sm btn-outline-warning">Desbloquear</button>
+              </form>
+            <% } %>
             <% if (u.otp_enabled) { %>
               <form action="/usuarios/<%= u.id %>/restablecer-2fa" method="post" class="d-inline" onsubmit="return confirm('¿Restablecer el 2FA de este usuario? Deberá volver a configurarlo en su próximo inicio de sesión.');">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">

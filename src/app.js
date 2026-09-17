@@ -1,6 +1,7 @@
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const flash = require('connect-flash');
 const env = require('./config/env');
 const { ensureCsrfToken } = require('./middleware/csrf');
@@ -22,6 +23,9 @@ const settingsRoutes = require('./routes/settings');
 const catalogRoutes = require('./routes/catalogs');
 const reportRoutes = require('./routes/reports');
 const usersRoutes = require('./routes/users');
+const auditRoutes = require('./routes/audit');
+const permissionsRoutes = require('./routes/permissions');
+const accountRoutes = require('./routes/account');
 const whatsappWebhookRoutes = require('./routes/whatsappWebhook');
 
 const app = express();
@@ -42,6 +46,7 @@ app.use(
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.use(
@@ -72,6 +77,29 @@ app.use(async (req, res, next) => {
   } catch (_) {
     res.locals.appName = 'Gestion de Licencias';
   }
+
+  // Para ocultar del menu los modulos que este rol no tiene habilitados
+  // (moduleRequired ya protege la ruta en si; esto es solo para no
+  // mostrar un link muerto). admin siempre ve todo.
+  res.locals.enabledModules = {};
+  if (req.session.user) {
+    const { MODULES, moduleEnabled } = require('./middleware/modules');
+    if (req.session.user.role === 'admin') {
+      for (const key of Object.keys(MODULES)) res.locals.enabledModules[key] = true;
+    } else {
+      try {
+        await Promise.all(
+          Object.keys(MODULES).map(async (key) => {
+            res.locals.enabledModules[key] = await moduleEnabled(req.session.user.role, key);
+          })
+        );
+      } catch (_) {
+        // si falla la consulta, no ocultar nada de mas - moduleRequired sigue protegiendo la ruta real
+        for (const key of Object.keys(MODULES)) res.locals.enabledModules[key] = true;
+      }
+    }
+  }
+
   next();
 });
 
@@ -91,6 +119,9 @@ app.use('/glpi', glpiRoutes);
 app.use('/configuracion/catalogos', catalogRoutes);
 app.use('/configuracion', settingsRoutes);
 app.use('/usuarios', usersRoutes);
+app.use('/auditoria', auditRoutes);
+app.use('/permisos', permissionsRoutes);
+app.use('/mi-cuenta', accountRoutes);
 app.use('/reportes', reportRoutes);
 
 app.use((req, res) => {

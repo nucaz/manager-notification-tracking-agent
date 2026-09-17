@@ -51,6 +51,12 @@ Aplicación web para el seguimiento de:
   WhatsApp (API oficial de Meta) o Telegram (Bot API, gratis y sin
   necesidad de exponer la app a internet), disponible solo para contactos
   autorizados (admin/editor) — ver sección 9
+- **Seguridad y control de acceso**: 2FA obligatorio, bloqueo de cuenta
+  tras intentos fallidos, "confiar en este navegador" para saltar el 2FA
+  en equipos de confianza, autoservicio de "Mi cuenta" (cambiar
+  contraseña propia, ver/revocar dispositivos de confianza), permisos por
+  módulo configurables por rol, y un log de auditoría de solo-lectura
+  (quién hizo qué, cuándo y desde dónde) — ver sección 6.1 y 7
 
 Construida en Node.js + Express + EJS + MySQL/MariaDB, pensada para
 desplegarse con Docker junto a tu stack GLPI + Zabbix existente.
@@ -156,6 +162,13 @@ npm run send-reminders:dry-run     # solo muestra qué se enviaría, sin enviar
 Una vez dentro de la app (como usuario `admin`), ve a **Configuración** para
 completar (sin tocar archivos ni reiniciar contenedores):
 
+Los campos de credenciales (App-Token/User-Token de GLPI, contraseña SMTP,
+API key de Gemini, tokens de WhatsApp/Telegram) nunca vuelven a mostrar el
+valor real una vez guardado — solo un placeholder enmascarado indicando
+que ya está configurado. Dejarlos en blanco al guardar **mantiene el valor
+que ya tenías** (igual que la contraseña en el formulario de Usuarios);
+escribe un valor nuevo solo si quieres reemplazarlo.
+
 - **Integración GLPI**: URL base de la API REST **"Legacy"** de GLPI —
   copia el valor exacto que muestra tu propio servidor en
   *Configuración → General → pestaña API → sección "Legacy API" → "URL of
@@ -226,12 +239,33 @@ cualquier origen de archivos.
 
 ## 6. Roles de usuario
 
-- **admin**: acceso total, incluye Usuarios y Configuración.
-- **editor**: puede crear, editar y eliminar licencias/dominios/contratos/
-  adjuntos/diagramas, pero no accede a Usuarios ni Configuración.
-- **lector**: solo puede ver y consultar/exportar reportes.
+- **admin**: acceso total, incluye Usuarios, Configuración, Permisos y
+  Auditoría. Nunca se le puede restringir el acceso a ningún módulo (así
+  no puede auto-bloquearse la pantalla de Permisos).
+- **editor**: puede crear, editar y eliminar en los módulos que tenga
+  habilitados (ver 6.1), pero no accede a Usuarios, Configuración,
+  Permisos ni Auditoría.
+- **lector**: solo puede ver — nunca crear, editar ni eliminar, sin
+  importar qué módulos tenga habilitados.
 
 Gestiona usuarios desde **Usuarios** (solo visible para `admin`).
+
+### 6.1 Permisos por módulo
+
+Desde **Permisos** (solo `admin`) decides qué módulos puede **abrir**
+cada rol (`editor`/`lector`) — licencias, dominios, contratos ISP,
+servidores, certificados, celulares, empleados, red, inventario GLPI y
+reportes. Instalar esta función **no le quita acceso a nadie**: por
+defecto todos los módulos quedan habilitados para ambos roles (el mismo
+comportamiento que ya existía antes de que existiera esta pantalla) hasta
+que un `admin` desmarca algo a propósito.
+
+Esto solo controla qué pantallas puede **abrir** cada rol — nunca amplía
+lo que puede **escribir**: un `lector` con todos los módulos habilitados
+sigue sin poder crear/editar/eliminar nada (eso lo sigue decidiendo el
+rol en sí), y un `editor` al que se le apaga un módulo simplemente ya no
+puede ni entrar a verlo (el enlace tampoco aparece en el menú ni en el
+panel principal).
 
 ## 7. Verificación en dos pasos (2FA)
 
@@ -252,6 +286,49 @@ La aplicación exige **2FA obligatorio** (TOTP) para los tres roles
   `docker compose exec app npm run reset-2fa -- correo@ejemplo.com`
   (o `npm run reset-2fa -- correo@ejemplo.com` en desarrollo local sin
   Docker).
+
+### 7.1 Bloqueo de cuenta por intentos fallidos
+
+Además del límite de intentos por IP (rate-limit), hay un **bloqueo por
+cuenta**: tras 5 intentos de contraseña incorrecta seguidos, la cuenta
+queda bloqueada (aunque se use la contraseña correcta después) hasta que
+un `admin` la desbloquea desde **Usuarios** → botón "Desbloquear". Cada
+intento fallido y cada bloqueo/desbloqueo queda registrado en Auditoría
+(ver 7.3).
+
+### 7.2 "Confiar en este navegador"
+
+Al verificar el código de 6 dígitos (tanto en el primer enrolamiento como
+en logins posteriores), hay una casilla opcional "Confiar en este
+navegador por 30 días". Si la marcas, ese equipo no vuelve a pedir el
+código de 2FA hasta que pasen 30 días o revoques el dispositivo tú mismo
+desde **Mi cuenta**. Internamente guarda solo el *hash* de un token
+aleatorio en una cookie `httpOnly` — igual que una contraseña, el valor
+real nunca queda en la base de datos y no se puede reconstruir a partir
+del hash.
+
+Es un balance deliberado entre seguridad y comodidad: úsalo solo en
+equipos de confianza (tu propia laptop de trabajo), nunca en un equipo
+compartido.
+
+### 7.3 Mi cuenta (autoservicio)
+
+Cualquier usuario logueado (no solo `admin`) puede entrar a **Mi
+cuenta** (el nombre/rol arriba a la derecha) para:
+
+- Cambiar su propia contraseña (pide la actual para confirmar).
+- Ver y revocar sus dispositivos de confianza.
+- Ver sus últimos inicios de sesión (éxitos y fallos).
+
+### 7.4 Auditoría
+
+**Auditoría** (solo `admin`) muestra un registro de solo-lectura de
+quién hizo qué: inicios y cierres de sesión (éxito y fallo), cambios de
+configuración, alta/edición/eliminación de usuarios, bloqueos/
+desbloqueos de cuenta, cambios de permisos, y descargas/restauraciones
+de respaldo — con fecha, correo, acción, objetivo, detalle e IP.
+Filtrable por acción, correo y rango de fechas. Nunca se edita ni borra
+desde la aplicación, solo se agrega.
 
 ## 8. Integración con GLPI — cómo funciona
 
@@ -419,8 +496,14 @@ En Configuración → tarjeta "Respaldo y migración" (solo admin):
   adjuntos/diagramas siguen necesitando el paso por terminal de la
   sección 10.2 (menos frecuente — normalmente solo migras archivos una
   vez, al cambiar de servidor).
-- Cada restauración queda registrada en los logs del contenedor (`docker
-  compose logs app`) con qué usuario la ejecutó y el nombre del archivo.
+- Antes de aplicar la restauración, la app guarda **automáticamente** un
+  respaldo de cómo estaba la base de datos justo antes (en
+  `uploads/pre_restore_backups/`, dentro del volumen `uploads_data`) — un
+  punto de vuelta atrás inmediato si subiste el archivo equivocado. No
+  reemplaza tener respaldos propios fuera del servidor.
+- Cada restauración queda registrada en Auditoría (ver 7.4) y en los logs
+  del contenedor (`docker compose logs app`) con qué usuario la ejecutó y
+  el nombre del archivo.
 
 Requiere que la imagen tenga instalado `mariadb-client` (ya viene en el
 `Dockerfile` de este proyecto — si construyes tu propia imagen a partir de
@@ -497,10 +580,10 @@ sql/schema.sql        Esquema base completo (migracion "0001_baseline")
 sql/migrations/        Migraciones incrementales numeradas (npm run migrate aplica todo)
 src/config/           Configuración desde variables de entorno
 src/db/               Pool de conexión, migración, seed del admin y reset-2fa
-src/services/         Cliente GLPI, cliente Gemini (extracción IA), envío de correo, configuración, subida de archivos, TOTP (2FA)
-src/jobs/              Tarea programada de recordatorios (node-cron)
-src/middleware/        Autenticación, control de acceso por rol y protección CSRF
-src/routes/             Rutas de cada módulo (licencias, dominios, isp, servidores, certificados, red, adjuntos, glpi, reportes, configuración, usuarios, 2FA)
+src/services/         Cliente GLPI, cliente Gemini (extracción IA), envío de correo, configuración, subida de archivos, TOTP (2FA), respaldo/restauración, auditoría, dispositivos de confianza
+src/jobs/              Tarea programada de recordatorios (node-cron), sondeo de Telegram
+src/middleware/        Autenticación, permisos por módulo, y protección CSRF
+src/routes/             Rutas de cada módulo (licencias, dominios, isp, servidores, certificados, celulares, empleados, red, glpi, reportes, configuración, usuarios, 2FA, permisos, auditoría, mi-cuenta)
 views/                  Plantillas EJS (Bootstrap 5)
 uploads/                Archivos subidos (adjuntos y diagramas de red)
 ```
