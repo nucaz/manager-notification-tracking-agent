@@ -10,10 +10,14 @@
 // configuracion. La contrasena se pasa por la variable de entorno MYSQL_PWD
 // en vez de como argumento -p, para que no quede visible en la lista de
 // procesos del contenedor.
+const fs = require('fs');
+const path = require('path');
 const { spawn, execFile } = require('child_process');
 const { ZipArchive } = require('archiver');
 const env = require('../config/env');
 const { UPLOAD_ROOT } = require('./uploadService');
+
+const PRE_RESTORE_DIR = path.join(UPLOAD_ROOT, 'pre_restore_backups');
 
 function mysqlEnv() {
   return { ...process.env, MYSQL_PWD: env.db.password };
@@ -68,13 +72,54 @@ async function streamBackupZip(res, filename) {
   await archive.finalize();
 }
 
+// Dump completo a un Buffer en memoria (no a la respuesta HTTP como
+// streamBackupZip). Usado para la copia de seguridad automatica previa a
+// una restauracion.
+function dumpToBuffer() {
+  return new Promise((resolve, reject) => {
+    const dump = spawn(
+      'mariadb-dump',
+      ['-h', env.db.host, '-P', String(env.db.port), '-u', env.db.user, '--routines', '--triggers', '--single-transaction', env.db.database],
+      { env: mysqlEnv() }
+    );
+    const chunks = [];
+    let stderr = '';
+    dump.stdout.on('data', (chunk) => chunks.push(chunk));
+    dump.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    dump.on('error', (err) => reject(new Error(`No se pudo ejecutar mariadb-dump: ${err.message}`)));
+    dump.on('close', (code) => {
+      if (code === 0) return resolve(Buffer.concat(chunks));
+      reject(new Error(stderr.trim() || `mariadb-dump terminó con código ${code}`));
+    });
+  });
+}
+
+// Antes de cualquier restauracion (destructiva por definicion), guarda un
+// dump de como estaba la base de datos JUSTO ANTES, en el volumen de
+// uploads (persiste aunque se reinicie el contenedor). No sustituye a un
+// backup real fuera del servidor, pero da un punto de vuelta atras
+// inmediato si alguien restaura el archivo equivocado por error.
+async function snapshotBeforeRestore() {
+  fs.mkdirSync(PRE_RESTORE_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
+  const filename = `antes_de_restaurar_${stamp}.sql`;
+  const buffer = await dumpToBuffer();
+  fs.writeFileSync(path.join(PRE_RESTORE_DIR, filename), buffer);
+  return filename;
+}
+
 // Ejecuta un dump .sql (por ejemplo, el que genera streamBackupZip o el
 // que ya usaba el procedimiento por terminal) contra la base de datos
 // actual. Es DESTRUCTIVO: el propio dump trae DROP TABLE/CREATE TABLE,
-// asi que reemplaza el contenido de las tablas existentes.
+// asi que reemplaza el contenido de las tablas existentes. Antes de
+// aplicarlo, guarda automaticamente un snapshot de seguridad (ver
+// snapshotBeforeRestore) - si el dump de la base actual falla por
+// cualquier motivo, se aborta la restauracion en vez de aplicarla sin red
+// de seguridad.
 async function restoreFromSqlBuffer(sqlBuffer) {
   await checkBinaryAvailable('mariadb');
-  return new Promise((resolve, reject) => {
+  const snapshotFile = await snapshotBeforeRestore();
+  await new Promise((resolve, reject) => {
     const restore = spawn(
       'mariadb',
       ['-h', env.db.host, '-P', String(env.db.port), '-u', env.db.user, env.db.database],
@@ -93,6 +138,7 @@ async function restoreFromSqlBuffer(sqlBuffer) {
     restore.stdin.write(sqlBuffer);
     restore.stdin.end();
   });
+  return { snapshotFile };
 }
 
 module.exports = { streamBackupZip, restoreFromSqlBuffer };

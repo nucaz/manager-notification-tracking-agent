@@ -23,11 +23,13 @@
         </div>
         <div class="mb-2">
           <label class="form-label">App-Token</label>
-          <input type="text" name="glpi_app_token" class="form-control" value="<%= settings.glpi_app_token %>">
+          <input type="password" name="glpi_app_token" class="form-control"
+            placeholder="<%= settings.glpi_app_token ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
         </div>
         <div class="mb-2">
           <label class="form-label">User-Token</label>
-          <input type="text" name="glpi_user_token" class="form-control" value="<%= settings.glpi_user_token %>">
+          <input type="password" name="glpi_user_token" class="form-control"
+            placeholder="<%= settings.glpi_user_token ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
         </div>
         <div class="form-text mb-2">
           Genera el App-Token en GLPI: Configuración → General → API. El User-Token se genera desde
@@ -59,7 +61,8 @@
         </div>
         <div class="mb-2">
           <label class="form-label">Contraseña</label>
-          <input type="password" name="smtp_pass" class="form-control" value="<%= settings.smtp_pass %>">
+          <input type="password" name="smtp_pass" class="form-control"
+            placeholder="<%= settings.smtp_pass ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
         </div>
         <div class="mb-2">
           <label class="form-label">Correo remitente</label>
@@ -71,7 +74,8 @@
         <h5>Extracción de facturas con IA (Gemini)</h5>
         <div class="mb-2">
           <label class="form-label">API key de Gemini</label>
-          <input type="password" name="gemini_api_key" class="form-control" value="<%= settings.gemini_api_key %>" placeholder="AIza...">
+          <input type="password" name="gemini_api_key" class="form-control"
+            placeholder="<%= settings.gemini_api_key ? '•••••••• (configurado — deja en blanco para no cambiar)' : 'AIza...' %>">
           <div class="form-text">
             Genera tu API key en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
             El uso tiene costo según el volumen de facturas procesadas (facturación de Google Cloud/AI Studio).
@@ -95,7 +99,8 @@
         </div>
         <div class="mb-2">
           <label class="form-label">Token de acceso</label>
-          <input type="password" name="whatsapp_access_token" class="form-control" value="<%= settings.whatsapp_access_token %>">
+          <input type="password" name="whatsapp_access_token" class="form-control"
+            placeholder="<%= settings.whatsapp_access_token ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
         </div>
         <div class="mb-2">
           <label class="form-label">Token de verificación del webhook</label>
@@ -103,7 +108,8 @@
         </div>
         <div class="mb-2">
           <label class="form-label">App Secret</label>
-          <input type="password" name="whatsapp_app_secret" class="form-control" value="<%= settings.whatsapp_app_secret %>">
+          <input type="password" name="whatsapp_app_secret" class="form-control"
+            placeholder="<%= settings.whatsapp_app_secret ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
         </div>
         <div class="form-text">
           En Meta for Developers, configura la URL del webhook como
@@ -117,7 +123,8 @@
         <h5>Bot de Telegram</h5>
         <div class="mb-2">
           <label class="form-label">Token del bot</label>
-          <input type="password" name="telegram_bot_token" class="form-control" value="<%= settings.telegram_bot_token %>" placeholder="123456:ABC-DEF...">
+          <input type="password" name="telegram_bot_token" class="form-control"
+            placeholder="<%= settings.telegram_bot_token ? '•••••••• (configurado — deja en blanco para no cambiar)' : '123456:ABC-DEF...' %>">
         </div>
         <div class="form-check my-2">
           <input type="checkbox" class="form-check-input" name="telegram_polling_enabled" id="telegram_polling_enabled" <%= String(settings.telegram_polling_enabled) === 'true' ? 'checked' : '' %>>

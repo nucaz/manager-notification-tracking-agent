@@ -8,12 +8,27 @@ const whatsappClient = require('../services/whatsappClient');
 const telegramClient = require('../services/telegramClient');
 const backupService = require('../services/backupService');
 const { sqlRestoreUploader } = require('../services/uploadService');
+const auditService = require('../services/auditService');
 
 // Frase exacta que el admin debe escribir para confirmar una restauracion
 // (ademas de estar logueado como admin y del token CSRF): una tercera
 // barrera deliberada contra un clic accidental en una accion destructiva
 // que sobrescribe toda la base de datos.
 const RESTORE_CONFIRMATION_PHRASE = 'RESTAURAR TODO';
+
+// Campos que son credenciales/secretos: si se dejan en blanco al guardar,
+// se mantiene el valor que ya estaba (igual que la contraseña en el
+// formulario de Usuarios) en vez de borrarlo. Sin esto, un admin que
+// entra a cambiar otra cosa en esta misma pantalla y ve el campo vacio
+// (ver mas abajo, la vista ya no re-imprime el secreto real) podria
+// borrar sin querer un token que funcionaba.
+const SECRET_KEYS = new Set([
+  'glpi_app_token', 'glpi_user_token',
+  'smtp_pass',
+  'gemini_api_key',
+  'whatsapp_access_token', 'whatsapp_app_secret',
+  'telegram_bot_token',
+]);
 
 const router = express.Router();
 // verifyCsrfToken NO va aca a nivel de router: /respaldo/restaurar es
@@ -44,11 +59,18 @@ router.post('/', isAdmin, verifyCsrfToken, async (req, res, next) => {
     ];
     const pairs = {};
     for (const key of keys) {
-      if (req.body[key] !== undefined) pairs[key] = req.body[key];
+      if (req.body[key] === undefined) continue;
+      if (SECRET_KEYS.has(key) && req.body[key] === '') continue; // en blanco = no cambiar
+      pairs[key] = req.body[key];
     }
     pairs.smtp_secure = req.body.smtp_secure ? 'true' : 'false';
     pairs.telegram_polling_enabled = req.body.telegram_polling_enabled ? 'true' : 'false';
     await settingsService.setMany(pairs);
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'settings_update',
+      detail: Object.keys(pairs).join(', '),
+    });
     req.flash('success', 'Configuracion guardada correctamente.');
     res.redirect('/configuracion');
   } catch (err) {
@@ -118,6 +140,7 @@ router.post('/probar-telegram', isAdmin, verifyCsrfToken, async (req, res) => {
 router.get('/respaldo/descargar', isAdmin, async (req, res, next) => {
   try {
     const fecha = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '');
+    await auditService.log(req, { user: req.session.user, action: 'backup_download' });
     await backupService.streamBackupZip(res, `respaldo_licencias_${fecha}.zip`);
   } catch (err) {
     next(err);
@@ -160,8 +183,17 @@ router.post(
       console.warn(
         `[backup] Restauración de base de datos iniciada por ${req.session.user.email} (usuario id ${req.session.user.id}), archivo "${req.file.originalname}" (${req.file.size} bytes).`
       );
-      await backupService.restoreFromSqlBuffer(req.file.buffer);
-      req.flash('success', 'Base de datos restaurada correctamente.');
+      const { snapshotFile } = await backupService.restoreFromSqlBuffer(req.file.buffer);
+      await auditService.log(req, {
+        user: req.session.user,
+        action: 'backup_restore',
+        target: req.file.originalname,
+        detail: `snapshot previo: ${snapshotFile}`,
+      });
+      req.flash(
+        'success',
+        `Base de datos restaurada correctamente. Por si acaso, se guardó una copia de cómo estaba justo antes en el servidor: uploads/pre_restore_backups/${snapshotFile}.`
+      );
     } catch (err) {
       req.flash('error', `No se pudo restaurar la base de datos: ${err.message}`);
     }
