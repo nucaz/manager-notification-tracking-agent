@@ -1,5 +1,8 @@
 node_modules/
 .env
+devops-sidecar/__pycache__/
+devops-sidecar/**/__pycache__/
+devops-sidecar/*.pyc
 uploads/adjuntos/*
 uploads/red/*
 !uploads/adjuntos/.gitkeep

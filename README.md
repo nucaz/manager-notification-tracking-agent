@@ -59,6 +59,10 @@ Aplicación web para el seguimiento de:
   2FA, ver/revocar dispositivos de confianza), permisos por módulo
   configurables por rol, y un log de auditoría de solo-lectura (quién
   hizo qué, cuándo y desde dónde) — ver sección 6.1 y 7
+- **DevOps Sidecar** (módulo aparte, Python/FastAPI/SQLite): audita con
+  IA los repositorios de GitHub del equipo, recibe despliegues de
+  Coolify por webhook, leaderboard de actividad por desarrollador, y
+  respaldos incrementales/totales de cada repo — ver sección 11
 
 Construida en Node.js + Express + EJS + MySQL/MariaDB, pensada para
 desplegarse con Docker junto a tu stack GLPI + Zabbix existente.
@@ -605,7 +609,33 @@ docker compose restart app
   memoria del proceso, no en la BD): todos los usuarios deberán volver a
   iniciar sesión en el servidor nuevo, aunque su 2FA ya esté configurado.
 
-## 11. Estructura del proyecto
+## 11. Módulo adicional: DevOps Sidecar
+
+En `devops-sidecar/` vive un **módulo aparte** (Python/FastAPI/SQLite,
+un stack distinto al del resto de esta app a propósito) que audita con
+IA los repositorios de GitHub del equipo, recibe el historial de
+despliegues de un webhook de Coolify, calcula un leaderboard de
+actividad por desarrollador, y hace respaldos incrementales/totales de
+cada repo.
+
+Vive en este mismo repositorio y se levanta como un segundo servicio en
+el mismo `docker-compose.yml` (puerto `8091` por defecto, con su propia
+base de datos SQLite — no comparte nada con MariaDB ni con el proceso
+Node de esta app). Desde el menú (solo `admin`) hay un enlace "DevOps"
+que abre su dashboard en una pestaña nueva.
+
+```bash
+cd devops-sidecar
+cp .env.example .env   # completar WEBHOOK_SECRET, DASHBOARD_USER/PASSWORD, API key de IA
+cd ..
+docker compose up -d --build devops-sidecar
+```
+
+Detalle completo (qué está verificado y qué no, cómo configurar el
+webhook de Coolify, decisiones de seguridad, estructura interna) en
+[`devops-sidecar/README.md`](devops-sidecar/README.md).
+
+## 12. Estructura del proyecto
 
 ```
 sql/schema.sql        Esquema base completo (migracion "0001_baseline")

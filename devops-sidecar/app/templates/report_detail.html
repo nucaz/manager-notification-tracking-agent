@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Reporte de auditoría{% endblock %}
+{% block content %}
+{% if not report %}
+  <div class="alert alert-warning">Reporte no encontrado.</div>
+{% else %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">{{ report.repo.name if report.repo else report.repo_id }} — {{ report.report_date }}</h2>
+    <a href="/reportes" class="btn btn-outline-secondary btn-sm">Volver</a>
+  </div>
+  <div class="card p-4">
+    {{ report_html | safe }}
+  </div>
+{% endif %}
+{% endblock %}

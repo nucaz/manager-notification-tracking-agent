@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Repositorios{% endblock %}
+{% block content %}
+<h2 class="mb-3">Repositorios</h2>
+
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="card p-3">
+      <h5>Agregar repositorio</h5>
+      <div id="formError" class="alert alert-danger d-none"></div>
+      <form id="repoForm">
+        <div class="mb-2">
+          <label class="form-label">Nombre (identificador único)</label>
+          <input type="text" name="name" class="form-control" required placeholder="mi-proyecto">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">URL de GitHub</label>
+          <input type="text" name="github_url" class="form-control" required placeholder="https://github.com/org/repo.git">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Token de acceso (solo si es privado)</label>
+          <input type="password" name="github_token" class="form-control" placeholder="ghp_...">
+          <div class="form-text">Personal Access Token de GitHub con permiso de lectura (repo:read).</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Sincronizar cada (minutos)</label>
+          <input type="number" name="sync_interval_minutes" class="form-control" value="60" min="5" max="10080" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Agregar y clonar ahora</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    <div class="card p-3">
+      <h5>Repositorios registrados</h5>
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Nombre</th><th>Intervalo</th><th>Último sync</th><th></th></tr></thead>
+        <tbody id="reposTable">
+          {% for r in repos %}
+            <tr data-id="{{ r.id }}">
+              <td>{{ r.name }}<div class="small text-muted">{{ r.github_url }}</div></td>
+              <td>{{ r.sync_interval_minutes }} min</td>
+              <td class="small">
+                {% if r.last_synced_at %}{{ r.last_synced_at.strftime('%Y-%m-%d %H:%M') }}<br>{% endif %}
+                <span class="{{ 'text-danger' if r.last_sync_status and 'ERROR' in r.last_sync_status else 'text-muted' }}">{{ r.last_sync_status or 'sin sincronizar aún' }}</span>
+              </td>
+              <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-outline-secondary btn-sync" data-id="{{ r.id }}">Sincronizar</button>
+                <button class="btn btn-sm btn-outline-danger btn-delete" data-id="{{ r.id }}">Eliminar</button>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-4">Todavía no agregaste ningún repositorio.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('repoForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById('formError');
+  errorBox.classList.add('d-none');
+  const form = e.target;
+  const payload = {
+    name: form.name.value,
+    github_url: form.github_url.value,
+    github_token: form.github_token.value || null,
+    sync_interval_minutes: parseInt(form.sync_interval_minutes.value, 10),
+  };
+  const res = await fetch('/api/repos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    window.location.reload();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    errorBox.textContent = data.detail || 'No se pudo agregar el repositorio.';
+    errorBox.classList.remove('d-none');
+  }
+});
+
+document.getElementById('reposTable').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (btn.classList.contains('btn-sync')) {
+    btn.disabled = true;
+    btn.textContent = 'Sincronizando...';
+    await fetch(`/api/repos/${id}/sync`, { method: 'POST' });
+    setTimeout(() => window.location.reload(), 1500);
+  } else if (btn.classList.contains('btn-delete')) {
+    if (!confirm('¿Eliminar este repositorio del registro? (no borra el clon local del disco)')) return;
+    await fetch(`/api/repos/${id}`, { method: 'DELETE' });
+    window.location.reload();
+  }
+});
+</script>
+{% endblock %}

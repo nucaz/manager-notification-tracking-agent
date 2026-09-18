@@ -18,6 +18,29 @@ services:
       db:
         condition: service_healthy
 
+  # Modulo adicional DevOps: audita repos de GitHub con IA, recibe
+  # webhooks de despliegue de Coolify, y hace respaldos incrementales/
+  # totales. Servicio aparte (Python/FastAPI/SQLite, stack distinto al de
+  # "app") pero vive en el mismo repo/compose - ver devops-sidecar/README.md.
+  devops-sidecar:
+    build: ./devops-sidecar
+    container_name: devops_sidecar
+    restart: unless-stopped
+    env_file:
+      - ./devops-sidecar/.env
+    ports:
+      # Puerto distinto al de "app" (8090). Cambialo si ya esta en uso.
+      - "8091:8000"
+    volumes:
+      - devops_repos:/data/repos
+      - devops_backups:/data/backups
+      - devops_reports:/data/reports
+      - devops_db:/data/db
+      # Si prefieres auditar repos que YA estan clonados en el servidor
+      # (en vez de que este modulo los clone el mismo desde GitHub),
+      # monta esa carpeta real aca en modo solo-lectura, por ejemplo:
+      # - /home/usuario/proyectos:/data/repos-externos:ro
+
   db:
     image: mariadb:11
     container_name: licencias_db
@@ -45,3 +68,7 @@ services:
 volumes:
   db_data:
   uploads_data:
+  devops_repos:
+  devops_backups:
+  devops_reports:
+  devops_db:

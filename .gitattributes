@@ -1,0 +1,4 @@
+# Los scripts de shell deben mantener saltos de linea LF siempre (se
+# ejecutan en servidores Linux) - sin esto, un checkout en Windows con
+# autocrlf mal configurado podria dejarlos con CRLF y romper el shebang.
+*.sh text eol=lf

@@ -54,6 +54,11 @@
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/permisos') ? 'active' : '' %>" href="/permisos">Permisos</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/auditoria') ? 'active' : '' %>" href="/auditoria">Auditoría</a></li>
         <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/configuracion') ? 'active' : '' %>" href="/configuracion">Configuración</a></li>
+        <li class="nav-item">
+          <a class="nav-link" href="http://<%= currentHost %>:8091" target="_blank" rel="noopener">
+            DevOps <i class="bi bi-box-arrow-up-right small"></i>
+          </a>
+        </li>
         <% } %>
       </ul>
       <a href="/mi-cuenta" class="navbar-text me-3 text-decoration-none <%= currentPath.startsWith('/mi-cuenta') ? 'text-white' : '' %>">

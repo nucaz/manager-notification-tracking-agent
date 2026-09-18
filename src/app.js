@@ -71,6 +71,7 @@ app.use(async (req, res, next) => {
   res.locals.successMessages = req.flash('success');
   res.locals.errorMessages = req.flash('error');
   res.locals.currentPath = req.path;
+  res.locals.currentHost = req.hostname;
   try {
     const settingsService = require('./services/settingsService');
     res.locals.appName = (await settingsService.get('app_name')) || 'Gestion de Licencias';

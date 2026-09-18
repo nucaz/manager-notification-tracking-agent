@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Auditoría IA{% endblock %}
+{% block content %}
+<h2 class="mb-3">Reportes de auditoría semántica</h2>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <select name="repo_id" class="form-select" onchange="this.form.submit()">
+      <option value="">Todos los repositorios</option>
+      {% for r in repos %}
+        <option value="{{ r.id }}" {{ 'selected' if repo_id == r.id else '' }}>{{ r.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+<div class="card p-3">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Fecha</th><th>Repositorio</th><th>Proveedor IA</th><th></th></tr></thead>
+    <tbody>
+      {% for r in reports %}
+        <tr>
+          <td>{{ r.report_date }}</td>
+          <td>{{ r.repo.name if r.repo else r.repo_id }}</td>
+          <td class="small text-muted">{{ r.ai_provider_used or '—' }}</td>
+          <td class="text-end"><a href="/reportes/{{ r.id }}" class="btn btn-sm btn-outline-secondary">Ver reporte</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-4">
+          Todavía no se generó ninguna auditoría (corre a diario a la hora configurada, o espera al próximo ciclo).
+        </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card p-3 text-center">
+      <div class="fs-3">{{ repos_count }}</div>
+      <div class="text-muted">Repositorios</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card p-3 text-center">
+      <div class="fs-3">{{ deployments_count }}</div>
+      <div class="text-muted">Despliegues registrados</div>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Leaderboard de desarrolladores</h2>
+  <div class="btn-group">
+    {% for p in periods %}
+      <a href="/?period={{ p }}" class="btn btn-sm {{ 'btn-primary' if p == period else 'btn-outline-secondary' }}">{{ p }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card p-3 mb-4">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>#</th><th>Desarrollador</th><th>Commits</th><th>Líneas +</th><th>Líneas -</th><th>Puntaje</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ row.author }}</td>
+          <td>{{ row.commits }}</td>
+          <td class="text-success">+{{ row.lines_added }}</td>
+          <td class="text-danger">-{{ row.lines_deleted }}</td>
+          <td><strong>{{ row.score }}</strong></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-4">Sin actividad registrada en este periodo todavía.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card p-3">
+  <h5>Últimos despliegues</h5>
+  <table class="table table-sm">
+    <thead><tr><th>Fecha</th><th>Proyecto</th><th>Entorno</th><th>Estado</th></tr></thead>
+    <tbody>
+      {% for d in recent_deployments %}
+        <tr>
+          <td class="small text-nowrap">{{ d.received_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ d.project }}</td>
+          <td>{{ d.environment }}</td>
+          <td><span class="badge {{ 'bg-success' if 'success' in (d.status or '')|lower or 'ok' in (d.status or '')|lower else 'bg-secondary' }}">{{ d.status }}</span></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-4">Todavía no llegó ningún webhook de Coolify.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <a href="/deployments" class="btn btn-sm btn-outline-secondary">Ver todos</a>
+</div>
+{% endblock %}
