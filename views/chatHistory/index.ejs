@@ -1,0 +1,82 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Historial de chat (WhatsApp/Telegram)</h2>
+</div>
+
+<div class="alert alert-light border small">
+  Cada noche (00:30) se comprime y archiva la conversación del día anterior de cada contacto, y se
+  borran las filas "en vivo" para no dejar crecer la tabla sin límite — no se pierde nada, solo cambia
+  el formato de guardado (comprimido, por día).
+</div>
+
+<% if (pendientes.length > 0) { %>
+<div class="card p-3 mb-3">
+  <h6>Mensajes de hoy (todavía sin archivar)</h6>
+  <table class="table table-sm mb-2">
+    <thead><tr><th>Canal</th><th>Contacto</th><th>Mensajes</th><th></th></tr></thead>
+    <tbody>
+      <% pendientes.forEach(function(p) { %>
+        <tr>
+          <td><%= p.channel %></td>
+          <td><%= p.contact %></td>
+          <td><%= p.total %></td>
+          <td class="text-end">
+            <a href="/historial-chat/ver-vivo?channel=<%= p.channel %>&contact=<%= encodeURIComponent(p.contact) %>" class="btn btn-sm btn-outline-primary">Ver</a>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <form action="/historial-chat/archivar-ahora" method="post" class="d-flex align-items-center gap-2">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <label class="form-label mb-0 small">Archivar el día:</label>
+    <input type="date" name="fecha" class="form-control form-control-sm" style="max-width: 160px;" value="<%= new Date().toISOString().slice(0,10) %>">
+    <button type="submit" class="btn btn-sm btn-outline-warning">Archivar ahora</button>
+  </form>
+  <div class="form-text">Normalmente no hace falta — corre solo cada noche. Útil para probar o para cerrar un día que quedó pendiente.</div>
+</div>
+<% } %>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <select name="channel" class="form-select">
+      <option value="">Todos los canales</option>
+      <option value="whatsapp" <%= channel === 'whatsapp' ? 'selected' : '' %>>WhatsApp</option>
+      <option value="telegram" <%= channel === 'telegram' ? 'selected' : '' %>>Telegram</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <input type="text" name="contact" value="<%= contact %>" class="form-control" placeholder="Número o chat_id...">
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+  <table class="table table-hover align-middle table-sm">
+    <thead><tr><th>Fecha</th><th>Canal</th><th>Contacto</th><th>Usuario</th><th>Mensajes</th><th></th></tr></thead>
+    <tbody>
+      <% dias.forEach(function(d) { %>
+        <tr>
+          <td><%= d.log_date %></td>
+          <td><%= d.channel %></td>
+          <td><%= d.contact %></td>
+          <td><%= d.full_name || '—' %></td>
+          <td><%= d.message_count %></td>
+          <td class="text-end">
+            <a href="/historial-chat/ver?channel=<%= d.channel %>&contact=<%= encodeURIComponent(d.contact) %>&fecha=<%= d.log_date %>" class="btn btn-sm btn-outline-secondary">Ver</a>
+          </td>
+        </tr>
+      <% }); %>
+      <% if (dias.length === 0) { %>
+        <tr><td colspan="6" class="text-center text-muted py-4">Todavía no hay conversaciones archivadas.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

@@ -1,0 +1,20 @@
+<%- include('../partials/head', { title: title }) %>
+
+<p><a href="/historial-chat" class="text-decoration-none">&larr; Historial de chat</a></p>
+<h2 class="mb-1"><%= data.channel %> — <%= data.contact %></h2>
+<p class="text-muted"><%= data.logDate %> — <%= data.messageCount %> mensaje(s)</p>
+
+<div class="card p-3">
+  <% data.messages.forEach(function(m) { %>
+    <div class="d-flex mb-2 <%= m.direction === 'saliente' ? 'justify-content-end' : 'justify-content-start' %>">
+      <div class="p-2 rounded <%= m.direction === 'saliente' ? 'bg-primary text-white' : 'bg-light border' %>" style="max-width: 70%;">
+        <div class="small" style="white-space: pre-wrap;"><%= m.message_text %></div>
+        <div class="small text-end <%= m.direction === 'saliente' ? 'text-white-50' : 'text-muted' %>" style="font-size: .7rem;">
+          <%= new Date(m.created_at).toLocaleString('es-PE') %>
+        </div>
+      </div>
+    </div>
+  <% }); %>
+</div>
+
+<%- include('../partials/foot') %>
