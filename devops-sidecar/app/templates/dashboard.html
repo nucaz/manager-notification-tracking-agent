@@ -3,16 +3,20 @@
 {% block content %}
 <div class="row g-3 mb-4">
   <div class="col-md-4">
-    <div class="card p-3 text-center">
-      <div class="fs-3">{{ repos_count }}</div>
-      <div class="text-muted">Repositorios</div>
-    </div>
+    <a href="/repos" class="text-decoration-none text-reset">
+      <div class="card p-3 text-center stat-card-link">
+        <div class="fs-3">{{ repos_count }}</div>
+        <div class="text-muted">Repositorios</div>
+      </div>
+    </a>
   </div>
   <div class="col-md-4">
-    <div class="card p-3 text-center">
-      <div class="fs-3">{{ deployments_count }}</div>
-      <div class="text-muted">Despliegues registrados</div>
-    </div>
+    <a href="/deployments" class="text-decoration-none text-reset">
+      <div class="card p-3 text-center stat-card-link">
+        <div class="fs-3">{{ deployments_count }}</div>
+        <div class="text-muted">Despliegues registrados</div>
+      </div>
+    </a>
   </div>
 </div>
 
@@ -63,5 +67,14 @@
     </tbody>
   </table>
   <a href="/deployments" class="btn btn-sm btn-outline-secondary">Ver todos</a>
+</div>
+
+<div class="card p-3 mt-3 asistente-widget" data-contexto="leaderboard">
+  <h6 class="mb-2"><i class="bi bi-stars"></i> Preguntar a la IA sobre el leaderboard</h6>
+  <div class="input-group input-group-sm">
+    <input type="text" class="form-control asistente-pregunta" placeholder="ej. ¿quién ha sido más activo este período?">
+    <button class="btn btn-outline-primary asistente-btn">Preguntar</button>
+  </div>
+  <div class="asistente-resp mt-2 small"></div>
 </div>
 {% endblock %}

@@ -4,24 +4,36 @@
 <h2 class="mb-3">Historial de despliegues (Coolify)</h2>
 <div class="card p-3">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Fecha</th><th>Proyecto</th><th>Commit</th><th>Autor</th><th>Entorno</th><th>Estado</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Proyecto</th><th>Aplicación</th><th>Entorno</th><th>Estado</th><th></th></tr></thead>
     <tbody>
       {% for d in deployments %}
         <tr>
           <td class="small text-nowrap">{{ d.received_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>{{ d.project }}</td>
-          <td class="font-monospace small">{{ (d.commit_sha or '')[:10] }}</td>
-          <td>{{ d.author }}</td>
+          <td>{{ d.application_name or '—' }}</td>
           <td>{{ d.environment }}</td>
-          <td><span class="badge {{ 'bg-success' if 'success' in (d.status or '')|lower or 'ok' in (d.status or '')|lower else 'bg-secondary' }}">{{ d.status }}</span></td>
+          <td><span class="badge {{ 'bg-success' if 'success' in (d.status or '')|lower else ('bg-danger' if 'fail' in (d.status or '')|lower else 'bg-secondary') }}">{{ d.status }}</span></td>
+          <td class="text-end">
+            {% if d.deployment_url %}<a href="{{ d.deployment_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">Ver en Coolify</a>{% endif %}
+          </td>
         </tr>
       {% else %}
         <tr><td colspan="6" class="text-center text-muted py-4">
           Todavía no llegó ningún webhook de Coolify. Configúralo en Coolify → Notifications → Webhook,
-          apuntando a esta URL: <code>/webhooks/coolify</code>.
+          con la URL completa (el token va en la URL, Coolify no soporta headers personalizados aquí):
+          <code>https://tu-servidor:8091/webhooks/coolify?token=TU_WEBHOOK_SECRET</code>.
         </td></tr>
       {% endfor %}
     </tbody>
   </table>
+</div>
+
+<div class="card p-3 mt-3 asistente-widget" data-contexto="deployments">
+  <h6 class="mb-2"><i class="bi bi-stars"></i> Preguntar a la IA sobre los despliegues</h6>
+  <div class="input-group input-group-sm">
+    <input type="text" class="form-control asistente-pregunta" placeholder="ej. ¿hubo algún despliegue fallido últimamente?">
+    <button class="btn btn-outline-primary asistente-btn">Preguntar</button>
+  </div>
+  <div class="asistente-resp mt-2 small"></div>
 </div>
 {% endblock %}
