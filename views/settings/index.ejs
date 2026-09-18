@@ -139,6 +139,29 @@
       </div>
 
       <div class="card p-3 mb-3">
+        <h5>DevOps Sidecar (repositorios)</h5>
+        <div class="mb-2">
+          <label class="form-label">URL interna</label>
+          <input type="text" name="devops_sidecar_url" class="form-control" value="<%= settings.devops_sidecar_url || 'http://devops-sidecar:8000' %>">
+          <div class="form-text">Nombre del servicio en docker-compose + puerto interno — no el puerto 8091 publicado al host.</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Usuario del dashboard</label>
+          <input type="text" name="devops_sidecar_user" class="form-control" value="<%= settings.devops_sidecar_user %>">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Contraseña del dashboard</label>
+          <input type="password" name="devops_sidecar_password" class="form-control"
+            placeholder="<%= settings.devops_sidecar_password ? '•••••••• (configurado — deja en blanco para no cambiar)' : 'DASHBOARD_PASSWORD del .env de devops-sidecar' %>">
+        </div>
+        <div class="form-text">
+          Las mismas credenciales de <code>DASHBOARD_USER</code>/<code>DASHBOARD_PASSWORD</code> del
+          <code>.env</code> de <code>devops-sidecar</code>. Con esto conectado, el asistente de WhatsApp/Telegram
+          puede responder preguntas sobre los repositorios registrados (estado, leaderboard, últimas auditorías).
+        </div>
+      </div>
+
+      <div class="card p-3 mb-3">
         <h5>Recordatorios automáticos</h5>
         <div class="mb-2">
           <label class="form-label">Umbrales de días antes del vencimiento</label>
@@ -174,9 +197,14 @@
       <h6>Probar conexión con WhatsApp</h6>
       <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
     </form>
-    <form action="/configuracion/probar-telegram" method="post" class="card p-3">
+    <form action="/configuracion/probar-telegram" method="post" class="card p-3 mb-2">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <h6>Probar conexión con Telegram</h6>
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
+    </form>
+    <form action="/configuracion/probar-devops" method="post" class="card p-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h6>Probar conexión con DevOps Sidecar</h6>
       <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
     </form>
   </div>

@@ -6,6 +6,7 @@ const mailer = require('../services/mailer');
 const geminiClient = require('../services/geminiClient');
 const whatsappClient = require('../services/whatsappClient');
 const telegramClient = require('../services/telegramClient');
+const devopsSidecarClient = require('../services/devopsSidecarClient');
 const backupService = require('../services/backupService');
 const { sqlRestoreUploader } = require('../services/uploadService');
 const auditService = require('../services/auditService');
@@ -28,6 +29,7 @@ const SECRET_KEYS = new Set([
   'gemini_api_key',
   'whatsapp_access_token', 'whatsapp_app_secret',
   'telegram_bot_token',
+  'devops_sidecar_password',
 ]);
 
 const router = express.Router();
@@ -56,6 +58,7 @@ router.post('/', isAdmin, verifyCsrfToken, async (req, res, next) => {
       'ai_provider', 'gemini_api_key', 'gemini_model',
       'whatsapp_phone_number_id', 'whatsapp_access_token', 'whatsapp_verify_token', 'whatsapp_app_secret',
       'telegram_bot_token',
+      'devops_sidecar_url', 'devops_sidecar_user', 'devops_sidecar_password',
     ];
     const pairs = {};
     for (const key of keys) {
@@ -130,6 +133,16 @@ router.post('/probar-telegram', isAdmin, verifyCsrfToken, async (req, res) => {
     req.flash('success', `Conexión con Telegram exitosa (bot @${info.username}).`);
   } catch (err) {
     req.flash('error', `No se pudo conectar con Telegram: ${err.message}`);
+  }
+  res.redirect('/configuracion');
+});
+
+router.post('/probar-devops', isAdmin, verifyCsrfToken, async (req, res) => {
+  try {
+    const repos = await devopsSidecarClient.testConnection();
+    req.flash('success', `Conexión con DevOps Sidecar exitosa (${repos.length} repositorio(s) registrado(s)).`);
+  } catch (err) {
+    req.flash('error', `No se pudo conectar con DevOps Sidecar: ${err.message}`);
   }
   res.redirect('/configuracion');
 });
