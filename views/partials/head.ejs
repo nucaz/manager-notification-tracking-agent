@@ -10,69 +10,87 @@
 </head>
 <body>
 <% if (currentUser) { %>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/"><i class="bi bi-shield-lock"></i> <%= appName %></a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navMain">
-      <ul class="navbar-nav me-auto">
-        <li class="nav-item"><a class="nav-link <%= currentPath === '/' ? 'active' : '' %>" href="/">Panel</a></li>
-        <% if (enabledModules.licencias) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/licencias') ? 'active' : '' %>" href="/licencias">Licencias</a></li>
-        <% } %>
-        <% if (enabledModules.dominios) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/dominios') ? 'active' : '' %>" href="/dominios">Dominios</a></li>
-        <% } %>
-        <% if (enabledModules.isp) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/isp') ? 'active' : '' %>" href="/isp">Contratos ISP</a></li>
-        <% } %>
-        <% if (enabledModules.servidores) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/servidores') ? 'active' : '' %>" href="/servidores">Servidores</a></li>
-        <% } %>
-        <% if (enabledModules.certificados) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/certificados') ? 'active' : '' %>" href="/certificados">Certificados</a></li>
-        <% } %>
-        <% if (enabledModules.celulares) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/celulares') ? 'active' : '' %>" href="/celulares">Celulares</a></li>
-        <% } %>
-        <% if (enabledModules.empleados) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/empleados') ? 'active' : '' %>" href="/empleados">Empleados</a></li>
-        <% } %>
-        <% if (enabledModules.red) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/red') ? 'active' : '' %>" href="/red">Red</a></li>
-        <% } %>
-        <% if (enabledModules.glpi_inventario) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/glpi/inventario') ? 'active' : '' %>" href="/glpi/inventario">Inventario GLPI</a></li>
-        <% } %>
-        <% if (enabledModules.reportes) { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/reportes') ? 'active' : '' %>" href="/reportes">Reportes</a></li>
-        <% } %>
-        <% if (currentUser.role === 'admin') { %>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/usuarios') ? 'active' : '' %>" href="/usuarios">Usuarios</a></li>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/permisos') ? 'active' : '' %>" href="/permisos">Permisos</a></li>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/auditoria') ? 'active' : '' %>" href="/auditoria">Auditoría</a></li>
-        <li class="nav-item"><a class="nav-link <%= currentPath.startsWith('/configuracion') ? 'active' : '' %>" href="/configuracion">Configuración</a></li>
-        <li class="nav-item">
-          <a class="nav-link" href="http://<%= currentHost %>:8091" target="_blank" rel="noopener">
-            DevOps <i class="bi bi-box-arrow-up-right small"></i>
-          </a>
-        </li>
-        <% } %>
-      </ul>
-      <a href="/mi-cuenta" class="navbar-text me-3 text-decoration-none <%= currentPath.startsWith('/mi-cuenta') ? 'text-white' : '' %>">
-        <i class="bi bi-person-circle"></i> <%= currentUser.full_name %>
-        <span class="badge bg-secondary text-uppercase"><%= currentUser.role %></span>
+<nav class="sidebar" id="sidebar">
+  <a href="/" class="sidebar-brand"><i class="bi bi-shield-lock fs-5"></i> <span><%= appName %></span></a>
+  <ul class="sidebar-nav">
+    <li><a class="nav-link <%= currentPath === '/' ? 'active' : '' %>" href="/"><i class="bi bi-speedometer2"></i> <span>Panel</span></a></li>
+    <% if (enabledModules.licencias) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/licencias') ? 'active' : '' %>" href="/licencias"><i class="bi bi-key"></i> <span>Licencias</span></a></li>
+    <% } %>
+    <% if (enabledModules.dominios) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/dominios') ? 'active' : '' %>" href="/dominios"><i class="bi bi-globe"></i> <span>Dominios</span></a></li>
+    <% } %>
+    <% if (enabledModules.isp) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/isp') ? 'active' : '' %>" href="/isp"><i class="bi bi-wifi"></i> <span>Contratos ISP</span></a></li>
+    <% } %>
+    <% if (enabledModules.servidores) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/servidores') ? 'active' : '' %>" href="/servidores"><i class="bi bi-hdd-rack"></i> <span>Servidores</span></a></li>
+    <% } %>
+    <% if (enabledModules.certificados) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/certificados') ? 'active' : '' %>" href="/certificados"><i class="bi bi-patch-check"></i> <span>Certificados</span></a></li>
+    <% } %>
+    <% if (enabledModules.celulares) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/celulares') ? 'active' : '' %>" href="/celulares"><i class="bi bi-phone"></i> <span>Celulares</span></a></li>
+    <% } %>
+    <% if (enabledModules.empleados) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/empleados') ? 'active' : '' %>" href="/empleados"><i class="bi bi-people"></i> <span>Empleados</span></a></li>
+    <% } %>
+    <% if (enabledModules.red) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/red') ? 'active' : '' %>" href="/red"><i class="bi bi-diagram-3"></i> <span>Red</span></a></li>
+    <% } %>
+    <% if (enabledModules.glpi_inventario) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/glpi/inventario') ? 'active' : '' %>" href="/glpi/inventario"><i class="bi bi-boxes"></i> <span>Inventario GLPI</span></a></li>
+    <% } %>
+    <% if (enabledModules.reportes) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/reportes') ? 'active' : '' %>" href="/reportes"><i class="bi bi-bar-chart"></i> <span>Reportes</span></a></li>
+    <% } %>
+    <% if (currentUser.role === 'admin') { %>
+    <li class="sidebar-section">Administración</li>
+    <li><a class="nav-link <%= currentPath.startsWith('/usuarios') ? 'active' : '' %>" href="/usuarios"><i class="bi bi-person-gear"></i> <span>Usuarios</span></a></li>
+    <li><a class="nav-link <%= currentPath.startsWith('/permisos') ? 'active' : '' %>" href="/permisos"><i class="bi bi-shield-lock"></i> <span>Permisos</span></a></li>
+    <li><a class="nav-link <%= currentPath.startsWith('/auditoria') ? 'active' : '' %>" href="/auditoria"><i class="bi bi-clock-history"></i> <span>Auditoría</span></a></li>
+    <li><a class="nav-link <%= currentPath.startsWith('/historial-chat') ? 'active' : '' %>" href="/historial-chat"><i class="bi bi-chat-dots"></i> <span>Historial de chat</span></a></li>
+    <li><a class="nav-link <%= currentPath.startsWith('/configuracion') ? 'active' : '' %>" href="/configuracion"><i class="bi bi-gear"></i> <span>Configuración</span></a></li>
+    <li>
+      <a class="nav-link" href="http://<%= currentHost %>:8091" target="_blank" rel="noopener">
+        <i class="bi bi-hdd-network"></i> <span>DevOps <i class="bi bi-box-arrow-up-right small"></i></span>
       </a>
-      <form action="/logout" method="post" class="d-flex">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <button class="btn btn-outline-light btn-sm" type="submit">Salir</button>
-      </form>
-    </div>
+    </li>
+    <% } %>
+  </ul>
+  <div class="sidebar-user">
+    <a href="/mi-cuenta" class="sidebar-user-link <%= currentPath.startsWith('/mi-cuenta') ? 'active' : '' %>">
+      <i class="bi bi-person-circle"></i>
+      <span><%= currentUser.full_name %><br><span class="badge bg-secondary text-uppercase"><%= currentUser.role %></span></span>
+    </a>
+    <form action="/logout" method="post">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="sidebar-toggle text-danger" type="submit"><i class="bi bi-box-arrow-right"></i> <span>Salir</span></button>
+    </form>
   </div>
+  <button class="sidebar-toggle" id="sidebarToggle" title="Colapsar/expandir menú">
+    <i class="bi bi-layout-sidebar-inset"></i> <span>Colapsar</span>
+  </button>
 </nav>
+<script>
+(function () {
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebarToggle');
+  let collapsed = false;
+  try { collapsed = localStorage.getItem('glpiSidebarCollapsed') === '1'; } catch (e) {}
+  if (collapsed) { sidebar.classList.add('collapsed'); }
+  toggle.addEventListener('click', () => {
+    if (window.innerWidth <= 768) {
+      sidebar.classList.toggle('mobile-open');
+      return;
+    }
+    sidebar.classList.toggle('collapsed');
+    try { localStorage.setItem('glpiSidebarCollapsed', sidebar.classList.contains('collapsed') ? '1' : '0'); } catch (e) {}
+  });
+})();
+</script>
 <% } %>
+<% if (currentUser) { %><div class="main-content"><% } %>
 <div class="container-fluid px-4 pb-5">
   <% if (typeof successMessages !== 'undefined' && successMessages.length) { %>
     <% successMessages.forEach(function(msg) { %>
