@@ -30,13 +30,16 @@ A continuacion el resultado de "git log -p" del ultimo dia (commits + diff exact
 ```
 {nota}
 
-Responde EN ESPAÑOL, en formato Markdown, con EXACTAMENTE estas tres secciones (usa estos encabezados literales):
+Responde EN ESPAÑOL, en formato Markdown, con EXACTAMENTE estas cuatro secciones (usa estos encabezados literales):
 
 ## Desarrolladores y resumen ejecutivo
 Quien trabajo hoy (por nombre de autor de commit) y un resumen breve y concreto de que hizo cada uno.
 
 ## Análisis de impacto
 En que logica de negocio se involucra este cambio y que componentes del sistema puede alterar o romper. Se especifico: cita archivos y funciones cuando el diff lo permita. Si el cambio es trivial (typos, formato), dilo asi de simple.
+
+## Cambios por commit
+Una lista itemizada, UN grupo de bullets por cada commit del dia (identifica cada commit por su mensaje o hash corto), con los cambios concretos e importantes de ESE commit en particular - no repitas el resumen general de arriba, se especifico por archivo/funcion cuando se pueda.
 
 ## Alertas DevSecOps
 Vulnerabilidades criticas, malas practicas de seguridad, o datos sensibles que veas en el diff (mas alla de un escaneo automatico de secretos que ya se corrio aparte). Si no encuentras nada preocupante, dilo explicitamente en vez de inventar una alerta."""

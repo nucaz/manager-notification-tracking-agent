@@ -30,20 +30,37 @@ class Repo(Base):
     backup_runs = relationship("BackupRun", back_populates="repo", cascade="all, delete-orphan")
 
 
+class AppSetting(Base):
+    """Configuracion editable desde el dashboard (proveedor de IA activo y
+    sus credenciales/modelos) que sobreescribe los valores por defecto de
+    .env en app/config.py - asi un cambio se aplica sin reiniciar el
+    contenedor. Ver services/settings_store.py."""
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=True)
+
+
 class Deployment(Base):
-    """Un evento de despliegue recibido via webhook de Coolify. Se guarda
-    el payload completo tal cual llego, ademas de los campos que se
-    lograron interpretar - asi no se pierde nada aunque el mapeo de
-    campos no sea perfecto (ver README: pendiente de verificar contra un
-    payload real de Coolify)."""
+    """Un evento de despliegue recibido via webhook. Se guarda el payload
+    completo tal cual llego (raw_payload), ademas de los campos ya
+    interpretados. El mapeo de campos abajo esta verificado contra el
+    codigo fuente real de Coolify (toWebhook() en
+    app/Notifications/Application/DeploymentSuccess.php y
+    DeploymentFailed.php del repo coollabsio/coolify) - Coolify NO manda
+    commit ni autor del push, por eso esos dos campos quedan casi siempre
+    vacios con Coolify real (se dejan por si algun dia otro emisor de
+    webhooks los manda)."""
     __tablename__ = "deployments"
 
     id = Column(Integer, primary_key=True)
     project = Column(String(200), nullable=True)
+    application_name = Column(String(200), nullable=True)
     commit_sha = Column(String(64), nullable=True)
     author = Column(String(200), nullable=True)
     environment = Column(String(100), nullable=True)
     status = Column(String(50), nullable=True)
+    deployment_url = Column(String(500), nullable=True)
     raw_payload = Column(Text, nullable=True)
     received_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -82,6 +99,22 @@ class AuditReport(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     repo = relationship("Repo", back_populates="audit_reports")
+
+
+class CommitSummary(Base):
+    """Cache del resumen itemizado de UN commit especifico, generado por
+    IA a pedido (boton 'Resumir con IA' en la vista de un commit) - se
+    guarda para no volver a pagar/esperar la llamada a la IA si alguien
+    vuelve a pedir el mismo commit."""
+    __tablename__ = "commit_summaries"
+    __table_args__ = (UniqueConstraint("repo_id", "commit_sha", name="uq_commit_summary"),)
+
+    id = Column(Integer, primary_key=True)
+    repo_id = Column(Integer, ForeignKey("repos.id", ondelete="CASCADE"), nullable=False)
+    commit_sha = Column(String(40), nullable=False)
+    summary_markdown = Column(Text, nullable=False)
+    ai_provider_used = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class BackupRun(Base):

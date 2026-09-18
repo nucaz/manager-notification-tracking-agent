@@ -28,10 +28,16 @@ def _sync_job_id(repo_id: int) -> str:
 
 
 def sync_repo_job(repo_id: int) -> None:
+    """Sincroniza este repo YA - lo llaman tanto el scheduler periodico
+    como un click manual de 'Sincronizar'/'Reanudar sync'. Un repo pausado
+    (active=False) ya esta desprogramado del scheduler periodico (ver
+    unschedule_repo_sync), asi que aqui NO se vuelve a filtrar por
+    `active` - si alguien lo llama a mano (ej. justo al reanudar), debe
+    ejecutar igual."""
     db = SessionLocal()
     try:
         repo = db.get(models.Repo, repo_id)
-        if not repo or not repo.active:
+        if not repo:
             return
         ok, detail = git_service.sync_repo(repo)
         repo.last_sync_status = ("OK: " if ok else "ERROR: ") + detail

@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}{{ repo.name }}{% endblock %}
+{% block content %}
+<p><a href="/repos" class="text-decoration-none">&larr; Repositorios</a></p>
+<h2 class="mb-1">{{ repo.name }}</h2>
+<p class="text-muted">{{ repo.github_url }}</p>
+
+{% if not repo.active %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <strong>Auto-sync pausado.</strong> {{ repo.last_sync_status }}. Mientras esté así, el repo no se
+    sincroniza solo ni entra en la auditoría/leaderboard diarios.
+  </div>
+  <button id="btnResumeSync" class="btn btn-sm btn-warning">Reanudar auto-sync (vuelve a la punta real de GitHub)</button>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card p-3 h-100">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+        <h6>Estado del clon</h6>
+        {% if cloned %}
+        <div>
+          <a href="/repos/{{ repo.id }}/explorar" class="btn btn-sm btn-outline-primary"><i class="bi bi-folder2-open"></i> Explorar archivos</a>
+          <a href="/repos/{{ repo.id }}/commits" class="btn btn-sm btn-outline-primary"><i class="bi bi-clock-history"></i> Commits / rollback / revertir</a>
+        </div>
+        {% endif %}
+      </div>
+      <table class="table table-sm mb-0">
+        <tr><th>Directorio local (dentro del contenedor)</th><td><code>{{ repo.local_path }}</code></td></tr>
+        <tr><th>Clonado</th><td>{{ 'Sí' if cloned else 'Todavía no' }}</td></tr>
+        <tr><th>Sincroniza cada</th><td>{{ repo.sync_interval_minutes }} min</td></tr>
+        <tr><th>Último sync</th><td>{{ repo.last_synced_at.strftime('%Y-%m-%d %H:%M') if repo.last_synced_at else '—' }}</td></tr>
+        <tr><th>Resultado</th><td class="{{ 'text-danger' if repo.last_sync_status and 'ERROR' in repo.last_sync_status else '' }}">{{ repo.last_sync_status or '—' }}</td></tr>
+      </table>
+      <div class="form-text mt-2">
+        Ese directorio vive dentro del volumen Docker <code>devops_repos</code>, no en una carpeta de
+        Windows que puedas abrir directamente — es un clon de solo lectura para auditar/respaldar, no
+        para editar a mano. Usa "Explorar archivos" para verlo desde el navegador.
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card p-3 h-100">
+      <h6>Commits de hoy ({{ today_stats|length }} autor{{ 'es' if today_stats|length != 1 else '' }})</h6>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Autor</th><th>Commits</th><th>Líneas +</th><th>Líneas -</th></tr></thead>
+        <tbody>
+          {% for s in today_stats %}
+            <tr>
+              <td>{{ s.author }}</td>
+              <td>{{ s.commits_count }}</td>
+              <td class="text-success">+{{ s.lines_added }}</td>
+              <td class="text-danger">-{{ s.lines_deleted }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-3">Sin commits registrados hoy todavía.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="form-text mt-2">Se calculan al sincronizar o al ejecutar la auditoría (no antes).</div>
+    </div>
+  </div>
+</div>
+
+<div class="card p-3">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <h6 class="mb-0">Auditoría con IA</h6>
+    <button id="btnAuditNow" class="btn btn-sm btn-primary" {{ 'disabled' if not cloned else '' }}>
+      <i class="bi bi-stars"></i> Ejecutar auditoría ahora
+    </button>
+  </div>
+  {% if not cloned %}
+    <div class="form-text text-danger mt-2">Sincroniza el repositorio primero (botón "Sincronizar" en Repositorios) — necesita el clon local para poder leer el historial.</div>
+  {% endif %}
+  <div id="auditMsg" class="mt-2"></div>
+
+  <table class="table table-sm mt-3 mb-0">
+    <thead><tr><th>Fecha</th><th>Proveedor</th><th></th></tr></thead>
+    <tbody>
+      {% for r in latest_reports %}
+        <tr>
+          <td>{{ r.report_date }}</td>
+          <td class="small text-muted">{{ r.ai_provider_used or '—' }}</td>
+          <td class="text-end"><a href="/reportes/{{ r.id }}" class="btn btn-sm btn-outline-secondary">Ver reporte</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="text-center text-muted py-3">Todavía no hay auditorías para este repositorio.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card p-3 mt-3">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <h6 class="mb-0">Respaldos</h6>
+    <div class="btn-group">
+      <button id="btnBackupDiff" class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not cloned else '' }}>Respaldo diferencial ahora</button>
+      <button id="btnBackupFull" class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not cloned else '' }}>Respaldo completo (mirror git)</button>
+      <button id="btnBackupFiles" class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not cloned else '' }}>Respaldo completo (archivos reales)</button>
+    </div>
+  </div>
+  <div class="form-text mt-2">
+    <strong>Diferencial</strong>: guarda los commits/diff de las últimas 24h (lo mismo que se hace automáticamente
+    junto con la auditoría, a las {{ '%02d:%02d' | format(audit_hour, audit_minute) }}). <strong>Completo (mirror git)</strong>:
+    solo lo puede leer git, pesa menos (comprimido con deltas) — igual al respaldo semanal automático, que corre
+    {{ weekly_day_label }} a las {{ '%02d:00' | format(weekly_hour) }} (retención de {{ retention_days }} días).
+    <strong>Completo (archivos reales)</strong>: los archivos del repo tal cual, sin necesitar git para abrirlos —
+    pesa más, pero se puede extraer con cualquier descompresor.
+  </div>
+  <div id="backupMsg" class="mt-2"></div>
+  <a href="/backups" class="btn btn-sm btn-link ps-0 mt-1">Ver historial completo de respaldos &rarr;</a>
+</div>
+
+<div class="card p-3 mt-3 asistente-widget" data-contexto="repo_detail" data-repo-id="{{ repo.id }}">
+  <h6 class="mb-2"><i class="bi bi-stars"></i> Preguntar a la IA sobre "{{ repo.name }}"</h6>
+  <div class="input-group input-group-sm">
+    <input type="text" class="form-control asistente-pregunta" placeholder="ej. ¿qué se hizo hoy en este repositorio?">
+    <button class="btn btn-outline-primary asistente-btn">Preguntar</button>
+  </div>
+  <div class="asistente-resp mt-2 small"></div>
+</div>
+
+<script>
+async function runBackup(kind, btn) {
+  const msg = document.getElementById('backupMsg');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = { completo: 'Clonando mirror completo…', archivos: 'Comprimiendo archivos reales…' }[kind] || 'Guardando diferencial…';
+  msg.textContent = '';
+  try {
+    const res = await fetch(`/api/repos/{{ repo.id }}/backup-now?backup_type=${kind}`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      msg.className = 'text-success mt-2';
+      if (kind === 'completo' || kind === 'archivos') {
+        const tarKb = (data.tar_size_bytes / 1024).toFixed(1);
+        const srcKb = (data.source_bytes / 1024).toFixed(1);
+        const nota = kind === 'completo'
+          ? 'un mirror pesa menos porque guarda los objetos de git comprimidos, no archivos sueltos.'
+          : 'este respaldo sí contiene los archivos reales, listos para extraer sin git.';
+        msg.innerHTML = `✅ OK — respaldo guardado (${tarKb} KB comprimidos).<br>` +
+          `El repo real tiene ${data.source_files} archivo(s) (${srcKb} KB sin comprimir) — ${nota}<br>` +
+          `<span class="font-monospace small">${data.file_path}</span>`;
+      } else {
+        msg.innerHTML = `✅ OK — respaldado: ${data.commits} commit(s), ${data.files} archivo(s) modificado(s).<br>` +
+          `<span class="font-monospace small">${data.file_path}</span>`;
+      }
+      if (data.backup_id && confirm('Respaldo creado. ¿Quieres descargarlo a tu PC ahora?')) {
+        window.location.href = `/api/backups/${data.backup_id}/descargar`;
+      }
+    } else {
+      msg.className = 'text-danger mt-2';
+      msg.textContent = data.detail || 'No se pudo ejecutar el respaldo.';
+    }
+  } catch (err) {
+    msg.className = 'text-danger mt-2';
+    msg.textContent = 'Error de red ejecutando el respaldo.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+document.getElementById('btnBackupDiff').addEventListener('click', (e) => runBackup('diario', e.target));
+document.getElementById('btnBackupFull').addEventListener('click', (e) => runBackup('completo', e.target));
+document.getElementById('btnBackupFiles').addEventListener('click', (e) => runBackup('archivos', e.target));
+
+const btnResume = document.getElementById('btnResumeSync');
+if (btnResume) {
+  btnResume.addEventListener('click', async () => {
+    btnResume.disabled = true;
+    btnResume.textContent = 'Reanudando…';
+    await fetch(`/api/repos/{{ repo.id }}/reanudar-sync`, { method: 'POST' });
+    setTimeout(() => window.location.reload(), 1200);
+  });
+}
+</script>
+
+<script>
+document.getElementById('btnAuditNow').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button');
+  const msg = document.getElementById('auditMsg');
+  btn.disabled = true;
+  const originalText = btn.innerHTML;
+  btn.innerHTML = 'Analizando con IA (puede tardar hasta un minuto)…';
+  msg.textContent = '';
+  try {
+    const res = await fetch(`/api/repos/{{ repo.id }}/audit-now`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      window.location.href = `/reportes/${data.report_id}`;
+    } else {
+      msg.className = 'text-danger mt-2';
+      msg.textContent = data.detail || 'No se pudo ejecutar la auditoría.';
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  } catch (err) {
+    msg.className = 'text-danger mt-2';
+    msg.textContent = 'Error de red ejecutando la auditoría.';
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+  }
+});
+</script>
+{% endblock %}

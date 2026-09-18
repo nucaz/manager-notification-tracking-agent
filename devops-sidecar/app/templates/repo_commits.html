@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Commits de {{ repo.name }}{% endblock %}
+{% block content %}
+<p><a href="/repos/{{ repo.id }}" class="text-decoration-none">&larr; {{ repo.name }}</a></p>
+<h2 class="mb-3">Historial de commits — {{ repo.name }}</h2>
+
+<div class="alert alert-light border small">
+  Ver o descargar una versión anterior no toca nada — es de solo lectura. "Revertir" y "rollback"
+  sí modifican el clon local (ver botones en cada commit / en la ficha del repo).
+</div>
+
+<div class="card p-3">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Commit</th><th>Autor</th><th>Fecha</th><th>Mensaje</th><th></th></tr></thead>
+    <tbody>
+      {% for c in commits %}
+        <tr>
+          <td class="font-monospace small">{{ c.short_sha }}</td>
+          <td>{{ c.author }}</td>
+          <td class="small text-nowrap">{{ c.date[:16] }}</td>
+          <td>{{ c.message }}</td>
+          <td class="text-end text-nowrap">
+            <a href="/repos/{{ repo.id }}/commits/{{ c.sha }}" class="btn btn-sm btn-outline-secondary">Ver cambios</a>
+            <a href="/api/repos/{{ repo.id }}/commits/{{ c.sha }}/descargar" class="btn btn-sm btn-outline-secondary">Descargar</a>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-4">Sin commits.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

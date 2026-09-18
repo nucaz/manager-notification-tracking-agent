@@ -2,22 +2,144 @@
 {% block title %}Respaldos{% endblock %}
 {% block content %}
 <h2 class="mb-3">Historial de respaldos</h2>
+<div class="alert alert-light border small mb-3">
+  <strong>Programación automática</strong> (se corre para cada repositorio activo):
+  diferencial diario junto con la auditoría de IA a las {{ '%02d:%02d' | format(audit_hour, audit_minute) }},
+  mirror completo cada {{ weekly_day_label }} a las {{ '%02d:00' | format(weekly_hour) }}
+  (se conservan los últimos {{ retention_days }} días de mirrors, los diferenciales no se borran solos).
+  Se puede correr cualquiera ahora mismo desde la ficha de cada repositorio en
+  <a href="/repos">Repositorios</a>, sin esperar al horario.
+</div>
+<div id="restoreMsg"></div>
+
 <div class="card p-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="form-check">
+      <input type="checkbox" class="form-check-input" id="selectAll">
+      <label class="form-check-label small" for="selectAll">Seleccionar todos</label>
+    </div>
+    <button id="btnDeleteSelected" class="btn btn-sm btn-outline-danger" disabled>
+      <i class="bi bi-trash"></i> Eliminar seleccionados (<span id="selCount">0</span>)
+    </button>
+  </div>
   <table class="table table-hover align-middle">
-    <thead><tr><th>Fecha</th><th>Repositorio</th><th>Tipo</th><th>Archivo</th><th>Tamaño</th></tr></thead>
-    <tbody>
+    <thead><tr><th></th><th>Fecha</th><th>Repositorio</th><th>Tipo</th><th>Archivo</th><th>Tamaño</th><th></th></tr></thead>
+    <tbody id="backupsTable">
       {% for run in runs %}
-        <tr>
+        <tr data-id="{{ run.id }}">
+          <td><input type="checkbox" class="form-check-input row-check" value="{{ run.id }}"></td>
           <td class="small text-nowrap">{{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>{{ run.repo.name if run.repo else run.repo_id }}</td>
           <td><span class="badge {{ 'bg-info text-dark' if run.backup_type == 'daily_diff' else 'bg-primary' }}">{{ run.backup_type }}</span></td>
           <td class="small font-monospace">{{ run.file_path }}</td>
           <td class="small">{{ (run.size_bytes / 1024) | round(1) }} KB</td>
+          <td class="text-end text-nowrap">
+            <a href="/api/backups/{{ run.id }}/descargar" class="btn btn-sm btn-outline-secondary" title="Descargar a tu PC"><i class="bi bi-download"></i></a>
+            {% if run.backup_type in ('weekly_mirror', 'full_content') and run.repo %}
+              <button class="btn btn-sm btn-outline-warning btn-restore" data-repo-id="{{ run.repo_id }}" data-backup-id="{{ run.id }}" data-repo-name="{{ run.repo.name }}">Restaurar</button>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-danger btn-delete-one" data-id="{{ run.id }}" title="Eliminar"><i class="bi bi-trash"></i></button>
+          </td>
         </tr>
       {% else %}
-        <tr><td colspan="5" class="text-center text-muted py-4">Todavía no corrió ningún respaldo.</td></tr>
+        <tr><td colspan="7" class="text-center text-muted py-4">Todavía no corrió ningún respaldo.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
+<div class="card p-3 mt-3 asistente-widget" data-contexto="backups">
+  <h6 class="mb-2"><i class="bi bi-stars"></i> Preguntar a la IA sobre los respaldos</h6>
+  <div class="input-group input-group-sm">
+    <input type="text" class="form-control asistente-pregunta" placeholder="ej. ¿cuándo fue el último respaldo completo de cada repo?">
+    <button class="btn btn-outline-primary asistente-btn">Preguntar</button>
+  </div>
+  <div class="asistente-resp mt-2 small"></div>
+</div>
+
+<script>
+const table = document.getElementById('backupsTable');
+const selectAll = document.getElementById('selectAll');
+const btnDeleteSelected = document.getElementById('btnDeleteSelected');
+const selCount = document.getElementById('selCount');
+
+function updateSelection() {
+  const checked = table.querySelectorAll('.row-check:checked');
+  selCount.textContent = checked.length;
+  btnDeleteSelected.disabled = checked.length === 0;
+}
+table.addEventListener('change', (e) => {
+  if (e.target.classList.contains('row-check')) updateSelection();
+});
+selectAll.addEventListener('change', () => {
+  table.querySelectorAll('.row-check').forEach((cb) => { cb.checked = selectAll.checked; });
+  updateSelection();
+});
+
+async function removeRows(ids) {
+  ids.forEach((id) => {
+    const row = table.querySelector(`tr[data-id="${id}"]`);
+    if (row) row.remove();
+  });
+  updateSelection();
+}
+
+btnDeleteSelected.addEventListener('click', async () => {
+  const ids = Array.from(table.querySelectorAll('.row-check:checked')).map((cb) => parseInt(cb.value, 10));
+  if (ids.length === 0) return;
+  if (!confirm(`¿Eliminar ${ids.length} respaldo(s) seleccionado(s)? Esto borra el archivo del disco, no se puede deshacer.`)) return;
+  const res = await fetch('/api/backups/eliminar-varios', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+  });
+  if (res.ok) {
+    await removeRows(ids);
+  } else {
+    alert('No se pudieron eliminar algunos respaldos.');
+  }
+});
+
+table.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button');
+  if (!btn || !btn.classList.contains('btn-delete-one')) return;
+  const id = btn.dataset.id;
+  if (!confirm('¿Eliminar este respaldo? Esto borra el archivo del disco, no se puede deshacer.')) return;
+  const res = await fetch(`/api/backups/${id}`, { method: 'DELETE' });
+  if (res.ok) {
+    await removeRows([id]);
+  } else {
+    alert('No se pudo eliminar el respaldo.');
+  }
+});
+
+document.querySelectorAll('.btn-restore').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const repoId = btn.dataset.repoId;
+    const backupId = btn.dataset.backupId;
+    const repoName = btn.dataset.repoName;
+    const typed = prompt(`Esto REEMPLAZA el clon local actual de "${repoName}" con este respaldo, y pausa su auto-sync. Escribe el nombre del repositorio para confirmar:`);
+    if (typed !== repoName) {
+      if (typed !== null) alert('El nombre no coincide — cancelado.');
+      return;
+    }
+    const msg = document.getElementById('restoreMsg');
+    btn.disabled = true;
+    btn.textContent = 'Restaurando…';
+    try {
+      const res = await fetch(`/api/repos/${repoId}/backups/${backupId}/restore`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        msg.innerHTML = `<div class="alert alert-success">✅ ${data.message} — <a href="/repos/${repoId}">ver ficha del repositorio</a>.</div>`;
+      } else {
+        msg.innerHTML = `<div class="alert alert-danger">${data.detail || 'No se pudo restaurar.'}</div>`;
+        btn.disabled = false;
+        btn.textContent = 'Restaurar';
+      }
+    } catch (err) {
+      msg.innerHTML = `<div class="alert alert-danger">Error de red restaurando.</div>`;
+      btn.disabled = false;
+      btn.textContent = 'Restaurar';
+    }
+  });
+});
+</script>
 {% endblock %}

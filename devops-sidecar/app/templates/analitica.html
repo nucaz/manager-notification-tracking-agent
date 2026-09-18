@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Analítica{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h2 class="mb-0">Analítica y reportes estadísticos</h2>
+  <div class="btn-group">
+    {% for d in [7, 30, 90, 180] %}
+      <a href="/analitica?dias={{ d }}" class="btn btn-sm {{ 'btn-primary' if d == dias else 'btn-outline-secondary' }}">{{ d }}d</a>
+    {% endfor %}
+  </div>
+</div>
+
+<h5 class="mb-2">Despliegues (Coolify)</h5>
+<div class="row g-3 mb-3">
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="fs-3">{{ total_deployments }}</div>
+      <div class="text-muted small">Total histórico</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="fs-3 text-success">{{ exitosos }}</div>
+      <div class="text-muted small">Exitosos</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="fs-3 text-danger">{{ fallidos }}</div>
+      <div class="text-muted small">Fallidos</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="fs-3">{{ tasa_exito ~ '%' if tasa_exito is not none else '—' }}</div>
+      <div class="text-muted small">Tasa de éxito</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-7">
+    <div class="card p-3 h-100">
+      <h6>Despliegues por día (últimos {{ dias }} días)</h6>
+      {% if despliegues_por_dia %}
+        {% for fecha, cantidad in despliegues_por_dia %}
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <div class="small text-muted text-nowrap" style="width: 90px;">{{ fecha }}</div>
+            <div class="flex-grow-1 bg-light rounded" style="height: 14px;">
+              <div class="bg-primary rounded" style="height: 14px; width: {{ (cantidad / max_despliegues_dia * 100) if max_despliegues_dia else 0 }}%;"></div>
+            </div>
+            <div class="small text-nowrap" style="width: 24px;">{{ cantidad }}</div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="text-muted text-center py-3">Sin despliegues en este período.</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card p-3 h-100">
+      <h6>Por entorno</h6>
+      <table class="table table-sm mb-3">
+        {% for entorno, cantidad in por_entorno %}
+          <tr><td>{{ entorno or '—' }}</td><td class="text-end">{{ cantidad }}</td></tr>
+        {% else %}
+          <tr><td class="text-muted text-center py-2">Sin datos.</td></tr>
+        {% endfor %}
+      </table>
+      <h6>Por proyecto (top 10)</h6>
+      <table class="table table-sm mb-0">
+        {% for proyecto, cantidad in por_proyecto %}
+          <tr><td>{{ proyecto or '—' }}</td><td class="text-end">{{ cantidad }}</td></tr>
+        {% else %}
+          <tr><td class="text-muted text-center py-2">Sin datos.</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+
+<h5 class="mb-2 mt-4">Analítica de cambios por repositorio</h5>
+<div class="row g-3 mb-3">
+  <div class="col-md-7">
+    <div class="card p-3 h-100">
+      <h6>Commits por día — todos los repos (últimos {{ dias }} días)</h6>
+      {% if commits_por_dia %}
+        {% for fecha, cantidad in commits_por_dia %}
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <div class="small text-muted text-nowrap" style="width: 90px;">{{ fecha }}</div>
+            <div class="flex-grow-1 bg-light rounded" style="height: 14px;">
+              <div class="bg-success rounded" style="height: 14px; width: {{ (cantidad / max_commits_dia * 100) if max_commits_dia else 0 }}%;"></div>
+            </div>
+            <div class="small text-nowrap" style="width: 24px;">{{ cantidad }}</div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="text-muted text-center py-3">Sin commits registrados en este período.</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card p-3 h-100">
+      <h6>Por repositorio</h6>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Repo</th><th>Commits</th><th>Líneas +/-</th><th>Auditorías</th></tr></thead>
+        <tbody>
+          {% for r in por_repo %}
+            <tr>
+              <td><a href="/repos/{{ r.repo.id }}">{{ r.repo.name }}</a></td>
+              <td>
+                {{ r.commits }}
+                <div class="bg-light rounded" style="height: 6px; width: 60px;">
+                  <div class="bg-info rounded" style="height: 6px; width: {{ (r.commits / max_commits_repo * 100) if max_commits_repo else 0 }}%;"></div>
+                </div>
+              </td>
+              <td class="small"><span class="text-success">+{{ r.lines_added }}</span> <span class="text-danger">-{{ r.lines_deleted }}</span></td>
+              <td>{{ r.audit_reports }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-3">Sin repositorios registrados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="form-text mt-2">
+        Para el detalle itemizado de qué cambió en cada commit, ve a la ficha de un repositorio →
+        "Commits / rollback / revertir" → abre un commit → botón "Resumir con IA". El reporte diario
+        de auditoría también incluye una sección "Cambios por commit" con el desglose del día.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card p-3 mt-3 asistente-widget" data-contexto="analitica">
+  <h6 class="mb-2"><i class="bi bi-stars"></i> Preguntar a la IA sobre esta analítica</h6>
+  <div class="input-group input-group-sm">
+    <input type="text" class="form-control asistente-pregunta" placeholder="ej. ¿qué repositorio ha tenido más actividad?">
+    <button class="btn btn-outline-primary asistente-btn">Preguntar</button>
+  </div>
+  <div class="asistente-resp mt-2 small"></div>
+</div>
+{% endblock %}

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Commit {{ sha[:10] }}{% endblock %}
+{% block content %}
+<p><a href="/repos/{{ repo.id }}/commits" class="text-decoration-none">&larr; Commits de {{ repo.name }}</a></p>
+<h2 class="mb-1 font-monospace">{{ sha[:10] }}</h2>
+<p class="text-muted">{{ repo.name }}</p>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a href="/api/repos/{{ repo.id }}/commits/{{ sha }}/descargar" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-download"></i> Descargar esta versión (.tar.gz)
+  </a>
+  <button id="btnResumir" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-stars"></i> Resumir con IA
+  </button>
+  <button id="btnRollback" class="btn btn-outline-warning btn-sm">
+    <i class="bi bi-arrow-counterclockwise"></i> Llevar el clon local a este punto (rollback)
+  </button>
+  <button id="btnRevert" class="btn btn-outline-danger btn-sm">
+    <i class="bi bi-arrow-return-left"></i> Revertir este commit (local)
+  </button>
+</div>
+<div id="actionMsg" class="mb-3"></div>
+
+<div id="pushPanel" class="d-none alert alert-warning">
+  Se creó el commit de reversión <span id="newCommitSha" class="font-monospace"></span> en el <strong>clon local</strong>.
+  GitHub todavía no se tocó. Revísalo (<a href="/repos/{{ repo.id }}/explorar">explorar archivos</a>) y, si está
+  correcto, súbelo de verdad:
+  <div class="mt-2">
+    <button id="btnPush" class="btn btn-danger btn-sm">
+      <i class="bi bi-cloud-upload"></i> Subir este revert a GitHub (push real, irreversible)
+    </button>
+  </div>
+</div>
+
+<div id="resumenPanel" class="card p-3 mb-3 d-none">
+  <div class="d-flex justify-content-between align-items-center">
+    <h6 class="mb-0"><i class="bi bi-stars"></i> Resumen de IA</h6>
+    <span id="resumenProveedor" class="badge bg-secondary"></span>
+  </div>
+  <div id="resumenTexto" class="mt-2 small" style="white-space: pre-wrap;"></div>
+</div>
+
+<div class="card p-3">
+  <pre class="bg-light p-3 rounded" style="max-height: 75vh; overflow: auto; white-space: pre-wrap; word-break: break-word;">{{ diff }}</pre>
+</div>
+
+<script>
+const repoId = {{ repo.id }};
+const sha = "{{ sha }}";
+const repoName = "{{ repo.name }}";
+const msg = document.getElementById('actionMsg');
+
+document.getElementById('btnResumir').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button');
+  const panel = document.getElementById('resumenPanel');
+  const textoEl = document.getElementById('resumenTexto');
+  const provEl = document.getElementById('resumenProveedor');
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = 'Resumiendo…';
+  panel.classList.remove('d-none');
+  textoEl.textContent = 'Pensando…';
+  try {
+    const res = await fetch(`/api/repos/${repoId}/commits/${sha}/resumir`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      textoEl.textContent = data.summary;
+      provEl.textContent = (data.provider || '?') + (data.cached ? ' (guardado)' : ' (nuevo)');
+    } else {
+      textoEl.textContent = data.detail || 'No se pudo generar el resumen.';
+      provEl.textContent = '';
+    }
+  } catch (err) {
+    textoEl.textContent = 'Error de red generando el resumen.';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
+
+document.getElementById('btnRollback').addEventListener('click', async () => {
+  if (!confirm(`Esto deja el CLON LOCAL de "${repoName}" exactamente como estaba en este commit, y PAUSA su auto-sincronización (si no, el próximo ciclo lo deshace). ¿Continuar?`)) return;
+  msg.className = '';
+  msg.textContent = 'Aplicando rollback local…';
+  const res = await fetch(`/api/repos/${repoId}/rollback`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sha }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) {
+    msg.className = 'text-success';
+    msg.innerHTML = `✅ ${data.message} — <a href="/repos/${repoId}">volver a la ficha del repo</a> para reanudar el sync cuando quieras.`;
+  } else {
+    msg.className = 'text-danger';
+    msg.textContent = data.detail || 'No se pudo aplicar el rollback.';
+  }
+});
+
+document.getElementById('btnRevert').addEventListener('click', async () => {
+  if (!confirm(`Esto crea un commit NUEVO en el clon LOCAL de "${repoName}" que deshace los cambios de este commit. No toca GitHub todavía. ¿Continuar?`)) return;
+  msg.className = '';
+  msg.textContent = 'Creando commit de reversión…';
+  const res = await fetch(`/api/repos/${repoId}/commits/${sha}/revertir-local`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) {
+    msg.className = 'text-success';
+    msg.textContent = '✅ Commit de reversión creado en el clon local.';
+    document.getElementById('newCommitSha').textContent = data.new_commit.substring(0, 10);
+    document.getElementById('pushPanel').classList.remove('d-none');
+  } else {
+    msg.className = 'text-danger';
+    msg.textContent = data.detail || 'No se pudo revertir ese commit (¿conflicto con cambios posteriores?).';
+  }
+});
+
+document.getElementById('btnPush').addEventListener('click', async () => {
+  const typed = prompt(`Esto sube el revert al repositorio REAL en GitHub (push), visible para todo tu equipo. Escribe el nombre del repositorio ("${repoName}") para confirmar:`);
+  if (typed !== repoName) {
+    if (typed !== null) alert('El nombre no coincide — cancelado, no se hizo push.');
+    return;
+  }
+  msg.className = '';
+  msg.textContent = 'Subiendo a GitHub…';
+  const res = await fetch(`/api/repos/${repoId}/push`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) {
+    msg.className = 'text-success';
+    msg.textContent = `✅ Push exitoso a la rama ${data.branch}.`;
+  } else {
+    msg.className = 'text-danger';
+    msg.textContent = data.detail || 'El push falló.';
+  }
+});
+</script>
+{% endblock %}
