@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Configuración{% endblock %}
+{% block content %}
+<h2 class="mb-3">Configuración de IA</h2>
+{% if saved %}<div class="alert alert-success">Guardado. Los cambios ya están activos, sin reiniciar el contenedor.</div>{% endif %}
+
+<div class="card p-3 mb-3">
+  <form id="settingsForm" method="post" action="/configuracion">
+    <div class="mb-3">
+      <label class="form-label">Proveedor de IA activo (el que usa la auditoría diaria)</label>
+      <select name="ai_provider" class="form-select" style="max-width: 320px;">
+        <option value="gemini" {{ 'selected' if settings.ai_provider == 'gemini' else '' }}>Gemini (Google)</option>
+        <option value="claude" {{ 'selected' if settings.ai_provider == 'claude' else '' }}>Claude (Anthropic)</option>
+        <option value="ollama" {{ 'selected' if settings.ai_provider == 'ollama' else '' }}>Ollama (local, sin costo)</option>
+      </select>
+    </div>
+
+    <fieldset class="border rounded p-3 mb-3">
+      <legend class="fs-6">Gemini</legend>
+      <div class="mb-2">
+        <label class="form-label">API key</label>
+        <input type="password" name="gemini_api_key" class="form-control" placeholder="{{ gemini_key_masked or 'sin configurar' }}" autocomplete="off">
+        <div class="form-text">Se deja en blanco para no cambiarla. Se genera en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.</div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Modelo</label>
+        <input type="text" name="gemini_model" class="form-control" value="{{ settings.gemini_model }}" style="max-width: 320px;">
+      </div>
+    </fieldset>
+
+    <fieldset class="border rounded p-3 mb-3">
+      <legend class="fs-6">Claude (Anthropic)</legend>
+      <div class="mb-2">
+        <label class="form-label">API key</label>
+        <input type="password" name="anthropic_api_key" class="form-control" placeholder="{{ anthropic_key_masked or 'sin configurar' }}" autocomplete="off">
+        <div class="form-text">Se genera en <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>.</div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Modelo</label>
+        <input type="text" name="anthropic_model" class="form-control" value="{{ settings.anthropic_model }}" style="max-width: 320px;">
+      </div>
+    </fieldset>
+
+    <fieldset class="border rounded p-3 mb-3">
+      <legend class="fs-6">Ollama (IA local, sin costo)</legend>
+      <div class="mb-2">
+        <label class="form-label">URL base</label>
+        <input type="text" name="ollama_base_url" class="form-control" value="{{ settings.ollama_base_url }}" style="max-width: 420px;">
+        <div class="form-text">
+          Instala Ollama en la máquina donde corre Docker Desktop (no dentro del contenedor), corre
+          <code>ollama pull llama3</code> (o el modelo que prefieras) y déjalo abierto. Si Ollama corre en
+          la misma máquina Windows, deja <code>http://host.docker.internal:11434</code> tal cual —
+          el contenedor no puede usar <code>localhost</code> para llegar a tu Windows.
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Modelo</label>
+        <input type="text" name="ollama_model" class="form-control" value="{{ settings.ollama_model }}" style="max-width: 320px;">
+      </div>
+    </fieldset>
+
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <button type="button" id="btnTest" class="btn btn-outline-secondary">Probar conexión</button>
+    <span id="testResult" class="ms-2"></span>
+  </form>
+</div>
+
+<script>
+document.getElementById('btnTest').addEventListener('click', async () => {
+  const form = document.getElementById('settingsForm');
+  const resultEl = document.getElementById('testResult');
+  resultEl.textContent = 'Probando…';
+  resultEl.className = 'ms-2 text-muted';
+  const payload = {
+    provider: form.ai_provider.value,
+    gemini_api_key: form.gemini_api_key.value || null,
+    gemini_model: form.gemini_model.value || null,
+    anthropic_api_key: form.anthropic_api_key.value || null,
+    anthropic_model: form.anthropic_model.value || null,
+    ollama_base_url: form.ollama_base_url.value || null,
+    ollama_model: form.ollama_model.value || null,
+  };
+  try {
+    const res = await fetch('/api/settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    resultEl.textContent = data.message;
+    resultEl.className = 'ms-2 ' + (data.ok ? 'text-success' : 'text-danger');
+  } catch (e) {
+    resultEl.textContent = 'Error de red probando la conexión.';
+    resultEl.className = 'ms-2 text-danger';
+  }
+});
+</script>
+{% endblock %}

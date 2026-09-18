@@ -6,28 +6,140 @@
   <title>{% block title %}DevOps Sidecar{% endblock %} — DevOps Sidecar</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <style>
+    :root { --sidebar-w: 230px; --sidebar-w-collapsed: 64px; }
+    body { background: #f5f6f8; }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidebar-w);
+      background: #1a1d29; color: #fff; overflow-y: auto; overflow-x: hidden;
+      transition: width .15s ease; z-index: 1030; display: flex; flex-direction: column;
+    }
+    .sidebar.collapsed { width: var(--sidebar-w-collapsed); }
+    .sidebar-brand {
+      display: flex; align-items: center; gap: .5rem; padding: 1rem;
+      color: #fff; text-decoration: none; font-weight: 600; white-space: nowrap;
+    }
+    .sidebar-toggle {
+      display: flex; align-items: center; gap: .75rem; background: transparent; border: 0;
+      color: #9aa0ac; padding: .6rem 1rem; text-align: left; width: 100%; white-space: nowrap;
+    }
+    .sidebar-toggle:hover { color: #fff; }
+    .sidebar-nav { list-style: none; margin: 0; padding: 0; flex: 1; }
+    .sidebar-nav .nav-link {
+      display: flex; align-items: center; gap: .75rem; padding: .65rem 1rem;
+      color: #c4c8d4; white-space: nowrap;
+    }
+    .sidebar-nav .nav-link:hover { background: #262a3a; color: #fff; }
+    .sidebar-nav .nav-link.active { background: #2d5be3; color: #fff; }
+    .sidebar-nav .nav-link i { width: 1.2rem; text-align: center; flex-shrink: 0; }
+    .sidebar-section {
+      padding: .75rem 1rem .25rem; font-size: .7rem; text-transform: uppercase;
+      letter-spacing: .05em; color: #6b7080; white-space: nowrap;
+    }
+    .sidebar.collapsed .sidebar-brand span,
+    .sidebar.collapsed .sidebar-nav .nav-link span,
+    .sidebar.collapsed .sidebar-toggle span,
+    .sidebar.collapsed .sidebar-section { display: none; }
+    .main-content { margin-left: var(--sidebar-w); transition: margin-left .15s ease; padding: 1.5rem; }
+    .stat-card-link { transition: box-shadow .15s ease, transform .15s ease; cursor: pointer; }
+    .stat-card-link:hover { box-shadow: 0 .25rem .75rem rgba(0,0,0,.1); transform: translateY(-2px); }
+    .sidebar.collapsed ~ .main-content { margin-left: var(--sidebar-w-collapsed); }
+    @media (max-width: 768px) {
+      .sidebar { width: var(--sidebar-w-collapsed); }
+      .sidebar.mobile-open { width: var(--sidebar-w); }
+      .sidebar.mobile-open .sidebar-brand span,
+      .sidebar.mobile-open .sidebar-nav .nav-link span,
+      .sidebar.mobile-open .sidebar-toggle span,
+      .sidebar.mobile-open .sidebar-section { display: inline; }
+      .main-content { margin-left: var(--sidebar-w-collapsed); }
+    }
+  </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/"><i class="bi bi-hdd-network"></i> DevOps Sidecar</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navMain">
-      <ul class="navbar-nav me-auto">
-        <li class="nav-item"><a class="nav-link" href="/">Leaderboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="/repos">Repositorios</a></li>
-        <li class="nav-item"><a class="nav-link" href="/deployments">Despliegues</a></li>
-        <li class="nav-item"><a class="nav-link" href="/reportes">Auditoría IA</a></li>
-        <li class="nav-item"><a class="nav-link" href="/backups">Respaldos</a></li>
-      </ul>
-    </div>
-  </div>
+<nav class="sidebar" id="sidebar">
+  <a href="/" class="sidebar-brand"><i class="bi bi-hdd-network fs-5"></i> <span>DevOps Sidecar</span></a>
+  <ul class="sidebar-nav">
+    <li><a class="nav-link {{ 'active' if request.url.path == '/' else '' }}" href="/"><i class="bi bi-trophy"></i> <span>Leaderboard</span></a></li>
+    <li><a class="nav-link {{ 'active' if request.url.path.startswith('/repos') else '' }}" href="/repos"><i class="bi bi-git"></i> <span>Repositorios</span></a></li>
+    <li><a class="nav-link {{ 'active' if request.url.path == '/deployments' else '' }}" href="/deployments"><i class="bi bi-rocket-takeoff"></i> <span>Despliegues</span></a></li>
+    <li><a class="nav-link {{ 'active' if request.url.path == '/analitica' else '' }}" href="/analitica"><i class="bi bi-graph-up"></i> <span>Analítica</span></a></li>
+    <li><a class="nav-link {{ 'active' if request.url.path.startswith('/reportes') else '' }}" href="/reportes"><i class="bi bi-file-earmark-text"></i> <span>Auditoría IA</span></a></li>
+    <li><a class="nav-link {{ 'active' if request.url.path == '/backups' else '' }}" href="/backups"><i class="bi bi-archive"></i> <span>Respaldos</span></a></li>
+    <li class="sidebar-section">Sistema</li>
+    <li><a class="nav-link {{ 'active' if request.url.path == '/configuracion' else '' }}" href="/configuracion"><i class="bi bi-gear"></i> <span>Configuración</span></a></li>
+  </ul>
+  <button class="sidebar-toggle" id="sidebarToggle" title="Colapsar/expandir menú">
+    <i class="bi bi-layout-sidebar-inset"></i> <span>Colapsar</span>
+  </button>
 </nav>
-<div class="container-fluid px-4 pb-5">
+<div class="main-content" id="mainContent">
   {% block content %}{% endblock %}
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(function () {
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebarToggle');
+  let collapsed = false;
+  try { collapsed = localStorage.getItem('sidebarCollapsed') === '1'; } catch (e) {}
+  if (collapsed) sidebar.classList.add('collapsed');
+  toggle.addEventListener('click', () => {
+    if (window.innerWidth <= 768) {
+      sidebar.classList.toggle('mobile-open');
+      return;
+    }
+    sidebar.classList.toggle('collapsed');
+    try { localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed') ? '1' : '0'); } catch (e) {}
+  });
+})();
+</script>
+<script>
+// Widget generico "Preguntar a la IA sobre esta pantalla" - cualquier
+// pagina puede agregar un <div class="asistente-widget" data-contexto="...">
+// (ver app/routers/asistente.py para los contextos validos) y funciona
+// sin JS adicional por pagina.
+document.querySelectorAll('.asistente-widget').forEach((widget) => {
+  const btn = widget.querySelector('.asistente-btn');
+  const input = widget.querySelector('.asistente-pregunta');
+  const resp = widget.querySelector('.asistente-resp');
+  if (!btn || !input || !resp) return;
+  const contexto = widget.dataset.contexto;
+  const repoId = widget.dataset.repoId ? parseInt(widget.dataset.repoId, 10) : null;
+
+  async function preguntar() {
+    const pregunta = input.value.trim();
+    if (!pregunta) return;
+    btn.disabled = true;
+    resp.className = 'asistente-resp mt-2 small text-muted';
+    resp.textContent = 'Pensando…';
+    const payload = { contexto, pregunta, repo_id: repoId };
+    if (contexto === 'leaderboard') {
+      payload.period = new URLSearchParams(location.search).get('period') || 'week';
+    }
+    try {
+      const res = await fetch('/api/asistente', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        resp.className = 'asistente-resp mt-2 small';
+        resp.textContent = data.respuesta;
+      } else {
+        resp.className = 'asistente-resp mt-2 small text-danger';
+        resp.textContent = data.detail || 'No se pudo consultar la IA.';
+      }
+    } catch (e) {
+      resp.className = 'asistente-resp mt-2 small text-danger';
+      resp.textContent = 'Error de red consultando la IA.';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  btn.addEventListener('click', preguntar);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') preguntar(); });
+});
+</script>
 </body>
 </html>

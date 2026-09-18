@@ -89,3 +89,65 @@ async def generate(prompt: str, provider: str | None = None) -> str:
     if not fn:
         raise AIClientError(f"Proveedor de IA desconocido: '{provider}'. Usa: {', '.join(PROVIDERS)}.")
     return await fn(prompt)
+
+
+async def test_connection(provider: str, cfg: dict) -> tuple[bool, str]:
+    """Prueba la conexion con los valores que el usuario tiene en el
+    formulario de Configuracion (aun sin guardar) - si un campo viene
+    vacio, usa el valor ya guardado en `settings` (ej. para probar sin
+    tener que reescribir una API key que ya esta configurada)."""
+    try:
+        if provider == "gemini":
+            api_key = cfg.get("gemini_api_key") or settings.gemini_api_key
+            model = cfg.get("gemini_model") or settings.gemini_model
+            if not api_key:
+                return False, "Falta la API key de Gemini."
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    url,
+                    params={"key": api_key},
+                    json={"contents": [{"parts": [{"text": "Responde solo con la palabra OK."}]}]},
+                )
+            if resp.status_code != 200:
+                return False, f"Gemini respondió HTTP {resp.status_code}: {resp.text[:300]}"
+            return True, "Conexión con Gemini exitosa."
+
+        if provider == "claude":
+            api_key = cfg.get("anthropic_api_key") or settings.anthropic_api_key
+            model = cfg.get("anthropic_model") or settings.anthropic_model
+            if not api_key:
+                return False, "Falta la API key de Claude."
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers=headers,
+                    json={"model": model, "max_tokens": 16, "messages": [{"role": "user", "content": "Responde solo con la palabra OK."}]},
+                )
+            if resp.status_code != 200:
+                return False, f"Claude respondió HTTP {resp.status_code}: {resp.text[:300]}"
+            return True, "Conexión con Claude exitosa."
+
+        if provider == "ollama":
+            base_url = (cfg.get("ollama_base_url") or settings.ollama_base_url).rstrip("/")
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(f"{base_url}/api/tags")
+            if resp.status_code != 200:
+                return False, f"No se pudo conectar a Ollama en {base_url} (HTTP {resp.status_code})."
+            data = resp.json()
+            nombres = [m.get("name") for m in data.get("models", [])]
+            if not nombres:
+                return True, (
+                    f"Conectado a Ollama en {base_url}, pero no hay ningún modelo descargado. "
+                    "Corre 'ollama pull llama3' (u otro modelo) en la máquina donde corre Ollama."
+                )
+            return True, f"Conectado a Ollama en {base_url}. Modelos disponibles: {', '.join(nombres)}."
+
+        return False, f"Proveedor desconocido: '{provider}'."
+    except httpx.RequestError as e:
+        return False, f"No se pudo conectar: {e}"
