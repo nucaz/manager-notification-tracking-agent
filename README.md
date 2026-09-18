@@ -424,11 +424,34 @@ para los dos canales):
 - Toda conversación (entrante y saliente, de cualquiera de los dos
   canales) queda registrada en la tabla `agent_message_log` para
   auditoría, con una columna `channel` que distingue el origen.
+- **Archivado diario comprimido**: cada noche (00:30) se cierra el día
+  anterior — se comprime (gzip) la conversación de cada contacto en
+  `agent_message_log_archive` y se borran las filas "en vivo" de
+  `agent_message_log`, para que esa tabla no crezca sin límite. No se
+  pierde nada, solo cambia el formato de guardado. Se revisa/consulta
+  desde el menú **Historial de chat** (solo admin), con un botón
+  "Archivar ahora" para forzarlo sin esperar a la medianoche.
 
 **Qué puede responder hoy**: cantidad y listado de vencimientos próximos
 (licencias, dominios, contratos ISP, servidores, certificados), búsqueda
 de un celular por IMEI (con su asignación actual), búsqueda de un
-empleado por DNI o nombre, y el resumen de celulares por área.
+empleado por DNI o nombre, el resumen de celulares por área, y —si está
+conectado el módulo DevOps Sidecar (ver `devops-sidecar/`)— estado de los
+repositorios registrados, leaderboard de desarrolladores, resumen de la
+última auditoría de IA de un repo, disparar una auditoría al instante, y
+los últimos despliegues recibidos de Coolify. A propósito **no** se
+expone por chat nada destructivo de DevOps Sidecar (rollback, revertir un
+commit, restaurar un respaldo, hacer push a GitHub) — esas acciones
+requieren confirmación explícita en la interfaz web, no un mensaje de
+texto que alguien pudo escribir sin querer.
+
+**Conectar el módulo DevOps Sidecar al agente** (menú Configuración →
+tarjeta "DevOps Sidecar"): pega la URL interna (`http://devops-sidecar:8000`
+por defecto, el nombre del servicio en `docker-compose.yml`, no el puerto
+8091 publicado al host) y el mismo usuario/contraseña del
+`DASHBOARD_USER`/`DASHBOARD_PASSWORD` del `.env` de `devops-sidecar`. Sin
+esto configurado, el agente simplemente no puede responder preguntas
+sobre repositorios (el resto de sus funciones sigue igual).
 
 ### 9.1 WhatsApp (Meta Cloud API)
 

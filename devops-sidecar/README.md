@@ -30,11 +30,36 @@ principal — solo el repositorio de Git y el despliegue.
 - **Leaderboard**: puntaje por desarrollador (día/semana/mes/año/total),
   fórmula simple y ajustable en `app/scoring.py`.
 - **Respaldos**: diferencial diario (el mismo diff que ya se generó para
-  la auditoría, guardado como archivo) y mirror semanal completo
-  comprimido (`.tar.gz`, domingo 02:00 por defecto) con retención de 30
-  días — también disponible como script standalone
+  la auditoría, guardado como archivo), mirror git semanal completo
+  comprimido (`.tar.gz`, domingo 02:00 por defecto, solo lo puede leer
+  git) y respaldo de **archivos reales** (los archivos del repo tal
+  cual, sin necesitar git para abrirlos) — los tres con retención
+  configurable y disparables al instante desde la ficha de cada repo, sin
+  esperar al horario. También disponible como script standalone
   (`scripts/weekly_backup.sh`) para correr por cron del sistema operativo
   en vez del scheduler interno.
+- **Restaurar un respaldo**: reemplaza el clon local por el contenido de
+  un mirror o de un respaldo de archivos reales (no aplica a los
+  diferenciales, que son solo un diff de texto). Pausa el auto-sync del
+  repo después, para no perder la restauración en el próximo ciclo.
+- **Explorador de archivos** del clon (navegar carpetas, ver contenido de
+  archivos de texto) y **explorador de commits** (ver el diff de
+  cualquier commit, descargar el código tal como estaba en ese punto con
+  `git archive` — de solo lectura, no toca nada).
+- **Rollback y revert**, en tres niveles de riesgo creciente:
+  1. Ver/descargar una versión anterior (solo lectura, sin riesgo).
+  2. Rollback del **clon local** a un commit específico (`git reset
+     --hard`) — pausa el auto-sync de ese repo automáticamente (si no, el
+     próximo ciclo lo deshace solo); se reanuda con un botón que vuelve a
+     sincronizar con la punta real de GitHub.
+  3. Revertir de verdad: primero se crea un commit de reversión en el
+     **clon local** (`git revert`, no reescribe historial), y solo con
+     una confirmación aparte (escribir el nombre del repo) se sube a
+     GitHub con `git push` — acción real e irreversible sobre el
+     repositorio remoto, pensada para cuando ya se revisó que el revert
+     local quedó bien. **No probado contra un push real** en esta sesión
+     a propósito (afectaría el repositorio real de un tercero) — sí se
+     probó y confirmó la creación del commit de reversión local.
 
 ## 2. ⚠️ Cosas verificadas y cosas NO verificadas
 
@@ -53,19 +78,46 @@ mostrarlo.
 
 **NO verificado** (requiere credenciales/infraestructura real que no
 estaban disponibles):
-- Una llamada real a Gemini/Claude/Ollama (el contrato REST de cada API
-  se verificó contra la documentación oficial, pero no se hizo una
-  llamada real con una API key válida).
-- Un webhook real de Coolify — se confirmó que Coolify sí tiene un canal
-  de notificación "Webhook" genérico y configurable, pero **no el
-  esquema exacto de campos** que manda (la documentación pública no lo
-  expuso al buscarlo). El endpoint guarda el payload completo tal cual
-  llega (columna `raw_payload`) precisamente por esto: en cuanto
-  configures el webhook real, revisa un payload real ahí y ajusta el
-  mapeo de campos en `app/routers/webhooks.py` (función `_first`) si
-  hace falta — está escrito para que ajustar eso sea un cambio de una
-  sola línea.
 - Un repositorio privado con token de GitHub real.
+
+**Ya verificado con datos reales** (no solo teoría):
+- Una llamada real a Gemini (`gemini-2.5-pro`, con la API key configurada
+  en `.env`): se ejecutó una auditoría real sobre un repositorio real y
+  generó un reporte coherente, identificando al autor correcto de los
+  commits del día.
+- El esquema exacto del payload que manda el webhook de Coolify: **no se
+  instaló una instancia de Coolify** para esto — se verificó
+  directamente contra el código fuente público de Coolify
+  (`coollabsio/coolify` en GitHub, vía `gh api`/`gh search code`), leyendo
+  `app/Notifications/Application/DeploymentSuccess.php` y
+  `DeploymentFailed.php` (método `toWebhook()`), y
+  `app/Notifications/Channels/WebhookChannel.php` +
+  `app/Jobs/SendWebhookJob.php` para el transporte. Es más confiable que
+  una sola prueba en vivo porque es el código que Coolify realmente
+  ejecuta, no una suposición. Payload real (siempre estos campos, más
+  algunos opcionales si es un preview de pull request):
+  ```json
+  {
+    "success": true,
+    "message": "New version successfully deployed",
+    "event": "deployment_success",
+    "application_name": "mi-app",
+    "application_uuid": "...",
+    "deployment_uuid": "...",
+    "deployment_url": "https://tu-coolify/project/.../deployment/...",
+    "project": "Mi Proyecto",
+    "environment": "production",
+    "fqdn": "https://mi-app.ejemplo.com"
+  }
+  ```
+  Para fallos, `success` es `false` y `event` es `"deployment_failed"`.
+  **Importante:** Coolify **nunca** manda el commit ni el autor del push
+  en este payload — no es una limitación de este módulo, Coolify
+  simplemente no lo incluye. Además, `WebhookNotificationSettings` (el
+  modelo que guarda la config del canal en Coolify) solo tiene un campo
+  `webhook_url` — **no soporta headers personalizados**, así que el
+  token de este endpoint solo puede validarse por query string, nunca
+  por header (ver `WEBHOOK_SECRET` en `.env.example`).
 
 ## 3. Uso
 
@@ -97,10 +149,14 @@ inmediato en segundo plano.
 
 ### 3.4 Configurar el webhook en Coolify
 
-En Coolify: **Notifications → Webhook** → URL
-`https://tu-servidor:8091/webhooks/coolify` → agrega el header
-`X-Webhook-Token` con el mismo valor de tu `WEBHOOK_SECRET` → activa los
-eventos de despliegue que quieras recibir.
+En Coolify: **Notifications → Webhook** → **Webhook URL**, con el token
+incluido en la propia URL (Coolify no soporta headers personalizados en
+este canal):
+```
+https://tu-servidor:8091/webhooks/coolify?token=TU_WEBHOOK_SECRET
+```
+→ activa "Deployment success"/"Deployment failure" (y los demás eventos
+que quieras) en la configuración de notificaciones del proyecto/equipo.
 
 ## 4. Seguridad (decisiones deliberadas)
 
