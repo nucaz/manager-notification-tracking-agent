@@ -27,7 +27,7 @@
     "express-session": "^1.18.1",
     "express-validator": "^7.2.1",
     "multer": "^2.0.1",
-    "mysql2": "^3.11.5",
+    "mysql2": "^3.24.4",
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.6",
     "otplib": "^13.5.0",
