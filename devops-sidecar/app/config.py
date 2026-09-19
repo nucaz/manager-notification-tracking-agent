@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # HTTP Basic Auth para el dashboard/API (todo menos el webhook).
     dashboard_user: str = "admin"
     dashboard_password: str = "cambia_esta_password"
+    # Clave Fernet (urlsafe-base64 de 32 bytes) para cifrar en BD las
+    # API keys de IA guardadas desde el dashboard (ver crypto_service.py).
+    # Vacio = quedan en texto plano (compatibilidad hacia atras).
+    credentials_enc_key: str = ""
 
     # --- Proveedor de IA para el motor de auditoria ---
     ai_provider: str = "gemini"  # "gemini" | "claude" | "ollama"

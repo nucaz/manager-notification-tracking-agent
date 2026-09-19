@@ -2,6 +2,8 @@
 // Los valores de .env se usan como respaldo inicial si la tabla esta vacia.
 const pool = require('../db/pool');
 const env = require('../config/env');
+const cryptoService = require('./cryptoService');
+const { SECRET_KEYS } = require('../config/secretKeys');
 
 const DEFAULTS = {
   reminder_thresholds_days: '90,60,30,15,7,1',
@@ -32,12 +34,30 @@ const DEFAULTS = {
 async function getAll() {
   const [rows] = await pool.query('SELECT `key`, `value` FROM settings');
   const result = { ...DEFAULTS };
+  const legacyPlaintext = {};
   for (const row of rows) {
-    if (row.value !== null && row.value !== '') {
-      result[row.key] = row.value;
-    } else if (result[row.key] === undefined) {
-      result[row.key] = row.value;
+    let value = row.value;
+    if (SECRET_KEYS.has(row.key) && value) {
+      if (cryptoService.isEncrypted(value)) {
+        value = cryptoService.decrypt(value);
+      } else {
+        // Fila de antes de agregar cifrado (o instancia sin
+        // CREDENTIALS_ENC_KEY todavia) - se usa tal cual y se re-guarda
+        // cifrada para la proxima vez, sin que el usuario tenga que
+        // volver a escribirla.
+        legacyPlaintext[row.key] = value;
+      }
     }
+    if (value !== null && value !== '') {
+      result[row.key] = value;
+    } else if (result[row.key] === undefined) {
+      result[row.key] = value;
+    }
+  }
+  if (Object.keys(legacyPlaintext).length > 0) {
+    setMany(legacyPlaintext).catch((err) => {
+      console.error('No se pudo migrar credenciales legadas a formato cifrado:', err.message);
+    });
   }
   return result;
 }
@@ -53,9 +73,11 @@ async function setMany(pairs) {
   try {
     await conn.beginTransaction();
     for (const [key, value] of entries) {
+      const raw = value === undefined || value === null ? '' : String(value);
+      const stored = SECRET_KEYS.has(key) ? cryptoService.encrypt(raw) : raw;
       await conn.query(
         'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
-        [key, value === undefined || value === null ? '' : String(value)]
+        [key, stored]
       );
     }
     await conn.commit();

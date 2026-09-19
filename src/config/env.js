@@ -10,6 +10,10 @@ module.exports = {
   port: parseInt(process.env.PORT || '3000', 10),
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
   sessionSecret: process.env.SESSION_SECRET || 'insecure_default_change_me',
+  // Clave hex de 32 bytes para cifrar en BD las credenciales guardadas
+  // desde Configuracion (ver src/services/cryptoService.js). Vacio =
+  // esas credenciales quedan en texto plano (compatibilidad hacia atras).
+  credentialsEncKey: process.env.CREDENTIALS_ENC_KEY || '',
 
   db: {
     host: process.env.DB_HOST || '127.0.0.1',

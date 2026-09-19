@@ -10,6 +10,7 @@ const devopsSidecarClient = require('../services/devopsSidecarClient');
 const backupService = require('../services/backupService');
 const { sqlRestoreUploader } = require('../services/uploadService');
 const auditService = require('../services/auditService');
+const { SECRET_KEYS } = require('../config/secretKeys');
 
 // Frase exacta que el admin debe escribir para confirmar una restauracion
 // (ademas de estar logueado como admin y del token CSRF): una tercera
@@ -17,20 +18,12 @@ const auditService = require('../services/auditService');
 // que sobrescribe toda la base de datos.
 const RESTORE_CONFIRMATION_PHRASE = 'RESTAURAR TODO';
 
-// Campos que son credenciales/secretos: si se dejan en blanco al guardar,
-// se mantiene el valor que ya estaba (igual que la contraseña en el
-// formulario de Usuarios) en vez de borrarlo. Sin esto, un admin que
-// entra a cambiar otra cosa en esta misma pantalla y ve el campo vacio
-// (ver mas abajo, la vista ya no re-imprime el secreto real) podria
-// borrar sin querer un token que funcionaba.
-const SECRET_KEYS = new Set([
-  'glpi_app_token', 'glpi_user_token',
-  'smtp_pass',
-  'gemini_api_key',
-  'whatsapp_access_token', 'whatsapp_app_secret',
-  'telegram_bot_token',
-  'devops_sidecar_password',
-]);
+// SECRET_KEYS (ver ../config/secretKeys): si se dejan en blanco al
+// guardar, se mantiene el valor que ya estaba (igual que la contraseña
+// en el formulario de Usuarios) en vez de borrarlo. Sin esto, un admin
+// que entra a cambiar otra cosa en esta misma pantalla y ve el campo
+// vacio (la vista ya no re-imprime el secreto real) podria borrar sin
+// querer un token que funcionaba.
 
 const router = express.Router();
 // verifyCsrfToken NO va aca a nivel de router: /respaldo/restaurar es
