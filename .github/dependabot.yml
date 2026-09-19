@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Dependencias Node de la app principal (glpi-licencias-app)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Dependencias Python de DevOps Sidecar
+  - package-ecosystem: "pip"
+    directory: "/devops-sidecar"
+    schedule:
+      interval: "weekly"
+
+  # Imagen base del Dockerfile de la app principal (node:20-alpine)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Imagen base del Dockerfile de DevOps Sidecar (python:3.12-slim)
+  - package-ecosystem: "docker"
+    directory: "/devops-sidecar"
+    schedule:
+      interval: "weekly"
+
+  # Versiones de las actions usadas en .github/workflows/
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
