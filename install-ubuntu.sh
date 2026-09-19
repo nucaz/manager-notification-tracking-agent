@@ -54,14 +54,19 @@ ask_yes_no() {
 ask_secret() {
   # ask_secret "Etiqueta" "largo_minimo" -> hace echo del valor (pide dos
   # veces y valida que coincidan y cumplan el largo minimo)
+  # OJO: esta funcion se llama como X="$(ask_secret ...)" - todo lo que
+  # vaya a stdout queda DENTRO del valor devuelto. El "echo" decorativo
+  # para bajar de linea despues de un read -s (que no hace eco del Enter)
+  # tiene que ir a stderr, o esos saltos de linea quedan pegados delante
+  # de la contraseña y rompen el sed de set_env_var mas abajo.
   local label="$1" minlen="${2:-8}" pass1 pass2
   while true; do
-    read -r -s -p "$label: " pass1; echo
+    read -r -s -p "$label: " pass1; echo >&2
     if [ "${#pass1}" -lt "$minlen" ]; then
       c_warn "Debe tener al menos $minlen caracteres."
       continue
     fi
-    read -r -s -p "Repite $label: " pass2; echo
+    read -r -s -p "Repite $label: " pass2; echo >&2
     if [ "$pass1" != "$pass2" ]; then
       c_warn "No coinciden, intenta de nuevo."
       continue
