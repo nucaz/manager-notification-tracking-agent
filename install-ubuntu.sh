@@ -78,8 +78,17 @@ ask_secret() {
 
 gen_secret() {
   # Secreto aleatorio para valores que NO escribe una persona (SESSION_SECRET,
-  # WEBHOOK_SECRET) - no hace falta preguntarlos, solo que sean unicos y largos.
+  # WEBHOOK_SECRET, CREDENTIALS_ENC_KEY de la app Node) - no hace falta
+  # preguntarlos, solo que sean unicos y largos. Hex de 32 bytes.
   openssl rand -hex 32 2>/dev/null || head -c48 /dev/urandom | base64 | tr -d '\n'
+}
+
+gen_fernet_key() {
+  # CREDENTIALS_ENC_KEY de devops-sidecar necesita el formato que espera
+  # Fernet (Python): urlsafe-base64 de exactamente 32 bytes. Se genera sin
+  # depender de Python/cryptography en el host - produce el mismo formato
+  # que Fernet.generate_key().
+  openssl rand 32 | base64 | tr '+/' '-_'
 }
 
 set_env_var() {
@@ -190,7 +199,27 @@ DETECTED_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 DETECTED_IP="${DETECTED_IP:-127.0.0.1}"
 
 # ==========================================================================
-# 3. .env de la aplicacion principal (glpi-licencias-app)
+# 3. Dominio / HTTPS (opcional)
+# ==========================================================================
+# Ninguna de las dos apps hace TLS por si misma - sin un dominio real no
+# hay forma de emitir un certificado, asi que esto es puramente opcional:
+# dejar en blanco sigue exactamente igual que antes (HTTP directo por
+# IP:puerto). Se pregunta aca, antes de generar los .env, para que
+# APP_BASE_URL ya sugiera https://dominio en vez de http://IP:8090.
+echo
+c_info "=== Dominio / HTTPS (opcional) ==="
+echo "Si ya tienes un dominio (registro DNS tipo A) apuntando a la IP de"
+echo "este servidor, el instalador puede configurar Caddy para servir la"
+echo "app con HTTPS automatico (Let's Encrypt) mas adelante. Sin dominio,"
+echo "se sigue usando HTTP directo por IP:puerto, sin ningun cambio."
+DOMAIN_APP="$(ask "Dominio para la app principal (vacio = omitir)" "")"
+DOMAIN_SIDECAR=""
+if [ -n "$DOMAIN_APP" ]; then
+  DOMAIN_SIDECAR="$(ask "Dominio para DevOps Sidecar (vacio = omitir solo este)" "")"
+fi
+
+# ==========================================================================
+# 4. .env de la aplicacion principal (glpi-licencias-app)
 # ==========================================================================
 echo
 c_info "=== Configuracion de la aplicacion principal (.env) ==="
@@ -215,7 +244,9 @@ if [ "$CONFIGURE_APP_ENV" -eq 1 ]; then
   c_warn "Contraseña root de MariaDB (administra el motor de BD) - PASO CRITICO:"
   DB_ROOT_PASSWORD_VAL="$(ask_secret "Contraseña root de MariaDB" 8)"
 
-  APP_BASE_URL_VAL="$(ask "URL base publica de la app" "http://${DETECTED_IP}:8090")"
+  APP_BASE_URL_DEFAULT="http://${DETECTED_IP}:8090"
+  [ -n "$DOMAIN_APP" ] && APP_BASE_URL_DEFAULT="https://${DOMAIN_APP}"
+  APP_BASE_URL_VAL="$(ask "URL base publica de la app" "$APP_BASE_URL_DEFAULT")"
 
   ADMIN_NAME_VAL="$(ask "Nombre del administrador inicial" "Administrador")"
   ADMIN_EMAIL_VAL="$(ask "Correo del administrador inicial" "admin@depilzone.com.pe")"
@@ -224,6 +255,7 @@ if [ "$CONFIGURE_APP_ENV" -eq 1 ]; then
   ADMIN_PASSWORD_VAL="$(ask_secret "Contraseña de $ADMIN_EMAIL_VAL" 8)"
 
   SESSION_SECRET_VAL="$(gen_secret)"
+  CREDENTIALS_ENC_KEY_APP_VAL="$(gen_secret)"
 
   set_env_var .env DB_NAME "$DB_NAME_VAL"
   set_env_var .env DB_USER "$DB_USER_VAL"
@@ -234,6 +266,7 @@ if [ "$CONFIGURE_APP_ENV" -eq 1 ]; then
   set_env_var .env ADMIN_EMAIL "$ADMIN_EMAIL_VAL"
   set_env_var .env ADMIN_PASSWORD "$ADMIN_PASSWORD_VAL"
   set_env_var .env SESSION_SECRET "$SESSION_SECRET_VAL"
+  set_env_var .env CREDENTIALS_ENC_KEY "$CREDENTIALS_ENC_KEY_APP_VAL"
 
   chmod 600 .env
   c_ok ".env de la app generado (SMTP y GLPI quedan en blanco - se completan"
@@ -241,7 +274,7 @@ if [ "$CONFIGURE_APP_ENV" -eq 1 ]; then
 fi
 
 # ==========================================================================
-# 4. .env de devops-sidecar
+# 5. .env de devops-sidecar
 # ==========================================================================
 echo
 c_info "=== Configuracion de DevOps Sidecar (devops-sidecar/.env) ==="
@@ -263,10 +296,12 @@ if [ "$CONFIGURE_SIDECAR_ENV" -eq 1 ]; then
   DASHBOARD_PASSWORD_VAL="$(ask_secret "Contraseña de $DASHBOARD_USER_VAL" 8)"
 
   WEBHOOK_SECRET_VAL="$(gen_secret)"
+  CREDENTIALS_ENC_KEY_SIDECAR_VAL="$(gen_fernet_key)"
 
   set_env_var devops-sidecar/.env DASHBOARD_USER "$DASHBOARD_USER_VAL"
   set_env_var devops-sidecar/.env DASHBOARD_PASSWORD "$DASHBOARD_PASSWORD_VAL"
   set_env_var devops-sidecar/.env WEBHOOK_SECRET "$WEBHOOK_SECRET_VAL"
+  set_env_var devops-sidecar/.env CREDENTIALS_ENC_KEY "$CREDENTIALS_ENC_KEY_SIDECAR_VAL"
 
   chmod 600 devops-sidecar/.env
   c_ok "devops-sidecar/.env generado (el proveedor de IA y su API key se"
@@ -275,7 +310,7 @@ if [ "$CONFIGURE_SIDECAR_ENV" -eq 1 ]; then
 fi
 
 # ==========================================================================
-# 5. Construir y levantar los contenedores
+# 6. Construir y levantar los contenedores
 # ==========================================================================
 echo
 c_info "=== Construyendo y levantando los contenedores (puede tardar varios minutos) ==="
@@ -289,7 +324,7 @@ wait_for_running licencias_app 60
 wait_for_running devops_sidecar 60
 
 # ==========================================================================
-# 6. Migraciones y usuario administrador
+# 7. Migraciones y usuario administrador
 # ==========================================================================
 c_info "Aplicando el esquema/migraciones de base de datos..."
 $COMPOSE exec -T app npm run migrate
@@ -301,33 +336,172 @@ if ! $COMPOSE exec -T app npm run seed; then
 fi
 
 # ==========================================================================
-# 7. Firewall (opcional)
+# 8. HTTPS con Caddy (solo si se dio un dominio en la Seccion 3)
+# ==========================================================================
+CADDY_CONFIGURADO=0
+if [ -n "$DOMAIN_APP" ]; then
+  echo
+  c_info "=== Configurando HTTPS con Caddy para $DOMAIN_APP ==="
+
+  # Metodo oficial de caddyserver.com/docs/install#debian-ubuntu-raspbian
+  # (verificado contra esa pagina, no adivinado): repositorio via Cloudsmith,
+  # clave GPG "dearmored" a un keyring binario, sources.list.d tal cual lo
+  # entrega Caddy (ya trae el signed-by correcto apuntando a ese keyring).
+  if ! command -v caddy >/dev/null 2>&1; then
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https >/dev/null
+    curl -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+      | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+      -o /etc/apt/sources.list.d/caddy-stable.list
+    chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update -qq
+    apt-get install -y -qq caddy >/dev/null
+    c_ok "Caddy instalado ($(caddy version))."
+  else
+    c_ok "Caddy ya estaba instalado ($(caddy version))."
+  fi
+
+  {
+    echo "$DOMAIN_APP {"
+    echo "    reverse_proxy 127.0.0.1:8090"
+    echo "}"
+    if [ -n "$DOMAIN_SIDECAR" ]; then
+      echo "$DOMAIN_SIDECAR {"
+      echo "    reverse_proxy 127.0.0.1:8091"
+      echo "}"
+    fi
+  } > /etc/caddy/Caddyfile
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy
+  c_ok "Caddyfile escrito en /etc/caddy/Caddyfile."
+
+  # Deja de exponer los puertos directo a internet - todo el trafico
+  # publico pasa por Caddy (80/443); los contenedores solo escuchan en
+  # localhost, Caddy les habla por ahi mismo.
+  cat > docker-compose.override.yml << EOF
+services:
+  app:
+    ports:
+      - "127.0.0.1:8090:3000"
+  devops-sidecar:
+    ports:
+      - "127.0.0.1:8091:8000"
+EOF
+  $COMPOSE up -d
+  CADDY_CONFIGURADO=1
+  c_ok "Puertos 8090/8091 restringidos a localhost - el acceso publico ahora es via Caddy (HTTPS)."
+  c_warn "El certificado se emite solo/automatico cuando el DNS de $DOMAIN_APP ya"
+  c_warn "apunte a este servidor - si todavia no propaga, Caddy reintenta solo."
+fi
+
+# ==========================================================================
+# 9. Firewall (opcional)
 # ==========================================================================
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -qi "Status: active"; then
   echo
-  if ask_yes_no "ufw esta activo. ¿Abrir los puertos 8090 y 8091 (app y DevOps Sidecar)?" "s"; then
-    ufw allow 8090/tcp
-    ufw allow 8091/tcp
-    c_ok "Puertos 8090/8091 abiertos en ufw."
+  if [ "$CADDY_CONFIGURADO" -eq 1 ]; then
+    if ask_yes_no "ufw esta activo. ¿Abrir los puertos 80 y 443 (HTTPS via Caddy)?" "s"; then
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      c_ok "Puertos 80/443 abiertos en ufw."
+    fi
+  else
+    if ask_yes_no "ufw esta activo. ¿Abrir los puertos 8090 y 8091 (app y DevOps Sidecar)?" "s"; then
+      ufw allow 8090/tcp
+      ufw allow 8091/tcp
+      c_ok "Puertos 8090/8091 abiertos en ufw."
+    fi
   fi
 fi
 
 # ==========================================================================
-# 8. Resumen final
+# 10. Documentacion de infraestructura (cifrada)
+# ==========================================================================
+echo
+c_info "=== Generando el documento de infraestructura ==="
+mkdir -p deploy-info
+chmod 700 deploy-info
+STAMP="$(date +%Y%m%d_%H%M%S)"
+INFO_PLAIN="deploy-info/.tmp-infraestructura-${STAMP}.txt"
+INFO_FILE="deploy-info/infraestructura-$(hostname)-${STAMP}.txt.gpg"
+
+env_val() { grep "^${2}=" "$1" 2>/dev/null | head -1 | cut -d= -f2-; }
+
+{
+  echo "Documento de infraestructura - $(hostname) - $(date '+%Y-%m-%d %H:%M:%S %Z')"
+  echo "=========================================================================="
+  echo "Generado por install-ubuntu.sh. Contiene TODAS las credenciales y"
+  echo "parametros configurados en esta instalacion - tratalo como lo que es:"
+  echo "la llave maestra de este despliegue. Este archivo esta cifrado con GPG;"
+  echo "el .txt sin cifrar se borra de inmediato despues de generarlo."
+  echo
+  echo "--- Acceso ---"
+  echo "App principal:    ${APP_BASE_URL_VAL:-$(env_val .env APP_BASE_URL)}"
+  echo "DevOps Sidecar:   http://${DETECTED_IP}:8091"
+  [ -n "$DOMAIN_APP" ] && echo "Dominio (Caddy):  https://$DOMAIN_APP"
+  [ -n "$DOMAIN_SIDECAR" ] && echo "Dominio DevOps:   https://$DOMAIN_SIDECAR"
+  echo "IP del servidor:  $DETECTED_IP"
+  echo "Directorio:       $PROJECT_DIR"
+  echo
+  echo "--- Base de datos (MariaDB, contenedor licencias_db) ---"
+  echo "DB_NAME:          $(env_val .env DB_NAME)"
+  echo "DB_USER:          $(env_val .env DB_USER)"
+  echo "DB_PASSWORD:      $(env_val .env DB_PASSWORD)"
+  echo "DB_ROOT_PASSWORD: $(env_val .env DB_ROOT_PASSWORD)"
+  echo
+  echo "--- Aplicacion principal (.env) ---"
+  echo "ADMIN_NAME:            $(env_val .env ADMIN_NAME)"
+  echo "ADMIN_EMAIL:           $(env_val .env ADMIN_EMAIL)"
+  echo "ADMIN_PASSWORD:        $(env_val .env ADMIN_PASSWORD)"
+  echo "SESSION_SECRET:        $(env_val .env SESSION_SECRET)"
+  echo "CREDENTIALS_ENC_KEY:   $(env_val .env CREDENTIALS_ENC_KEY)"
+  echo
+  echo "--- DevOps Sidecar (devops-sidecar/.env) ---"
+  echo "DASHBOARD_USER:        $(env_val devops-sidecar/.env DASHBOARD_USER)"
+  echo "DASHBOARD_PASSWORD:    $(env_val devops-sidecar/.env DASHBOARD_PASSWORD)"
+  echo "WEBHOOK_SECRET:        $(env_val devops-sidecar/.env WEBHOOK_SECRET)"
+  echo "CREDENTIALS_ENC_KEY:   $(env_val devops-sidecar/.env CREDENTIALS_ENC_KEY)"
+  echo
+  echo "--- Notas ---"
+  echo "SMTP, integracion GLPI y el proveedor de IA de DevOps Sidecar se"
+  echo "completan despues desde la web (Configuracion) y no estan en este"
+  echo "documento porque este instalador no los pide."
+} > "$INFO_PLAIN"
+chmod 600 "$INFO_PLAIN"
+
+echo "Para proteger este documento con una passphrase (GPG, AES-256):"
+INFRA_PASSPHRASE="$(ask_secret "Passphrase para cifrar el documento de infraestructura" 10)"
+printf '%s' "$INFRA_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --symmetric --cipher-algo AES256 -o "$INFO_FILE" "$INFO_PLAIN"
+shred -u "$INFO_PLAIN" 2>/dev/null || rm -f "$INFO_PLAIN"
+chmod 600 "$INFO_FILE"
+unset INFRA_PASSPHRASE
+c_ok "Documento cifrado en: $INFO_FILE"
+c_warn "La passphrase NO se guardo en ningun lado - anotala en tu gestor de"
+c_warn "contraseñas ahora. Para leerlo despues: gpg --decrypt \"$INFO_FILE\""
+
+# ==========================================================================
+# 11. Resumen final
 # ==========================================================================
 echo
 c_ok "=========================================================================="
 c_ok " Instalacion completa."
 c_ok "=========================================================================="
-echo "  App principal:   http://${DETECTED_IP}:8090"
-echo "  DevOps Sidecar:  http://${DETECTED_IP}:8091"
+if [ -n "$DOMAIN_APP" ]; then
+  echo "  App principal:   https://${DOMAIN_APP}"
+else
+  echo "  App principal:   http://${DETECTED_IP}:8090"
+fi
+if [ -n "$DOMAIN_SIDECAR" ]; then
+  echo "  DevOps Sidecar:  https://${DOMAIN_SIDECAR}"
+else
+  echo "  DevOps Sidecar:  http://${DETECTED_IP}:8091"
+fi
 echo
-echo "  Las contraseñas que ingresaste quedaron guardadas (solo lectura para"
-echo "  root) en:"
+echo "  Documento de infraestructura (todas las credenciales, cifrado GPG):"
+echo "    $PROJECT_DIR/$INFO_FILE"
+echo "  Las mismas credenciales siguen ademas en los .env reales (permisos 600):"
 echo "    - $PROJECT_DIR/.env"
 echo "    - $PROJECT_DIR/devops-sidecar/.env"
-echo "  Guardalas tambien en un gestor de contraseñas: no se te van a volver a"
-echo "  mostrar en pantalla."
 echo
 echo "  Pendiente por completar desde la web (Configuracion), sin reiniciar"
 echo "  contenedores: SMTP, integracion con GLPI, y en DevOps Sidecar el"

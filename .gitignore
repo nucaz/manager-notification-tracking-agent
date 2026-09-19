@@ -9,3 +9,8 @@ uploads/red/*
 !uploads/red/.gitkeep
 *.log
 .DS_Store
+
+# Generados por install-ubuntu.sh en el servidor de destino - especificos
+# de CADA despliegue (credenciales, IP/dominio real), nunca van al repo.
+deploy-info/
+docker-compose.override.yml
