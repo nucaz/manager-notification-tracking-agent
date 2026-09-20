@@ -3,6 +3,9 @@
 {% block content %}
 <h2 class="mb-3">Configuración de IA</h2>
 {% if saved %}<div class="alert alert-success">Guardado. Los cambios ya están activos, sin reiniciar el contenedor.</div>{% endif %}
+{% if restored %}<div class="alert alert-success">Restaurado. Se guardó un snapshot de seguridad de como estaba antes en <code>{{ snapshot }}</code>. Si algo se ve raro (repos, scheduler), reinicia el contenedor.</div>{% endif %}
+{% if restore_error == 'confirmacion' %}<div class="alert alert-danger">Debes escribir exactamente "{{ 'RESTAURAR SIDECAR' }}" para confirmar la restauración.</div>{% endif %}
+{% if restore_error == 'invalido' %}<div class="alert alert-danger">El archivo no es un respaldo válido de este módulo (o está corrupto/incompleto).</div>{% endif %}
 
 <div class="card p-3 mb-3">
   <form id="settingsForm" method="post" action="/configuracion">
@@ -62,6 +65,42 @@
     <button type="submit" class="btn btn-primary">Guardar</button>
     <button type="button" id="btnTest" class="btn btn-outline-secondary">Probar conexión</button>
     <span id="testResult" class="ms-2"></span>
+  </form>
+</div>
+
+<div class="card p-3 mb-3">
+  <h5>Respaldo de la aplicación (DevOps Sidecar)</h5>
+  <p class="text-muted small">
+    Respalda TODA la configuración de este módulo (repositorios registrados, proveedor de IA,
+    historial de despliegues/auditorías) en un solo archivo — útil para migrar a otro servidor
+    que ya tenga la app y Docker instalados. No incluye los repositorios clonados ni los archivos
+    de respaldo/reportes en disco (esos son datos, no configuración — se vuelven a generar solos).
+  </p>
+  <a href="/configuracion/respaldo/descargar" class="btn btn-outline-primary mb-3">Descargar respaldo completo</a>
+
+  <hr>
+  <h6>Restaurar</h6>
+  <p class="text-muted small">
+    Reemplaza TODA la configuración actual por la del archivo subido. Si el respaldo viene de un
+    servidor con <code>CREDENTIALS_ENC_KEY</code> configurada, este servidor debe tener la
+    <strong>misma</strong> clave en su <code>.env</code> — si no, las API keys de IA guardadas
+    quedan ilegibles (cifradas) y hay que volver a escribirlas desde arriba.
+  </p>
+  <form method="post" action="/configuracion/respaldo/restaurar" enctype="multipart/form-data" class="row g-2 align-items-end">
+    <div class="col-auto">
+      <label class="form-label">Archivo (.tar.gz del respaldo)</label>
+      <input type="file" name="file" class="form-control" required accept=".gz,.tar.gz,.db">
+    </div>
+    <div class="col-auto">
+      <label class="form-label">Escribe "RESTAURAR SIDECAR" para confirmar</label>
+      <input type="text" name="confirmacion" class="form-control" required>
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-danger"
+        onclick="return confirm('Esto reemplaza TODA la configuración actual de este módulo. ¿Continuar?');">
+        Restaurar
+      </button>
+    </div>
   </form>
 </div>
 

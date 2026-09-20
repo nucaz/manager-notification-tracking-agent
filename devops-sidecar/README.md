@@ -158,6 +158,28 @@ https://tu-servidor:8091/webhooks/coolify?token=TU_WEBHOOK_SECRET
 → activa "Deployment success"/"Deployment failure" (y los demás eventos
 que quieras) en la configuración de notificaciones del proyecto/equipo.
 
+### 3.5 Respaldar/migrar la configuración a otro servidor
+
+Desde **Configuración** → "Respaldo de la aplicación" hay un botón
+**"Descargar respaldo completo"**: genera un `.tar.gz` con una copia
+consistente de `sidecar.db` (repositorios registrados, proveedor de IA,
+historial de despliegues/auditorías) — todo lo que hace a este módulo,
+en un solo archivo. No incluye los repositorios clonados ni los
+archivos de respaldo/reportes en disco (son datos, no configuración —
+se regeneran solos al re-sincronizar).
+
+Para restaurarlo (en este servidor o en uno nuevo que ya tenga la app y
+Docker instalados): mismo panel → sube el archivo, escribe
+`RESTAURAR SIDECAR` para confirmar. Antes de aplicar, se guarda
+automáticamente un snapshot de cómo estaba la base justo antes (en
+`/data/backups/_pre_restore_sidecar/`), por si hace falta volver atrás.
+
+**Importante si usas `CREDENTIALS_ENC_KEY`** (cifra las API keys de IA
+en la base de datos, ver Sección 4): el servidor donde restaures debe
+tener la **misma** clave en su `.env` que el servidor de origen — si no,
+las API keys guardadas quedan cifradas e ilegibles, y hay que volver a
+escribirlas desde Configuración.
+
 ## 4. Seguridad (decisiones deliberadas)
 
 - El dashboard/API (todo menos el webhook) está detrás de **HTTP Basic
