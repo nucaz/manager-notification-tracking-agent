@@ -75,6 +75,12 @@ async function validateDeviceData(data) {
   if (data.brand && data.brand.length > 100) {
     errors.push('La marca no puede superar los 100 caracteres.');
   }
+  if (data.asset_code && !/^[A-Za-z0-9]{1,8}$/.test(data.asset_code)) {
+    errors.push('El código de activo debe ser alfanumérico, máximo 8 caracteres (sin guiones ni espacios).');
+  }
+  if (data.notes && data.notes.length > 250) {
+    errors.push('Las notas no pueden superar los 250 caracteres.');
+  }
   if (data.phone_number) {
     if (!/^\d+$/.test(data.phone_number)) {
       errors.push('El número de línea debe ser solo dígitos, sin espacios ni guiones.');

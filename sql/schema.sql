@@ -219,14 +219,14 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   phone_country_code_id INT NULL,               -- ver phone_country_codes; sin FK dura (ver nota arriba)
   phone_number VARCHAR(30),                     -- solo el numero local (sin codigo de pais), NULL si no tiene chip
   has_chip TINYINT(1) NOT NULL DEFAULT 0,
-  asset_code VARCHAR(30),                       -- codigo interno, ej: A-00868
+  asset_code VARCHAR(8),                        -- codigo interno alfanumerico, ej: A0012345 (sin guiones)
   brand VARCHAR(100),                           -- marca, ej: Samsung, Oppo
   model VARCHAR(20),
   operadora VARCHAR(50),                        -- Entel, Claro, Movistar, Bitel... (catalog_items, extensible)
   area VARCHAR(100) NOT NULL,                   -- area/departamento (texto libre)
   sede VARCHAR(100),                            -- sede fisica (texto libre)
   status ENUM('en_stock','asignado','en_reparacion','de_baja') NOT NULL DEFAULT 'en_stock',
-  notes TEXT,
+  notes VARCHAR(250),
   created_by INT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

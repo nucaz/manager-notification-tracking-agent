@@ -13,7 +13,9 @@
     </div>
     <div class="col-md-4">
       <label class="form-label">Código de activo</label>
-      <input type="text" name="asset_code" class="form-control" value="<%= item.asset_code || '' %>" placeholder="Ej: A-00868">
+      <input type="text" name="asset_code" class="form-control" value="<%= item.asset_code || '' %>" placeholder="Ej: A0012345"
+        maxlength="8" pattern="[A-Za-z0-9]{1,8}" title="Alfanumérico, máximo 8 caracteres (sin guiones ni espacios)">
+      <div class="form-text">Alfanumérico, máximo 8 caracteres.</div>
     </div>
     <div class="col-md-4">
       <label class="form-label">Marca</label>
@@ -88,7 +90,7 @@
       <label class="form-label">Número de línea</label>
       <% const selectedCountry = countries.find(function(c) { return String(c.id) === String(selectedCountryId); }); %>
       <input type="text" name="phone_number" id="phone_number_input" class="form-control" value="<%= item.phone_number || '' %>"
-        inputmode="numeric" pattern="\d*" <%= selectedCountry ? 'maxlength="' + selectedCountry.mobile_length + '" placeholder="' + selectedCountry.mobile_length + ' dígitos"' : '' %>>
+        inputmode="numeric" pattern="\d*" <%- selectedCountry ? 'maxlength="' + selectedCountry.mobile_length + '" placeholder="' + selectedCountry.mobile_length + ' dígitos"' : '' %>>
     </div>
     <div class="col-md-4">
       <label class="form-label">Estado</label>
@@ -98,7 +100,10 @@
         <option value="en_reparacion" <%= item.status === 'en_reparacion' ? 'selected' : '' %>>En reparación</option>
         <option value="de_baja" <%= item.status === 'de_baja' ? 'selected' : '' %>>De baja</option>
       </select>
-      <div class="form-text">La asignación/reasignación a una persona se hace desde el detalle del celular, no aquí.</div>
+      <div class="form-text">
+        La asignación/reasignación a una persona, y el registro de reparaciones/accidentes/bajas,
+        se hacen desde el detalle del celular (después de guardarlo aquí), no en este formulario.
+      </div>
     </div>
 
     <div class="col-md-6">
@@ -136,7 +141,8 @@
 
     <div class="col-12">
       <label class="form-label">Notas</label>
-      <textarea name="notes" class="form-control" rows="3"><%= item.notes || '' %></textarea>
+      <textarea name="notes" class="form-control" rows="3" maxlength="250"><%= item.notes || '' %></textarea>
+      <div class="form-text">Máximo 250 caracteres.</div>
     </div>
   </div>
 
