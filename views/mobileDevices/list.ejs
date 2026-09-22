@@ -4,11 +4,13 @@
   <h2 class="mb-0">Celulares</h2>
   <% if (currentUser.role !== 'lector') { %>
     <div>
+      <a href="/celulares/inventario" class="btn btn-outline-secondary"><i class="bi bi-clipboard-data"></i> Inventario mensual</a>
       <a href="/celulares/resumen" class="btn btn-outline-secondary"><i class="bi bi-bar-chart"></i> Resumen</a>
       <a href="/celulares/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar</a>
       <a href="/celulares/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo celular</a>
     </div>
   <% } else { %>
+    <a href="/celulares/inventario" class="btn btn-outline-secondary"><i class="bi bi-clipboard-data"></i> Inventario mensual</a>
     <a href="/celulares/resumen" class="btn btn-outline-secondary"><i class="bi bi-bar-chart"></i> Resumen</a>
   <% } %>
 </div>

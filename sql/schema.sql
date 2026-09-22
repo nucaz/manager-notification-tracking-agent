@@ -266,6 +266,29 @@ CREATE TABLE IF NOT EXISTS mobile_device_area_audits (
   CONSTRAINT fk_area_audit_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Historial permanente de reparaciones, accidentes y bajas por dano de
+-- cada celular (no es exclusivo de un mes: se registra cada vez que
+-- ocurre y el reporte mensual de inventario simplemente filtra por
+-- fecha). 'reparacion' es el unico tipo "cerrable" (fecha_resolucion);
+-- 'accidente' queda como registro informativo del hecho; 'baja' es
+-- terminal y refleja mobile_devices.status = 'de_baja'.
+CREATE TABLE IF NOT EXISTS mobile_device_incidents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  device_id INT NOT NULL,
+  tipo ENUM('reparacion','accidente','baja') NOT NULL,
+  fecha DATE NOT NULL,
+  descripcion TEXT,
+  costo DECIMAL(10,2) NULL,
+  fecha_resolucion DATE NULL,                   -- solo 'reparacion': cuando volvio a servicio
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mobile_incident_device FOREIGN KEY (device_id) REFERENCES mobile_devices(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mobile_incident_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_mobile_incident_device (device_id),
+  INDEX idx_mobile_incident_fecha (fecha),
+  INDEX idx_mobile_incident_tipo (tipo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ---------------------------------------------------------------------
 -- Catalogos genericos (maestros): sede, area, marca, modelo, etc.
 -- Los modulos que los usan (por ahora, Celulares) guardan el VALOR como

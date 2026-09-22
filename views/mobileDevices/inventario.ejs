@@ -1,0 +1,127 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h2 class="mb-0">Inventario mensual de celulares</h2>
+  <a href="/celulares" class="btn btn-outline-secondary">Volver al listado</a>
+</div>
+
+<form class="row g-2 mb-3 align-items-end" method="get">
+  <div class="col-auto">
+    <label class="form-label small mb-0">Mes</label>
+    <input type="month" name="mes" class="form-control" value="<%= mes %>">
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Ver mes</button>
+  </div>
+  <div class="col-auto">
+    <a class="btn btn-success" href="/celulares/inventario/exportar.xlsx?mes=<%= mes %>">
+      <i class="bi bi-file-earmark-excel"></i> Exportar a Excel
+    </a>
+  </div>
+</form>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number"><%= summary.total %></div>
+      <div class="text-muted">Total</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number text-success"><%= summary.asignados %></div>
+      <div class="text-muted">Asignados</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number text-secondary"><%= summary.enStock %></div>
+      <div class="text-muted">En stock</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number text-warning"><%= summary.enReparacion %></div>
+      <div class="text-muted">En reparación</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-number text-danger"><%= summary.deBaja %></div>
+      <div class="text-muted">De baja</div>
+    </div>
+  </div>
+</div>
+
+<div class="card p-3 mb-4">
+  <h5>Inventario completo (todas las sedes y áreas)</h5>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Sede</th><th>Área</th><th>IMEI</th><th>Código</th><th>Marca / Modelo</th>
+          <th>Usuario asignado</th><th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.forEach(function(it) { %>
+          <tr>
+            <td><%= it.sede || '—' %></td>
+            <td><%= it.area %></td>
+            <td><a href="/celulares/<%= it.id %>"><%= it.imei %></a></td>
+            <td><%= it.asset_code || '—' %></td>
+            <td><%= [it.brand, it.model].filter(Boolean).join(' / ') || '—' %></td>
+            <td><%= it.holder_name || '—' %></td>
+            <td>
+              <span class="badge <%= it.status === 'asignado' ? 'bg-success' : it.status === 'en_stock' ? 'bg-secondary' : it.status === 'en_reparacion' ? 'bg-warning text-dark' : 'bg-danger' %>">
+                <%= it.status %>
+              </span>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="7" class="text-center text-muted py-4">No hay celulares registrados todavía.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card p-3">
+  <h5>Reparaciones, accidentes y bajas de <%= mes %></h5>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Fecha</th><th>Tipo</th><th>Sede</th><th>Área</th><th>Equipo</th>
+          <th>Descripción</th><th>Costo</th><th>Resuelta</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% incidents.forEach(function(inc) { %>
+          <tr>
+            <td><%= inc.fecha %></td>
+            <td>
+              <span class="badge <%= inc.tipo === 'reparacion' ? 'bg-warning text-dark' : inc.tipo === 'baja' ? 'bg-danger' : 'bg-secondary' %>">
+                <%= inc.tipo %>
+              </span>
+            </td>
+            <td><%= inc.sede || '—' %></td>
+            <td><%= inc.area %></td>
+            <td><a href="/celulares/<%= inc.device_id %>"><%= inc.imei %></a> <%= inc.asset_code ? '(' + inc.asset_code + ')' : '' %></td>
+            <td><%= inc.descripcion || '—' %></td>
+            <td><%= inc.costo != null ? inc.costo : '—' %></td>
+            <td>
+              <% if (inc.tipo !== 'reparacion') { %>—<% } else if (inc.fecha_resolucion) { %>Sí (<%= inc.fecha_resolucion %>)<% } else { %>No<% } %>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (incidents.length === 0) { %>
+          <tr><td colspan="8" class="text-center text-muted py-4">Sin reparaciones, accidentes ni bajas registradas en <%= mes %>.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

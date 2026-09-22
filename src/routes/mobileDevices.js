@@ -1,4 +1,5 @@
 const express = require('express');
+const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/modules');
@@ -7,6 +8,23 @@ const importService = require('../services/importService');
 const { importUploader } = require('../services/uploadService');
 const catalogService = require('../services/catalogService');
 const employeeService = require('../services/employeeService');
+
+const INCIDENT_TIPOS = ['reparacion', 'accidente', 'baja'];
+
+// 'YYYY-MM' -> { desde: 'YYYY-MM-01', hasta: 'YYYY-MM-<ultimo dia>' }.
+// Sin mes (o invalido) cae al mes actual - el reporte de inventario nunca
+// queda sin rango.
+function monthRange(mes) {
+  const match = /^(\d{4})-(\d{2})$/.exec(mes || '');
+  const now = new Date();
+  const year = match ? Number(match[1]) : now.getFullYear();
+  const month = match ? Number(match[2]) : now.getMonth() + 1; // 1-12
+  const desde = `${year}-${String(month).padStart(2, '0')}-01`;
+  const ultimoDia = new Date(year, month, 0).getDate(); // dia 0 del mes siguiente = ultimo del actual
+  const hasta = `${year}-${String(month).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+  const mesNormalizado = `${year}-${String(month).padStart(2, '0')}`;
+  return { desde, hasta, mes: mesNormalizado };
+}
 
 const router = express.Router();
 // verifyCsrfToken NO va aca a nivel de router: /importar es multipart y
@@ -409,6 +427,155 @@ router.post('/resumen/:area/actualizar', canWrite, verifyCsrfToken, async (req, 
   }
 });
 
+// Registra un incidente (reparacion/accidente/baja). 'reparacion' y
+// 'baja' actualizan el status del equipo; 'accidente' queda como
+// registro informativo sin forzar un cambio de estado (el equipo puede
+// seguir en uso tras un golpe menor).
+router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const { tipo, fecha, descripcion, costo } = req.body;
+    if (!INCIDENT_TIPOS.includes(tipo) || !fecha) {
+      req.flash('error', 'El tipo y la fecha del incidente son obligatorios.');
+      return res.redirect(`/celulares/${req.params.id}`);
+    }
+    await pool.query(
+      `INSERT INTO mobile_device_incidents (device_id, tipo, fecha, descripcion, costo, created_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [req.params.id, tipo, fecha, descripcion || null, costo || null, req.session.user.id]
+    );
+    if (tipo === 'reparacion') {
+      await pool.query('UPDATE mobile_devices SET status = "en_reparacion" WHERE id = ?', [req.params.id]);
+    } else if (tipo === 'baja') {
+      await pool.query('UPDATE mobile_devices SET status = "de_baja" WHERE id = ?', [req.params.id]);
+    }
+    req.flash('success', 'Incidente registrado correctamente.');
+    res.redirect(`/celulares/${req.params.id}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Cierra una reparacion (fecha_resolucion) y devuelve el equipo a
+// servicio: a "asignado" si tenia una asignacion activa, si no a
+// "en_stock" - mismo criterio que /devolver.
+router.post('/:id/incidentes/:incidentId/resolver', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const [result] = await pool.query(
+      `UPDATE mobile_device_incidents SET fecha_resolucion = CURDATE()
+       WHERE id = ? AND device_id = ? AND tipo = 'reparacion' AND fecha_resolucion IS NULL`,
+      [req.params.incidentId, req.params.id]
+    );
+    if (result.affectedRows === 0) {
+      req.flash('error', 'No se encontró una reparación pendiente con ese id.');
+      return res.redirect(`/celulares/${req.params.id}`);
+    }
+    const [[activeAssignment]] = await pool.query(
+      'SELECT id FROM mobile_device_assignments WHERE device_id = ? AND returned_date IS NULL',
+      [req.params.id]
+    );
+    await pool.query('UPDATE mobile_devices SET status = ? WHERE id = ?', [
+      activeAssignment ? 'asignado' : 'en_stock',
+      req.params.id,
+    ]);
+    req.flash('success', 'Reparación marcada como resuelta.');
+    res.redirect(`/celulares/${req.params.id}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Inventario mensual (por sede/area, incluye incidentes del mes elegido).
+// No es exclusivo de septiembre ni de un solo mes: ?mes=AAAA-MM cambia el
+// rango; sin parametro cae al mes actual. Va antes de /:id a proposito
+// (mismo motivo que /resumen y /importar - ver nota mas arriba).
+router.get('/inventario', async (req, res, next) => {
+  try {
+    const { desde, hasta, mes } = monthRange(req.query.mes);
+    const [items] = await pool.query(
+      `SELECT d.*, a.holder_name
+       FROM mobile_devices d
+       LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL
+       ORDER BY d.sede, d.area, d.id`
+    );
+    const [incidents] = await pool.query(
+      `SELECT i.*, d.imei, d.asset_code, d.area, d.sede, d.model
+       FROM mobile_device_incidents i
+       JOIN mobile_devices d ON d.id = i.device_id
+       WHERE i.fecha BETWEEN ? AND ?
+       ORDER BY i.fecha DESC, i.id DESC`,
+      [desde, hasta]
+    );
+    const summary = {
+      total: items.length,
+      asignados: items.filter((i) => i.status === 'asignado').length,
+      enStock: items.filter((i) => i.status === 'en_stock').length,
+      enReparacion: items.filter((i) => i.status === 'en_reparacion').length,
+      deBaja: items.filter((i) => i.status === 'de_baja').length,
+    };
+    res.render('mobileDevices/inventario', {
+      title: 'Inventario mensual de celulares',
+      items,
+      incidents,
+      summary,
+      mes,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/inventario/exportar.xlsx', async (req, res, next) => {
+  try {
+    const { desde, hasta, mes } = monthRange(req.query.mes);
+    const [items] = await pool.query(
+      `SELECT d.*, a.holder_name
+       FROM mobile_devices d
+       LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL
+       ORDER BY d.sede, d.area, d.id`
+    );
+    const [incidents] = await pool.query(
+      `SELECT i.*, d.imei, d.asset_code, d.area, d.sede, d.model
+       FROM mobile_device_incidents i
+       JOIN mobile_devices d ON d.id = i.device_id
+       WHERE i.fecha BETWEEN ? AND ?
+       ORDER BY i.fecha DESC, i.id DESC`,
+      [desde, hasta]
+    );
+
+    const workbook = new ExcelJS.Workbook();
+
+    const inventario = workbook.addWorksheet('Inventario');
+    inventario.addRow(['Sede', 'Área', 'IMEI', 'Código', 'Marca', 'Modelo', 'Estado', 'Usuario asignado', 'Notas']);
+    for (const it of items) {
+      inventario.addRow([
+        it.sede || '', it.area, it.imei, it.asset_code || '', it.brand || '', it.model || '',
+        it.status, it.holder_name || '', it.notes || '',
+      ]);
+    }
+    inventario.getRow(1).font = { bold: true };
+    inventario.columns.forEach((c) => { c.width = 18; });
+
+    const hojaIncidentes = workbook.addWorksheet(`Incidentes ${mes}`);
+    hojaIncidentes.addRow(['Fecha', 'Tipo', 'Sede', 'Área', 'IMEI', 'Código', 'Descripción', 'Costo', 'Resuelta']);
+    for (const inc of incidents) {
+      hojaIncidentes.addRow([
+        inc.fecha, inc.tipo, inc.sede || '', inc.area, inc.imei, inc.asset_code || '',
+        inc.descripcion || '', inc.costo || '',
+        inc.tipo === 'reparacion' ? (inc.fecha_resolucion ? `Sí (${inc.fecha_resolucion})` : 'No') : '—',
+      ]);
+    }
+    hojaIncidentes.getRow(1).font = { bold: true };
+    hojaIncidentes.columns.forEach((c) => { c.width = 18; });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="inventario_celulares_${mes}.xlsx"`);
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const [rows] = await pool.query('SELECT * FROM mobile_devices WHERE id = ?', [req.params.id]);
@@ -427,6 +594,10 @@ router.get('/:id', async (req, res, next) => {
     const history = assignments.filter((a) => a.returned_date);
     const [attachments] = await pool.query(
       'SELECT * FROM attachments WHERE entity_type = "mobile_device" AND entity_id = ? ORDER BY uploaded_at DESC',
+      [req.params.id]
+    );
+    const [incidents] = await pool.query(
+      'SELECT * FROM mobile_device_incidents WHERE device_id = ? ORDER BY fecha DESC, id DESC',
       [req.params.id]
     );
     const catalogs = await loadCatalogOptions();
@@ -448,6 +619,7 @@ router.get('/:id', async (req, res, next) => {
       currentAssignment,
       history,
       attachments,
+      incidents,
       areas: catalogs.areas,
       sedes: catalogs.sedes,
       dniQuery,

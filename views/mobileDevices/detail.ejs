@@ -35,7 +35,7 @@
       </table>
     </div>
 
-    <div class="card p-3">
+    <div class="card p-3 mb-3">
       <h5>Historial de asignaciones</h5>
       <% if (history.length === 0) { %>
         <p class="text-muted mb-0">Sin asignaciones anteriores.</p>
@@ -56,6 +56,81 @@
             <% }); %>
           </tbody>
         </table>
+      <% } %>
+    </div>
+
+    <div class="card p-3">
+      <h5>Reparaciones, accidentes y bajas</h5>
+      <% if (incidents.length === 0) { %>
+        <p class="text-muted mb-0">Sin incidentes registrados.</p>
+      <% } else { %>
+        <table class="table table-sm">
+          <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Costo</th><th>Resuelta</th><th></th></tr></thead>
+          <tbody>
+            <% incidents.forEach(function(inc) { %>
+              <tr>
+                <td><%= inc.fecha %></td>
+                <td>
+                  <span class="badge <%= inc.tipo === 'reparacion' ? 'bg-warning text-dark' : inc.tipo === 'baja' ? 'bg-danger' : 'bg-secondary' %>">
+                    <%= inc.tipo %>
+                  </span>
+                </td>
+                <td><%= inc.descripcion || '—' %></td>
+                <td><%= inc.costo != null ? inc.costo : '—' %></td>
+                <td>
+                  <% if (inc.tipo !== 'reparacion') { %>
+                    —
+                  <% } else if (inc.fecha_resolucion) { %>
+                    Sí (<%= inc.fecha_resolucion %>)
+                  <% } else { %>
+                    No
+                  <% } %>
+                </td>
+                <td>
+                  <% if (currentUser.role !== 'lector' && inc.tipo === 'reparacion' && !inc.fecha_resolucion) { %>
+                    <form action="/celulares/<%= item.id %>/incidentes/<%= inc.id %>/resolver" method="post"
+                          onsubmit="return confirm('¿Marcar esta reparación como resuelta? El equipo vuelve a servicio.');">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-sm btn-outline-success" type="submit">Marcar resuelta</button>
+                    </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+
+      <% if (currentUser.role !== 'lector') { %>
+        <button class="btn btn-sm btn-outline-danger mt-2" type="button" data-bs-toggle="collapse" data-bs-target="#formIncidente">
+          Registrar incidente
+        </button>
+        <div class="collapse mt-2" id="formIncidente">
+          <form action="/celulares/<%= item.id %>/incidentes" method="post">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="mb-2">
+              <label class="form-label small">Tipo *</label>
+              <select name="tipo" class="form-select form-select-sm" required>
+                <option value="reparacion">Reparación</option>
+                <option value="accidente">Accidente (registro informativo)</option>
+                <option value="baja">Baja por daño</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Fecha *</label>
+              <input type="date" name="fecha" class="form-control form-control-sm" required value="<%= new Date().toISOString().slice(0,10) %>">
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Descripción</label>
+              <textarea name="descripcion" class="form-control form-control-sm" rows="2" placeholder="Qué pasó, causa del daño, taller, etc."></textarea>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Costo (opcional)</label>
+              <input type="number" step="0.01" min="0" name="costo" class="form-control form-control-sm">
+            </div>
+            <button type="submit" class="btn btn-sm btn-danger">Guardar incidente</button>
+          </form>
+        </div>
       <% } %>
     </div>
   </div>
