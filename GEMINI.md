@@ -43,6 +43,15 @@ READMEs.
   `.claude/skills/encrypt-secrets-at-rest/SKILL.md`.
 - Si vas a agregar backup/restore de algo, revisa
   `.claude/skills/respaldo-restauracion-segura/SKILL.md`.
+- Si vas a endurecer la validación de un campo (tamaño, formato
+  alfanumérico/numérico) en una tabla que ya tiene datos, revisa
+  `.claude/skills/endurecer-validacion-de-campos/SKILL.md` — verificar
+  los datos reales ANTES de decidir el límite.
+- Si vas a armar un atributo HTML condicional en una plantilla EJS
+  (`views/**/*.ejs`), revisa
+  `.claude/skills/ejs-atributos-sin-escapar/SKILL.md` — `<%= %>` escapa
+  HTML y rompe en silencio un atributo ya armado como string; hace
+  falta `<%- %>`.
 
 ## Convenciones establecidas (no las reinventes)
 
@@ -70,6 +79,17 @@ READMEs.
   (`src/middleware/csrf.js`) — DevOps Sidecar usa HTTP Basic Auth en vez
   de sesiones, así que no aplica el mismo mecanismo ahí.
 - **Rate limiting** (`express-rate-limit`) en login y verificación 2FA.
+- **Catálogos de texto libre** (sede, área, marca, modelo, operadora):
+  tabla genérica `catalog_items` (`catalog_type` + `value`), sin FK
+  dura desde quien lo usa — administrable desde Configuración >
+  Catálogos sin tocar código. Si el dato tiene varios campos
+  relacionados (ej. país + código de llamada + dígitos esperados, ver
+  `phone_country_codes`), usar una tabla propia en vez de forzarlo
+  dentro de un `value` de texto.
+- **Valores sugeridos/autogenerados** (ej. correlativo de código de
+  activo): siempre calculados de los datos reales en el momento
+  (`MAX` sobre lo ya existente + 1), nunca con un contador aparte en
+  `settings` que se pueda desincronizar.
 - **Verificar contra la fuente primaria**, no memoria ni documentación
   de terceros potencialmente desactualizada, para cualquier integración
   externa crítica (webhooks, APIs, instaladores de paquetes) — código

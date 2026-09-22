@@ -114,7 +114,59 @@ completo. Resumen:
   (`subprocess`/`spawn`/`execFile`), nunca `shell=True` ni un string
   armado a mano con datos de entrada.
 
-## 5. Convención de commits de este repo
+## 6. Plantillas EJS: `<%- %>` para atributos HTML ya armados, nunca `<%= %>`
+
+`<%= %>` escapa HTML a propósito (evita XSS) — correcto para imprimir
+texto de usuario, pero rompe un string que ya es HTML válido por sí
+mismo (ej. un atributo `maxlength="9"` armado condicionalmente). Bug
+real encontrado en `views/mobileDevices/form.ejs`: el `maxlength` del
+número de línea se armaba como `'maxlength="' + n + '"'` dentro de
+`<%= %>`, y el navegador recibía `maxlength=&#34;9&#34;` — un atributo
+inválido que se ignora en silencio, sin ningún error visible. El campo
+aceptaba cualquier cantidad de caracteres pese al límite "aplicado" en
+el código. Se detectó porque el usuario probó el formulario a mano, no
+por lectura de código ni por `ejs.compile()` (que solo valida sintaxis,
+no el HTML resultante). Ver
+`.claude/skills/ejs-atributos-sin-escapar/SKILL.md` para el detalle y
+cómo verificarlo renderizando la plantilla real con datos de muestra.
+
+## 7. Antes de endurecer la validación de un campo con datos ya cargados
+
+Nunca reducir el tamaño de una columna o agregar un patrón estricto sin
+antes consultar `SELECT MAX(LENGTH(columna)) FROM tabla` y buscar
+registros que violarían el nuevo límite. Se hizo así antes de cada
+`ALTER ... MODIFY COLUMN` de `mobile_devices` (`model`, `asset_code`,
+`notes`) — los tres casos resultaron seguros, pero solo se supo
+consultando, no asumiendo. Además: si el usuario da un tamaño/formato
+que contradice un estándar técnico externo verificable (ej. IMEI como
+"8 alfanumérico" cuando el estándar GSMA real son 15 dígitos
+numéricos, y el "8" corresponde solo al TAC), se aplica el estándar
+real explicando la discrepancia — pero si el dato viene del propio
+negocio (ej. su código de activo real es "A-00868", con guion), el
+usuario es la fuente primaria y se sigue tal cual. Ver
+`.claude/skills/endurecer-validacion-de-campos/SKILL.md`.
+
+## 8. Catálogo de un solo valor vs. tabla propia
+
+Un campo de texto libre que el negocio define (sede, área, marca,
+modelo, operadora) va en la tabla genérica `catalog_items`
+(`catalog_type` + `value`), sin FK dura desde quien lo usa — sugiere/
+estandariza, nunca restringe a nivel de base de datos. Cuando el
+"valor" en realidad son varios campos relacionados (país + código de
+llamada + cantidad de dígitos esperada, ver `phone_country_codes`), se
+usa una tabla propia pequeña en vez de forzar los datos extra dentro de
+un solo `value` de texto delimitado a mano.
+
+## 9. Un valor sugerido/autogenerado se calcula de los datos reales, nunca con un contador aparte
+
+El correlativo del código de activo (ej. sugerir "A-00869" después de
+"A-00868") no se guarda como un contador en `settings` — un contador
+separado se desincroniza en cuanto se borra un registro o se carga uno
+con código manual fuera de secuencia. Se calcula en el momento: buscar
+el número más alto ya usado con el prefijo configurado y sumar 1. Más
+lento que leer un contador, pero siempre consistente con la tabla real.
+
+## 10. Convención de commits de este repo
 
 Cuando hay varios cambios sin commitear que en realidad son features
 distintas mezcladas, se organizan en commits temáticos separados y
