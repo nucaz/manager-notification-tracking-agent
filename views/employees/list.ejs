@@ -2,9 +2,13 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="mb-0">Empleados</h2>
-  <% if (currentUser.role !== 'lector') { %>
-    <a href="/empleados/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo empleado</a>
-  <% } %>
+  <div>
+    <a href="/empleados/exportar.xlsx<%= q ? ('?q=' + encodeURIComponent(q)) : '' %>" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-excel"></i> Exportar</a>
+    <% if (currentUser.role !== 'lector') { %>
+      <a href="/empleados/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar</a>
+      <a href="/empleados/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo empleado</a>
+    <% } %>
+  </div>
 </div>
 
 <form class="row g-2 mb-3" method="get">
@@ -23,7 +27,7 @@
       <tbody>
         <% items.forEach(function(e) { %>
           <tr>
-            <td><%= e.dni %></td>
+            <td><a href="/empleados/<%= e.id %>"><%= e.dni %></a></td>
             <td><%= e.first_name %></td>
             <td><%= e.last_name %></td>
             <td><%= e.area || '—' %></td>

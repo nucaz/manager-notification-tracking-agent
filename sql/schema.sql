@@ -192,16 +192,37 @@ CREATE TABLE IF NOT EXISTS certificates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
+-- Codigos de pais para el numero de linea de celulares (menu desplegable
+-- extensible desde Configuracion > Catalogos). mobile_length es la
+-- cantidad de digitos del numero SIN el codigo de pais (Peru = 9). Sin FK
+-- desde mobile_devices a proposito - mismo criterio que catalog_items:
+-- sugiere/estandariza, no restringe a nivel de base de datos.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS phone_country_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  country_name VARCHAR(80) NOT NULL,
+  calling_code VARCHAR(5) NOT NULL,             -- sin el "+", ej: '51'
+  mobile_length TINYINT UNSIGNED NOT NULL,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_phone_country_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY uniq_phone_country (country_name, calling_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
 -- Celulares / activos moviles
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS mobile_devices (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  imei VARCHAR(30) NOT NULL,
-  phone_number VARCHAR(30),                     -- numero de linea, NULL si no tiene chip
+  imei VARCHAR(30) NOT NULL,                    -- estandar mundial: 15 digitos numericos (TAC 8 + serie 6 + digito de control 1)
+  phone_country_code_id INT NULL,               -- ver phone_country_codes; sin FK dura (ver nota arriba)
+  phone_number VARCHAR(30),                     -- solo el numero local (sin codigo de pais), NULL si no tiene chip
   has_chip TINYINT(1) NOT NULL DEFAULT 0,
   asset_code VARCHAR(30),                       -- codigo interno, ej: A-00868
   brand VARCHAR(100),                           -- marca, ej: Samsung, Oppo
-  model VARCHAR(100),
+  model VARCHAR(20),
+  operadora VARCHAR(50),                        -- Entel, Claro, Movistar, Bitel... (catalog_items, extensible)
   area VARCHAR(100) NOT NULL,                   -- area/departamento (texto libre)
   sede VARCHAR(100),                            -- sede fisica (texto libre)
   status ENUM('en_stock','asignado','en_reparacion','de_baja') NOT NULL DEFAULT 'en_stock',
@@ -211,7 +232,8 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_mobile_device_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_mobile_device_area (area),
-  INDEX idx_mobile_device_status (status)
+  INDEX idx_mobile_device_status (status),
+  INDEX idx_mobile_device_phone_country (phone_country_code_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Directorio de empleados (DNI, nombres, apellidos, area/sede/cargo).
@@ -560,4 +582,23 @@ INSERT IGNORE INTO catalog_items (catalog_type, value) VALUES
   ('marca', 'Xiaomi'),
   ('modelo', 'A76'),
   ('modelo', 'A75'),
-  ('modelo', 'A55');
+  ('modelo', 'A55'),
+  ('operadora', 'Entel'),
+  ('operadora', 'Claro'),
+  ('operadora', 'Movistar'),
+  ('operadora', 'Bitel');
+
+-- Codigos de pais para el numero de linea. Peru primero (el operador es
+-- de Peru); el resto son de referencia y se pueden agregar mas a futuro
+-- desde Configuracion > Catalogos.
+INSERT IGNORE INTO phone_country_codes (country_name, calling_code, mobile_length) VALUES
+  ('Perú', '51', 9),
+  ('Chile', '56', 9),
+  ('Colombia', '57', 10),
+  ('Ecuador', '593', 9),
+  ('Bolivia', '591', 8),
+  ('Argentina', '54', 10),
+  ('México', '52', 10),
+  ('España', '34', 9),
+  ('Estados Unidos', '1', 10),
+  ('Brasil', '55', 11);

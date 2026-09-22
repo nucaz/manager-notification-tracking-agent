@@ -7,7 +7,9 @@
   <div class="row g-3">
     <div class="col-md-4">
       <label class="form-label">IMEI *</label>
-      <input type="text" name="imei" class="form-control" required value="<%= item.imei || '' %>">
+      <input type="text" name="imei" class="form-control" required value="<%= item.imei || '' %>"
+        inputmode="numeric" pattern="\d{15}" maxlength="15" title="15 dígitos numéricos (estándar GSMA)">
+      <div class="form-text">15 dígitos numéricos (TAC + serie + dígito de control).</div>
     </div>
     <div class="col-md-4">
       <label class="form-label">Código de activo</label>
@@ -25,7 +27,7 @@
           <%= marcaEsOtro ? item.brand : 'Otro (especificar)...' %>
         </option>
       </select>
-      <input type="text" id="brand_otro" class="form-control mt-2" placeholder="Especificar marca..." <%= marcaEsOtro ? '' : 'hidden' %>
+      <input type="text" id="brand_otro" class="form-control mt-2" placeholder="Especificar marca..." maxlength="100" <%= marcaEsOtro ? '' : 'hidden' %>
         value="<%= marcaEsOtro ? item.brand : '' %>"
         oninput="var o=document.querySelector('#brand_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
     </div>
@@ -41,9 +43,26 @@
           <%= modeloEsOtro ? item.model : 'Otro (especificar)...' %>
         </option>
       </select>
-      <input type="text" id="model_otro" class="form-control mt-2" placeholder="Especificar modelo..." <%= modeloEsOtro ? '' : 'hidden' %>
+      <input type="text" id="model_otro" class="form-control mt-2" placeholder="Especificar modelo..." maxlength="20" <%= modeloEsOtro ? '' : 'hidden' %>
         value="<%= modeloEsOtro ? item.model : '' %>"
         oninput="var o=document.querySelector('#model_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
+      <div class="form-text">Alfanumérico, máximo 20 caracteres.</div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Operadora</label>
+      <% const operadoraEsOtro = item.operadora && !operadoras.includes(item.operadora); %>
+      <select name="operadora" id="operadora_select" class="form-select" onchange="document.getElementById('operadora_otro').hidden = this.value !== '__otro__';">
+        <option value="">— Seleccionar —</option>
+        <% operadoras.forEach(function(o) { %>
+          <option value="<%= o %>" <%= item.operadora === o ? 'selected' : '' %>><%= o %></option>
+        <% }); %>
+        <option value="<%= operadoraEsOtro ? item.operadora : '__otro__' %>" <%= operadoraEsOtro ? 'selected' : '' %>>
+          <%= operadoraEsOtro ? item.operadora : 'Otro (especificar)...' %>
+        </option>
+      </select>
+      <input type="text" id="operadora_otro" class="form-control mt-2" placeholder="Especificar operadora..." maxlength="50" <%= operadoraEsOtro ? '' : 'hidden' %>
+        value="<%= operadoraEsOtro ? item.operadora : '' %>"
+        oninput="var o=document.querySelector('#operadora_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
     </div>
 
     <div class="col-md-3 d-flex align-items-end">
@@ -52,11 +71,26 @@
         <label class="form-check-label" for="has_chip">Tiene chip</label>
       </div>
     </div>
-    <div class="col-md-4">
-      <label class="form-label">Número de línea</label>
-      <input type="text" name="phone_number" class="form-control" value="<%= item.phone_number || '' %>">
+    <div class="col-md-2">
+      <label class="form-label">País</label>
+      <% const defaultCountry = countries.find(function(c) { return c.calling_code === '51'; }); %>
+      <% const selectedCountryId = item.phone_country_code_id || (defaultCountry ? defaultCountry.id : ''); %>
+      <select name="phone_country_code_id" id="phone_country_select" class="form-select"
+              onchange="var o=this.options[this.selectedIndex]; var len=o.getAttribute('data-length'); var n=document.getElementById('phone_number_input'); if (len) { n.maxLength = len; n.placeholder = len + ' dígitos'; } else { n.removeAttribute('maxlength'); n.placeholder=''; }">
+        <% countries.forEach(function(c) { %>
+          <option value="<%= c.id %>" data-length="<%= c.mobile_length %>" <%= String(selectedCountryId) === String(c.id) ? 'selected' : '' %>>
+            +<%= c.calling_code %> <%= c.country_name %>
+          </option>
+        <% }); %>
+      </select>
     </div>
-    <div class="col-md-5">
+    <div class="col-md-3">
+      <label class="form-label">Número de línea</label>
+      <% const selectedCountry = countries.find(function(c) { return String(c.id) === String(selectedCountryId); }); %>
+      <input type="text" name="phone_number" id="phone_number_input" class="form-control" value="<%= item.phone_number || '' %>"
+        inputmode="numeric" pattern="\d*" <%= selectedCountry ? 'maxlength="' + selectedCountry.mobile_length + '" placeholder="' + selectedCountry.mobile_length + ' dígitos"' : '' %>>
+    </div>
+    <div class="col-md-4">
       <label class="form-label">Estado</label>
       <select name="status" class="form-select">
         <option value="en_stock" <%= !item.status || item.status === 'en_stock' ? 'selected' : '' %>>En stock</option>

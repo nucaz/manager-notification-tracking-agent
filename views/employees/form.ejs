@@ -7,7 +7,8 @@
   <div class="row g-3">
     <div class="col-md-4">
       <label class="form-label">DNI *</label>
-      <input type="text" name="dni" class="form-control" required value="<%= item.dni || '' %>">
+      <input type="text" name="dni" class="form-control" required value="<%= item.dni || '' %>"
+        inputmode="numeric" pattern="\d{8}" maxlength="8" title="8 dígitos numéricos">
     </div>
     <div class="col-md-4">
       <label class="form-label">Nombres *</label>

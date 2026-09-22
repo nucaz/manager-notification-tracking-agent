@@ -28,7 +28,8 @@
         <tr><th>Marca</th><td><%= item.brand || '—' %></td></tr>
         <tr><th>Modelo</th><td><%= item.model || '—' %></td></tr>
         <tr><th>Tiene chip</th><td><%= item.has_chip ? 'Sí' : 'No' %></td></tr>
-        <tr><th>Número de línea</th><td><%= item.phone_number || '—' %></td></tr>
+        <tr><th>Número de línea</th><td><%= item.phone_number ? ('+' + item.calling_code + ' ' + item.phone_number + (item.country_name ? ' (' + item.country_name + ')' : '')) : '—' %></td></tr>
+        <tr><th>Operadora</th><td><%= item.operadora || '—' %></td></tr>
         <tr><th>Área</th><td><%= item.area %></td></tr>
         <tr><th>Sede</th><td><%= item.sede || '—' %></td></tr>
         <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>

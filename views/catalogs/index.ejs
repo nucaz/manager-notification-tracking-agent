@@ -66,4 +66,74 @@
   </div>
 </div>
 
+<hr class="my-4">
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Códigos de país (número de línea de celulares)</h4>
+</div>
+<p class="text-muted">
+  Usados en el formulario de Celulares para el menú desplegable del número de línea.
+  "Dígitos" es el largo del número SIN el código de país (Perú = 9).
+</p>
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="card p-3">
+      <h5>Agregar país</h5>
+      <form method="post" action="/configuracion/catalogos/paises/nuevo">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="mb-2">
+          <label class="form-label small">País</label>
+          <input type="text" name="country_name" class="form-control" placeholder="Perú" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Código (sin el +)</label>
+          <input type="text" name="calling_code" class="form-control" placeholder="51" pattern="\d{1,5}" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Dígitos del número</label>
+          <input type="number" name="mobile_length" class="form-control" placeholder="9" min="1" max="15" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Agregar</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    <div class="card p-3">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>País</th><th>Código</th><th>Dígitos</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+          <% countries.forEach(function(c) { %>
+            <tr>
+              <td><%= c.country_name %></td>
+              <td>+<%= c.calling_code %></td>
+              <td><%= c.mobile_length %></td>
+              <td>
+                <span class="badge <%= c.active ? 'bg-success' : 'bg-secondary' %>">
+                  <%= c.active ? 'Activo' : 'Inactivo' %>
+                </span>
+              </td>
+              <td class="text-end">
+                <form action="/configuracion/catalogos/paises/<%= c.id %>/activar" method="post" class="d-inline">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input type="hidden" name="active" value="<%= c.active ? '0' : '1' %>">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary"><%= c.active ? 'Desactivar' : 'Activar' %></button>
+                </form>
+                <form action="/configuracion/catalogos/paises/<%= c.id %>/eliminar" method="post" class="d-inline"
+                      onsubmit="return confirm('¿Eliminar este país del catálogo?');">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                </form>
+              </td>
+            </tr>
+          <% }); %>
+          <% if (countries.length === 0) { %>
+            <tr><td colspan="5" class="text-center text-muted py-4">Sin países todavía.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <%- include('../partials/foot') %>

@@ -33,18 +33,62 @@ const router = express.Router();
 router.use(requireAuth, moduleRequired('celulares'));
 
 const FIELDS = [
-  'imei', 'phone_number', 'has_chip', 'asset_code', 'brand', 'model',
-  'area', 'sede', 'status', 'notes',
+  'imei', 'phone_country_code_id', 'phone_number', 'has_chip', 'asset_code', 'brand', 'model',
+  'operadora', 'area', 'sede', 'status', 'notes',
 ];
 
+// IMEI: estandar GSMA (TS 23.003) - 15 digitos numericos (TAC 8 + serie 6
+// + digito de control 1). El "8 alfanumerico" que se sugirio corresponde
+// en realidad solo al TAC (los primeros 8 digitos, y son numericos, no
+// alfanumericos) - el IMEI completo que identifica un equipo son los 15.
+const IMEI_REGEX = /^\d{15}$/;
+// Alfanumerico + espacio/guion (nombres reales de modelo como "Galaxy A10"
+// o "Redmi 9" no son puramente alfanumericos sin espacio).
+const MODEL_REGEX = /^[A-Za-zÀ-ÿ0-9\s-]{1,20}$/;
+
 async function loadCatalogOptions() {
-  const [sedes, areas, marcas, modelos] = await Promise.all([
+  const [sedes, areas, marcas, modelos, operadoras, countries] = await Promise.all([
     catalogService.getActive('sede'),
     catalogService.getActive('area'),
     catalogService.getActive('marca'),
     catalogService.getActive('modelo'),
+    catalogService.getActive('operadora'),
+    catalogService.getActiveCountries(),
   ]);
-  return { sedes, areas, marcas, modelos };
+  return { sedes, areas, marcas, modelos, operadoras, countries };
+}
+
+// Validaciones de negocio que no se pueden expresar solo con atributos
+// HTML (requieren consultar el largo esperado del pais elegido). Devuelve
+// un array de mensajes; vacio = todo valido.
+async function validateDeviceData(data) {
+  const errors = [];
+  if (!data.imei || !IMEI_REGEX.test(data.imei)) {
+    errors.push('El IMEI debe tener exactamente 15 dígitos numéricos.');
+  }
+  if (!data.area) {
+    errors.push('El área es obligatoria.');
+  }
+  if (data.model && !MODEL_REGEX.test(data.model)) {
+    errors.push('El modelo debe ser alfanumérico (letras, números, espacios o guiones), máximo 20 caracteres.');
+  }
+  if (data.brand && data.brand.length > 100) {
+    errors.push('La marca no puede superar los 100 caracteres.');
+  }
+  if (data.phone_number) {
+    if (!/^\d+$/.test(data.phone_number)) {
+      errors.push('El número de línea debe ser solo dígitos, sin espacios ni guiones.');
+    } else if (data.phone_country_code_id) {
+      const [[country]] = await pool.query(
+        'SELECT mobile_length, country_name FROM phone_country_codes WHERE id = ?',
+        [data.phone_country_code_id]
+      );
+      if (country && data.phone_number.length !== country.mobile_length) {
+        errors.push(`El número de línea de ${country.country_name} debe tener ${country.mobile_length} dígitos.`);
+      }
+    }
+  }
+  return errors;
 }
 
 const IMPORT_COLUMNS = [
@@ -132,8 +176,9 @@ router.get('/nuevo', canWrite, async (req, res, next) => {
 router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const data = readForm(req.body);
-    if (!data.imei || !data.area) {
-      req.flash('error', 'El IMEI y el área son obligatorios.');
+    const errors = await validateDeviceData(data);
+    if (errors.length > 0) {
+      errors.forEach((e) => req.flash('error', e));
       return res.redirect('/celulares/nuevo');
     }
     const cols = Object.keys(data);
@@ -167,6 +212,11 @@ router.get('/:id/editar', canWrite, async (req, res, next) => {
 router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const data = readForm(req.body);
+    const errors = await validateDeviceData(data);
+    if (errors.length > 0) {
+      errors.forEach((e) => req.flash('error', e));
+      return res.redirect(`/celulares/${req.params.id}/editar`);
+    }
     const cols = Object.keys(data);
     const values = Object.values(data);
     const setClause = cols.map((c) => `${c} = ?`).join(', ');
@@ -213,6 +263,10 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
     const { dni, first_name, last_name, area, sede, cargo, turno, assigned_date, observacion } = req.body;
     if (!dni || !first_name || !last_name || !area) {
       req.flash('error', 'DNI, nombres, apellidos y área son obligatorios.');
+      return res.redirect(`/celulares/${req.params.id}`);
+    }
+    if (!/^\d{8}$/.test(dni)) {
+      req.flash('error', 'El DNI debe tener exactamente 8 dígitos numéricos.');
       return res.redirect(`/celulares/${req.params.id}`);
     }
     const employeeId = await employeeService.upsert(
@@ -431,12 +485,21 @@ router.post('/resumen/:area/actualizar', canWrite, verifyCsrfToken, async (req, 
 // 'baja' actualizan el status del equipo; 'accidente' queda como
 // registro informativo sin forzar un cambio de estado (el equipo puede
 // seguir en uso tras un golpe menor).
+// returnTo (opcional): permite registrar el incidente desde otra pantalla
+// (ej. el detalle del empleado) y volver ahi en vez del detalle del
+// celular. Se valida como ruta relativa propia de la app, nunca una URL
+// externa (evita un open redirect).
+function safeReturnTo(value, fallback) {
+  return typeof value === 'string' && /^\/[a-zA-Z0-9/_-]*$/.test(value) ? value : fallback;
+}
+
 router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const { tipo, fecha, descripcion, costo } = req.body;
+    const redirectTo = safeReturnTo(req.body.returnTo, `/celulares/${req.params.id}`);
     if (!INCIDENT_TIPOS.includes(tipo) || !fecha) {
       req.flash('error', 'El tipo y la fecha del incidente son obligatorios.');
-      return res.redirect(`/celulares/${req.params.id}`);
+      return res.redirect(redirectTo);
     }
     await pool.query(
       `INSERT INTO mobile_device_incidents (device_id, tipo, fecha, descripcion, costo, created_by)
@@ -449,7 +512,7 @@ router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next)
       await pool.query('UPDATE mobile_devices SET status = "de_baja" WHERE id = ?', [req.params.id]);
     }
     req.flash('success', 'Incidente registrado correctamente.');
-    res.redirect(`/celulares/${req.params.id}`);
+    res.redirect(redirectTo);
   } catch (err) {
     next(err);
   }
@@ -578,7 +641,13 @@ router.get('/inventario/exportar.xlsx', async (req, res, next) => {
 
 router.get('/:id', async (req, res, next) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM mobile_devices WHERE id = ?', [req.params.id]);
+    const [rows] = await pool.query(
+      `SELECT d.*, c.country_name, c.calling_code
+       FROM mobile_devices d
+       LEFT JOIN phone_country_codes c ON c.id = d.phone_country_code_id
+       WHERE d.id = ?`,
+      [req.params.id]
+    );
     if (!rows[0]) {
       req.flash('error', 'Celular no encontrado.');
       return res.redirect('/celulares');
