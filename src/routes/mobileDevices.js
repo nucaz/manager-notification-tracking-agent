@@ -8,6 +8,7 @@ const importService = require('../services/importService');
 const { importUploader } = require('../services/uploadService');
 const catalogService = require('../services/catalogService');
 const employeeService = require('../services/employeeService');
+const settingsService = require('../services/settingsService');
 
 const INCIDENT_TIPOS = ['reparacion', 'accidente', 'baja'];
 
@@ -58,6 +59,32 @@ async function loadCatalogOptions() {
   return { sedes, areas, marcas, modelos, operadoras, countries };
 }
 
+// Sugiere el siguiente codigo de activo disponible (prefijo + correlativo
+// configurables desde Configuracion). Busca el correlativo mas alto ya
+// usado CON ese prefijo (no un contador aparte en settings, que se
+// desincroniza si se borra un celular o se carga uno con codigo manual)
+// y le suma 1. Sigue siendo editable a mano en el formulario - esto es
+// solo una sugerencia, no un valor forzado.
+async function computeNextAssetCode() {
+  const [prefix, digitsRaw] = await Promise.all([
+    settingsService.get('mobile_asset_code_prefix'),
+    settingsService.get('mobile_asset_code_digits'),
+  ]);
+  const digits = parseInt(digitsRaw, 10) || 5;
+  const [rows] = await pool.query(
+    'SELECT asset_code FROM mobile_devices WHERE asset_code LIKE ?',
+    [`${prefix}%`]
+  );
+  let max = 0;
+  for (const row of rows) {
+    const suffix = row.asset_code.slice(prefix.length);
+    if (/^\d+$/.test(suffix)) {
+      max = Math.max(max, parseInt(suffix, 10));
+    }
+  }
+  return prefix + String(max + 1).padStart(digits, '0');
+}
+
 // Validaciones de negocio que no se pueden expresar solo con atributos
 // HTML (requieren consultar el largo esperado del pais elegido). Devuelve
 // un array de mensajes; vacio = todo valido.
@@ -75,8 +102,8 @@ async function validateDeviceData(data) {
   if (data.brand && data.brand.length > 100) {
     errors.push('La marca no puede superar los 100 caracteres.');
   }
-  if (data.asset_code && !/^[A-Za-z0-9]{1,8}$/.test(data.asset_code)) {
-    errors.push('El código de activo debe ser alfanumérico, máximo 8 caracteres (sin guiones ni espacios).');
+  if (data.asset_code && !/^[A-Za-z0-9-]{1,12}$/.test(data.asset_code)) {
+    errors.push('El código de activo debe ser alfanumérico (se permite un guion), máximo 12 caracteres.');
   }
   if (data.notes && data.notes.length > 250) {
     errors.push('Las notas no pueden superar los 250 caracteres.');
@@ -172,8 +199,16 @@ router.get('/', async (req, res, next) => {
 
 router.get('/nuevo', canWrite, async (req, res, next) => {
   try {
-    const catalogs = await loadCatalogOptions();
-    res.render('mobileDevices/form', { title: 'Nuevo celular', item: {}, errors: [], ...catalogs });
+    const [catalogs, suggestedAssetCode] = await Promise.all([
+      loadCatalogOptions(),
+      computeNextAssetCode(),
+    ]);
+    res.render('mobileDevices/form', {
+      title: 'Nuevo celular',
+      item: { asset_code: suggestedAssetCode },
+      errors: [],
+      ...catalogs,
+    });
   } catch (err) {
     next(err);
   }

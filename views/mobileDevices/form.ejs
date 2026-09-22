@@ -13,9 +13,12 @@
     </div>
     <div class="col-md-4">
       <label class="form-label">Código de activo</label>
-      <input type="text" name="asset_code" class="form-control" value="<%= item.asset_code || '' %>" placeholder="Ej: A0012345"
-        maxlength="8" pattern="[A-Za-z0-9]{1,8}" title="Alfanumérico, máximo 8 caracteres (sin guiones ni espacios)">
-      <div class="form-text">Alfanumérico, máximo 8 caracteres.</div>
+      <input type="text" name="asset_code" class="form-control" value="<%= item.asset_code || '' %>" placeholder="Ej: A-00868"
+        maxlength="12" pattern="[A-Za-z0-9-]{1,12}" title="Alfanumérico (se permite un guion), máximo 12 caracteres">
+      <div class="form-text">
+        <% if (!item.id) { %>Sugerido automáticamente según el correlativo configurado — puedes cambiarlo. <% } %>
+        Alfanumérico (se permite guion), máximo 12 caracteres. Configurable en Configuración.
+      </div>
     </div>
     <div class="col-md-4">
       <label class="form-label">Marca</label>

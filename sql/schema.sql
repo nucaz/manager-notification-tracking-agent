@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   phone_country_code_id INT NULL,               -- ver phone_country_codes; sin FK dura (ver nota arriba)
   phone_number VARCHAR(30),                     -- solo el numero local (sin codigo de pais), NULL si no tiene chip
   has_chip TINYINT(1) NOT NULL DEFAULT 0,
-  asset_code VARCHAR(8),                        -- codigo interno alfanumerico, ej: A0012345 (sin guiones)
+  asset_code VARCHAR(12),                       -- codigo interno, ej: A-00868 (prefijo+correlativo, ver settings mobile_asset_code_*)
   brand VARCHAR(100),                           -- marca, ej: Samsung, Oppo
   model VARCHAR(20),
   operadora VARCHAR(50),                        -- Entel, Claro, Movistar, Bitel... (catalog_items, extensible)
@@ -548,7 +548,9 @@ INSERT INTO settings (`key`, `value`) VALUES
   ('whatsapp_app_secret', ''),
   ('telegram_bot_token', ''),
   ('telegram_polling_enabled', 'true'),
-  ('telegram_last_update_id', '0')
+  ('telegram_last_update_id', '0'),
+  ('mobile_asset_code_prefix', 'A-'),
+  ('mobile_asset_code_digits', '5')
 ON DUPLICATE KEY UPDATE `key`=`key`;
 
 -- ---------------------------------------------------------------------

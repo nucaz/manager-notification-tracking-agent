@@ -29,6 +29,8 @@ const DEFAULTS = {
   telegram_bot_token: '',
   telegram_polling_enabled: 'true',
   telegram_last_update_id: '0',
+  mobile_asset_code_prefix: 'A-',
+  mobile_asset_code_digits: '5',
 };
 
 async function getAll() {

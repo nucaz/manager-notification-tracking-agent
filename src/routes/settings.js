@@ -52,6 +52,7 @@ router.post('/', isAdmin, verifyCsrfToken, async (req, res, next) => {
       'whatsapp_phone_number_id', 'whatsapp_access_token', 'whatsapp_verify_token', 'whatsapp_app_secret',
       'telegram_bot_token',
       'devops_sidecar_url', 'devops_sidecar_user', 'devops_sidecar_password',
+      'mobile_asset_code_prefix', 'mobile_asset_code_digits',
     ];
     const pairs = {};
     for (const key of keys) {
