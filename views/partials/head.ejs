@@ -71,14 +71,26 @@
   <button class="sidebar-toggle" id="sidebarToggle" title="Colapsar/expandir menú">
     <i class="bi bi-layout-sidebar-inset"></i> <span>Colapsar</span>
   </button>
+  <div class="sidebar-resizer" id="sidebarResizer" title="Arrastra para cambiar el ancho del menú"></div>
 </nav>
 <script>
 (function () {
   const sidebar = document.getElementById('sidebar');
   const toggle = document.getElementById('sidebarToggle');
+  const resizer = document.getElementById('sidebarResizer');
+  const MIN_W = 180;
+  const MAX_W = 420;
+
   let collapsed = false;
   try { collapsed = localStorage.getItem('glpiSidebarCollapsed') === '1'; } catch (e) {}
   if (collapsed) { sidebar.classList.add('collapsed'); }
+
+  let savedWidth = null;
+  try { savedWidth = parseInt(localStorage.getItem('glpiSidebarWidth'), 10); } catch (e) {}
+  if (savedWidth && savedWidth >= MIN_W && savedWidth <= MAX_W) {
+    document.documentElement.style.setProperty('--sidebar-w', savedWidth + 'px');
+  }
+
   toggle.addEventListener('click', () => {
     if (window.innerWidth <= 768) {
       sidebar.classList.toggle('mobile-open');
@@ -86,6 +98,26 @@
     }
     sidebar.classList.toggle('collapsed');
     try { localStorage.setItem('glpiSidebarCollapsed', sidebar.classList.contains('collapsed') ? '1' : '0'); } catch (e) {}
+  });
+
+  resizer.addEventListener('mousedown', (ev) => {
+    if (window.innerWidth <= 768 || sidebar.classList.contains('collapsed')) return;
+    ev.preventDefault();
+    sidebar.classList.add('resizing');
+
+    function onMouseMove(moveEv) {
+      const width = Math.min(MAX_W, Math.max(MIN_W, moveEv.clientX));
+      document.documentElement.style.setProperty('--sidebar-w', width + 'px');
+    }
+    function onMouseUp() {
+      sidebar.classList.remove('resizing');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      const finalWidth = sidebar.getBoundingClientRect().width;
+      try { localStorage.setItem('glpiSidebarWidth', String(Math.round(finalWidth))); } catch (e) {}
+    }
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   });
 })();
 </script>
