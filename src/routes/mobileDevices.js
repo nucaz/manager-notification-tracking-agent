@@ -9,6 +9,9 @@ const { importUploader } = require('../services/uploadService');
 const catalogService = require('../services/catalogService');
 const employeeService = require('../services/employeeService');
 const settingsService = require('../services/settingsService');
+const mobileDeviceService = require('../services/mobileDeviceService');
+
+const { validateDeviceData } = mobileDeviceService;
 
 const INCIDENT_TIPOS = ['reparacion', 'accidente', 'baja'];
 
@@ -37,15 +40,6 @@ const FIELDS = [
   'imei', 'phone_country_code_id', 'phone_number', 'has_chip', 'asset_code', 'brand', 'model',
   'operadora', 'area', 'sede', 'status', 'notes',
 ];
-
-// IMEI: estandar GSMA (TS 23.003) - 15 digitos numericos (TAC 8 + serie 6
-// + digito de control 1). El "8 alfanumerico" que se sugirio corresponde
-// en realidad solo al TAC (los primeros 8 digitos, y son numericos, no
-// alfanumericos) - el IMEI completo que identifica un equipo son los 15.
-const IMEI_REGEX = /^\d{15}$/;
-// Alfanumerico + espacio/guion (nombres reales de modelo como "Galaxy A10"
-// o "Redmi 9" no son puramente alfanumericos sin espacio).
-const MODEL_REGEX = /^[A-Za-zÀ-ÿ0-9\s-]{1,20}$/;
 
 async function loadCatalogOptions() {
   const [sedes, areas, marcas, modelos, operadoras, countries] = await Promise.all([
@@ -85,45 +79,9 @@ async function computeNextAssetCode() {
   return prefix + String(max + 1).padStart(digits, '0');
 }
 
-// Validaciones de negocio que no se pueden expresar solo con atributos
-// HTML (requieren consultar el largo esperado del pais elegido). Devuelve
-// un array de mensajes; vacio = todo valido.
-async function validateDeviceData(data) {
-  const errors = [];
-  if (!data.imei || !IMEI_REGEX.test(data.imei)) {
-    errors.push('El IMEI debe tener exactamente 15 dígitos numéricos.');
-  }
-  if (!data.area) {
-    errors.push('El área es obligatoria.');
-  }
-  if (data.model && !MODEL_REGEX.test(data.model)) {
-    errors.push('El modelo debe ser alfanumérico (letras, números, espacios o guiones), máximo 20 caracteres.');
-  }
-  if (data.brand && data.brand.length > 100) {
-    errors.push('La marca no puede superar los 100 caracteres.');
-  }
-  if (data.asset_code && !/^[A-Za-z0-9-]{1,12}$/.test(data.asset_code)) {
-    errors.push('El código de activo debe ser alfanumérico (se permite un guion), máximo 12 caracteres.');
-  }
-  if (data.notes && data.notes.length > 250) {
-    errors.push('Las notas no pueden superar los 250 caracteres.');
-  }
-  if (data.phone_number) {
-    if (!/^\d+$/.test(data.phone_number)) {
-      errors.push('El número de línea debe ser solo dígitos, sin espacios ni guiones.');
-    } else if (data.phone_country_code_id) {
-      const [[country]] = await pool.query(
-        'SELECT mobile_length, country_name FROM phone_country_codes WHERE id = ?',
-        [data.phone_country_code_id]
-      );
-      if (country && data.phone_number.length !== country.mobile_length) {
-        errors.push(`El número de línea de ${country.country_name} debe tener ${country.mobile_length} dígitos.`);
-      }
-    }
-  }
-  return errors;
-}
-
+// Columnas de la importacion masiva. Estado y Operadora son opcionales:
+// sin Estado, un equipo con usuario queda "asignado" y sin usuario "en_stock".
+// Con Estado = en_reparacion se registra ademas su incidente de reparacion.
 const IMPORT_COLUMNS = [
   { header: 'IMEI', field: 'imei', required: true },
   { header: 'Número', field: 'phone_number' },
@@ -138,6 +96,8 @@ const IMPORT_COLUMNS = [
   { header: 'Turno', field: 'turno' },
   { header: 'Fecha de entrega', field: 'assigned_date', type: 'date' },
   { header: 'Observación', field: 'observacion' },
+  { header: 'Estado', field: 'status' },
+  { header: 'Operadora', field: 'operadora' },
 ];
 
 function readForm(body) {
@@ -387,9 +347,10 @@ router.get('/importar/plantilla', canWrite, async (req, res, next) => {
   }
 });
 
-// Import propio (no el generico importService.importRows): cada fila
-// puede generar dos inserts relacionados (el equipo y, si trae
-// "Usuario asignado", su asignacion inicial), no uno solo.
+// Importacion propia (no el generico importService.importRows): cada fila
+// puede generar varios registros relacionados (equipo, asignacion activa e
+// incidente de reparacion). La logica vive en mobileDeviceService para que
+// la use tambien el script de linea de comandos (npm run import:celulares).
 router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToken, async (req, res, next) => {
   try {
     if (!req.file) {
@@ -397,71 +358,7 @@ router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToke
       return res.redirect('/celulares/importar');
     }
     const rows = await importService.parseSpreadsheet(req.file.buffer, req.file.originalname);
-    const errors = [];
-    let imported = 0;
-
-    for (let i = 0; i < rows.length; i++) {
-      const rowNum = i + 2;
-      const row = rows[i];
-      const imei = String(row['IMEI'] || '').trim();
-      const area = String(row['Área'] || '').trim();
-      if (!imei) {
-        errors.push({ row: rowNum, message: 'Falta el campo obligatorio "IMEI"' });
-        continue;
-      }
-      if (!area) {
-        errors.push({ row: rowNum, message: 'Falta el campo obligatorio "Área"' });
-        continue;
-      }
-
-      const hasChipRaw = String(row['Tiene chip'] || '').trim().toLowerCase();
-      const hasChip = ['si', 'sí', 'yes', 'true', '1'].includes(hasChipRaw) ? 1 : 0;
-      const holderName = String(row['Usuario asignado'] || '').trim();
-
-      try {
-        const [result] = await pool.query(
-          `INSERT INTO mobile_devices
-            (imei, phone_number, has_chip, asset_code, brand, model, area, sede, status, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            imei,
-            row['Número'] || null,
-            hasChip,
-            row['Código'] || null,
-            row['Marca'] || null,
-            row['Modelo'] || null,
-            area,
-            row['Sede'] || null,
-            holderName ? 'asignado' : 'en_stock',
-            req.session.user.id,
-          ]
-        );
-        const deviceId = result.insertId;
-
-        if (holderName) {
-          let assignedDate = row['Fecha de entrega'];
-          if (assignedDate instanceof Date) assignedDate = assignedDate.toISOString().slice(0, 10);
-          await pool.query(
-            `INSERT INTO mobile_device_assignments
-              (device_id, holder_name, cargo, turno, assigned_date, observacion, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [
-              deviceId,
-              holderName,
-              row['Cargo'] || null,
-              row['Turno'] || null,
-              assignedDate || null,
-              row['Observación'] || null,
-              req.session.user.id,
-            ]
-          );
-        }
-        imported += 1;
-      } catch (err) {
-        errors.push({ row: rowNum, message: err.message });
-      }
-    }
-
+    const { imported, errors } = await mobileDeviceService.importDevices(rows, req.session.user.id);
     res.render('import', {
       title: 'Importar celulares',
       listUrl: '/celulares',
