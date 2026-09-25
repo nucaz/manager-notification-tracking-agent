@@ -151,7 +151,67 @@ router.get('/', async (req, res, next) => {
       area: area || '',
       sede: sede || '',
       status: status || '',
+      // Los botones de exportar respetan los filtros activos (sin filtros = todo).
+      exportQuery: exportQueryString(req.query),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+function exportQueryString({ q, area, sede, status }) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries({ q, area, sede, status })) {
+    if (v) params.set(k, v);
+  }
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+// Texto que Excel podria interpretar como formula al abrir el CSV (=, +, -,
+// @) se antepone con una comilla simple, y se entrecomilla si hace falta.
+function csvCell(value) {
+  let s = value === null || value === undefined ? '' : String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Exporta TODOS los celulares (o los que cumplan los filtros de la URL) con
+// todos sus datos. Van antes de /:id a proposito (mismo motivo que /resumen).
+router.get('/exportar.csv', async (req, res, next) => {
+  try {
+    const rows = await mobileDeviceService.fetchDevicesForExport(req.query);
+    const lines = [mobileDeviceService.EXPORT_HEADERS, ...rows].map((r) => r.map(csvCell).join(','));
+    const fecha = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="celulares_${fecha}.csv"`);
+    res.send('﻿' + lines.join('\r\n') + '\r\n'); // BOM: Excel abre bien los acentos
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/exportar.xlsx', async (req, res, next) => {
+  try {
+    const rows = await mobileDeviceService.fetchDevicesForExport(req.query);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Celulares');
+    sheet.addRow(mobileDeviceService.EXPORT_HEADERS);
+    // Todo como texto: IMEI, numeros y codigos no deben verse en notacion
+    // cientifica ni perder ceros. Los textos que empiezan con "=" se guardan
+    // como texto (ExcelJS no los evalua), no como formula.
+    rows.forEach((r) => sheet.addRow(r.map((v) => (typeof v === 'number' ? v : String(v)))));
+    sheet.getRow(1).font = { bold: true };
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: mobileDeviceService.EXPORT_HEADERS.length } };
+    const widths = [18, 12, 10, 10, 12, 14, 26, 16, 34, 24, 14, 14, 40, 14, 12, 10, 8, 30, 10, 20];
+    widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fecha = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="celulares_${fecha}.xlsx"`);
+    res.send(buffer);
   } catch (err) {
     next(err);
   }

@@ -1,18 +1,21 @@
 <%- include('../partials/head', { title: title }) %>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="mb-0">Celulares</h2>
-  <% if (currentUser.role !== 'lector') { %>
-    <div>
-      <a href="/celulares/inventario" class="btn btn-outline-secondary"><i class="bi bi-clipboard-data"></i> Inventario mensual</a>
-      <a href="/celulares/resumen" class="btn btn-outline-secondary"><i class="bi bi-bar-chart"></i> Resumen</a>
-      <a href="/celulares/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar</a>
-      <a href="/celulares/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo celular</a>
-    </div>
-  <% } else { %>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h2 class="mb-0">Celulares <span class="text-muted fs-6">(<%= items.length %>)</span></h2>
+  <div class="d-flex flex-wrap gap-1">
     <a href="/celulares/inventario" class="btn btn-outline-secondary"><i class="bi bi-clipboard-data"></i> Inventario mensual</a>
     <a href="/celulares/resumen" class="btn btn-outline-secondary"><i class="bi bi-bar-chart"></i> Resumen</a>
-  <% } %>
+    <div class="btn-group">
+      <a href="/celulares/exportar.xlsx<%= exportQuery %>" class="btn btn-outline-success" title="Exporta todos los celulares (o los filtrados) con todos sus datos">
+        <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+      </a>
+      <a href="/celulares/exportar.csv<%= exportQuery %>" class="btn btn-outline-success">CSV</a>
+    </div>
+    <% if (currentUser.role !== 'lector') { %>
+      <a href="/celulares/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar</a>
+      <a href="/celulares/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo celular</a>
+    <% } %>
+  </div>
 </div>
 
 <form class="row g-2 mb-3" method="get">

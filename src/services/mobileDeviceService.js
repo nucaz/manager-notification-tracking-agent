@@ -204,4 +204,63 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
   return { imported, errors, byStatus };
 }
 
-module.exports = { IMEI_REGEX, MODEL_REGEX, STATUSES, validateDeviceData, importDevices };
+// ---------------------------------------------------------------------
+// Exportacion (CSV / Excel)
+// ---------------------------------------------------------------------
+// Las primeras 15 columnas repiten las de la plantilla de importacion (mismo
+// nombre y orden), asi un archivo exportado se puede volver a importar. Las
+// demas son informativas.
+const EXPORT_HEADERS = [
+  'IMEI', 'Número', 'Tiene chip', 'Código', 'Marca', 'Modelo', 'Área', 'Sede', 'Usuario asignado',
+  'Cargo', 'Turno', 'Fecha de entrega', 'Observación', 'Estado', 'Operadora',
+  'País', 'Código de país', 'Observación de la asignación', 'Incidentes (total)', 'Fecha de alta',
+];
+
+// Mismos filtros que el listado de /celulares (q, area, sede, status).
+async function fetchDevicesForExport({ q, area, sede, status } = {}) {
+  let sql = `
+    SELECT d.*, c.country_name, c.calling_code,
+           a.holder_name, a.cargo, a.turno, a.assigned_date, a.observacion AS assignment_obs,
+           (SELECT COUNT(*) FROM mobile_device_incidents i WHERE i.device_id = d.id) AS incident_count
+    FROM mobile_devices d
+    LEFT JOIN phone_country_codes c ON c.id = d.phone_country_code_id
+    LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL
+    WHERE 1=1`;
+  const params = [];
+  if (q) {
+    sql += ' AND (d.imei LIKE ? OR d.asset_code LIKE ? OR d.phone_number LIKE ? OR a.holder_name LIKE ?)';
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+  }
+  if (area) { sql += ' AND d.area = ?'; params.push(area); }
+  if (sede) { sql += ' AND d.sede = ?'; params.push(sede); }
+  if (status) { sql += ' AND d.status = ?'; params.push(status); }
+  sql += ' ORDER BY d.area, d.id';
+  const [rows] = await pool.query(sql, params);
+  return rows.map((d) => [
+    d.imei,
+    d.phone_number || '',
+    d.has_chip ? 'Sí' : 'No',
+    d.asset_code || '',
+    d.brand || '',
+    d.model || '',
+    d.area,
+    d.sede || '',
+    d.holder_name || '',
+    d.cargo || '',
+    d.turno || '',
+    d.assigned_date || '',
+    d.notes || '',
+    d.status,
+    d.operadora || '',
+    d.country_name || '',
+    d.calling_code || '',
+    d.assignment_obs || '',
+    d.incident_count,
+    d.created_at || '',
+  ]);
+}
+
+module.exports = {
+  IMEI_REGEX, MODEL_REGEX, STATUSES, EXPORT_HEADERS,
+  validateDeviceData, importDevices, fetchDevicesForExport,
+};
