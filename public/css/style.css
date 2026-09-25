@@ -87,3 +87,10 @@ body {
   .sidebar.mobile-open .sidebar-section { display: inline; }
   .main-content { margin-left: var(--sidebar-w-collapsed); }
 }
+
+/* Tarjetas de resumen que llevan al listado (cursor de mano + elevacion al pasar el mouse) */
+a.stat-card-link { display: block; color: inherit; text-decoration: none; cursor: pointer; }
+a.stat-card-link .stat-card { transition: transform .12s ease, box-shadow .12s ease; }
+a.stat-card-link:hover .stat-card,
+a.stat-card-link:focus-visible .stat-card { transform: translateY(-3px); box-shadow: 0 6px 14px rgba(0,0,0,.15); }
+a.stat-card-link:focus-visible { outline: 2px solid #2d5be3; outline-offset: 2px; border-radius: 10px; }

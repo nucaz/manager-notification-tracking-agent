@@ -20,37 +20,26 @@
   </div>
 </form>
 
+<%
+  const tarjetas = [
+    { label: 'Total', valor: summary.total, color: '', url: '/celulares' },
+    { label: 'Asignados', valor: summary.asignados, color: 'text-success', url: '/celulares?status=asignado' },
+    { label: 'En stock', valor: summary.enStock, color: 'text-secondary', url: '/celulares?status=en_stock' },
+    { label: 'En reparación', valor: summary.enReparacion, color: 'text-warning', url: '/celulares?status=en_reparacion' },
+    { label: 'De baja', valor: summary.deBaja, color: 'text-danger', url: '/celulares?status=de_baja' },
+  ];
+%>
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-2">
-    <div class="card stat-card p-3 text-center">
-      <div class="stat-number"><%= summary.total %></div>
-      <div class="text-muted">Total</div>
+  <% tarjetas.forEach(function(t) { %>
+    <div class="col-6 col-md-2">
+      <a href="<%= t.url %>" class="stat-card-link" title="Ver la lista: <%= t.label %> (<%= t.valor %>)">
+        <div class="card stat-card p-3 text-center">
+          <div class="stat-number <%= t.color %>"><%= t.valor %></div>
+          <div class="text-muted"><%= t.label %></div>
+        </div>
+      </a>
     </div>
-  </div>
-  <div class="col-6 col-md-2">
-    <div class="card stat-card p-3 text-center">
-      <div class="stat-number text-success"><%= summary.asignados %></div>
-      <div class="text-muted">Asignados</div>
-    </div>
-  </div>
-  <div class="col-6 col-md-2">
-    <div class="card stat-card p-3 text-center">
-      <div class="stat-number text-secondary"><%= summary.enStock %></div>
-      <div class="text-muted">En stock</div>
-    </div>
-  </div>
-  <div class="col-6 col-md-2">
-    <div class="card stat-card p-3 text-center">
-      <div class="stat-number text-warning"><%= summary.enReparacion %></div>
-      <div class="text-muted">En reparación</div>
-    </div>
-  </div>
-  <div class="col-6 col-md-2">
-    <div class="card stat-card p-3 text-center">
-      <div class="stat-number text-danger"><%= summary.deBaja %></div>
-      <div class="text-muted">De baja</div>
-    </div>
-  </div>
+  <% }); %>
 </div>
 
 <div class="card p-3 mb-4">
