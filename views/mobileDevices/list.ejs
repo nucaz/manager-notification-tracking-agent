@@ -69,7 +69,7 @@
             <th><input type="checkbox" id="selectAllCheckbox" onchange="document.querySelectorAll('.row-check').forEach(function(cb){cb.checked = this.checked;}, this); updateBulkDeleteButton();"></th>
           <% } %>
           <th>IMEI</th><th>Código</th><th>Modelo</th><th>Área</th><th>Sede</th>
-          <th>Usuario asignado</th><th>Estado</th><th></th>
+          <th>Usuario asignado</th><th>Estado</th><th>Registrado</th><th>Últ. actualización</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -89,6 +89,8 @@
                 <%= item.status %>
               </span>
             </td>
+            <td class="text-nowrap small"><%= item.created_at ? String(item.created_at).slice(0, 16) : '—' %></td>
+            <td class="text-nowrap small"><%= item.updated_at ? String(item.updated_at).slice(0, 16) : '—' %></td>
             <td class="text-end">
               <a href="/celulares/<%= item.id %>" class="btn btn-sm btn-outline-secondary">Ver</a>
               <% if (currentUser.role !== 'lector') { %>
@@ -98,7 +100,7 @@
           </tr>
         <% }); %>
         <% if (items.length === 0) { %>
-          <tr><td colspan="9" class="text-center text-muted py-4">No hay celulares registrados.</td></tr>
+          <tr><td colspan="11" class="text-center text-muted py-4">No hay celulares registrados.</td></tr>
         <% } %>
       </tbody>
     </table>

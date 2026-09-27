@@ -11,7 +11,9 @@ const employeeService = require('../services/employeeService');
 const settingsService = require('../services/settingsService');
 const mobileDeviceService = require('../services/mobileDeviceService');
 
-const { validateDeviceData } = mobileDeviceService;
+const auditService = require('../services/auditService');
+
+const { validateDeviceData, imeiTaken, touchDevice, describeDeviceChanges } = mobileDeviceService;
 
 const INCIDENT_TIPOS = ['reparacion', 'accidente', 'baja'];
 
@@ -204,7 +206,7 @@ router.get('/exportar.xlsx', async (req, res, next) => {
     sheet.getRow(1).font = { bold: true };
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: mobileDeviceService.EXPORT_HEADERS.length } };
-    const widths = [18, 12, 10, 10, 12, 14, 26, 16, 34, 24, 14, 14, 40, 14, 12, 10, 8, 30, 10, 20];
+    const widths = [18, 12, 10, 10, 12, 14, 26, 16, 34, 24, 14, 14, 40, 14, 12, 10, 8, 30, 10, 20, 20];
     widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -238,6 +240,9 @@ router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const data = readForm(req.body);
     const errors = await validateDeviceData(data);
+    if (data.imei && (await imeiTaken(data.imei))) {
+      errors.push('Ya existe un celular registrado con ese IMEI.');
+    }
     if (errors.length > 0) {
       errors.forEach((e) => req.flash('error', e));
       return res.redirect('/celulares/nuevo');
@@ -249,6 +254,12 @@ router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
       `INSERT INTO mobile_devices (${cols.join(', ')}, created_by) VALUES (${placeholders}, ?)`,
       [...values, req.session.user.id]
     );
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'celular_creado',
+      target: `Celular ${data.imei}`,
+      detail: `Código ${data.asset_code || '—'}, área ${data.area}, sede ${data.sede || '—'}`,
+    });
     req.flash('success', 'Celular registrado correctamente.');
     res.redirect('/celulares');
   } catch (err) {
@@ -273,17 +284,34 @@ router.get('/:id/editar', canWrite, async (req, res, next) => {
 router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const data = readForm(req.body);
+    const [[oldRow]] = await pool.query('SELECT * FROM mobile_devices WHERE id = ?', [req.params.id]);
+    if (!oldRow) {
+      req.flash('error', 'Celular no encontrado.');
+      return res.redirect('/celulares');
+    }
     const errors = await validateDeviceData(data);
+    if (data.imei && (await imeiTaken(data.imei, oldRow.id))) {
+      errors.push('Otro celular ya usa ese IMEI.');
+    }
     if (errors.length > 0) {
       errors.forEach((e) => req.flash('error', e));
       return res.redirect(`/celulares/${req.params.id}/editar`);
     }
+    const changes = await describeDeviceChanges(oldRow, data);
     const cols = Object.keys(data);
     const values = Object.values(data);
     const setClause = cols.map((c) => `${c} = ?`).join(', ');
     await pool.query(`UPDATE mobile_devices SET ${setClause} WHERE id = ?`, [...values, req.params.id]);
-    req.flash('success', 'Celular actualizado correctamente.');
-    res.redirect('/celulares');
+    if (changes) {
+      await auditService.log(req, {
+        user: req.session.user,
+        action: 'celular_editado',
+        target: `Celular ${oldRow.imei}`,
+        detail: changes,
+      });
+    }
+    req.flash('success', changes ? 'Celular actualizado correctamente.' : 'No había cambios que guardar.');
+    res.redirect(`/celulares/${req.params.id}`);
   } catch (err) {
     next(err);
   }
@@ -355,13 +383,134 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
         req.session.user.id,
       ]
     );
-    await pool.query('UPDATE mobile_devices SET status = "asignado", area = ?, sede = ? WHERE id = ?', [
+    await pool.query('UPDATE mobile_devices SET status = "asignado", area = ?, sede = ?, updated_at = NOW() WHERE id = ?', [
       area,
       sede || null,
       req.params.id,
     ]);
     req.flash('success', 'Celular asignado correctamente.');
     res.redirect(`/celulares/${req.params.id}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Corrige los datos de la persona a la que esta asignado el equipo HOY (DNI,
+// nombres, apellidos, cargo, turno, fecha de entrega, observacion), sin
+// cerrar la asignacion ni crear una nueva - para un error de tipeo, no para
+// un cambio de persona (eso es Reasignar). Cada cambio queda en Auditoria.
+router.post('/:id/usuario', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const back = `/celulares/${req.params.id}`;
+    const clean = (v) => String(v === undefined || v === null ? '' : v).trim();
+    const dni = clean(req.body.dni);
+    const first = clean(req.body.first_name);
+    const last = clean(req.body.last_name);
+    const cargo = clean(req.body.cargo);
+    const turno = clean(req.body.turno);
+    const fecha = clean(req.body.assigned_date);
+    const obs = clean(req.body.observacion);
+
+    const [[device]] = await pool.query('SELECT id, imei, area, sede FROM mobile_devices WHERE id = ?', [req.params.id]);
+    if (!device) {
+      req.flash('error', 'Celular no encontrado.');
+      return res.redirect('/celulares');
+    }
+    const [[current]] = await pool.query(
+      `SELECT a.*, e.dni AS emp_dni, e.first_name AS emp_first, e.last_name AS emp_last
+       FROM mobile_device_assignments a
+       LEFT JOIN employees e ON e.id = a.employee_id
+       WHERE a.device_id = ? AND a.returned_date IS NULL`,
+      [device.id]
+    );
+    if (!current) {
+      req.flash('error', 'Este celular no tiene una asignación activa que editar.');
+      return res.redirect(back);
+    }
+
+    const errors = [];
+    if (!/^\d{8}$/.test(dni)) errors.push('El DNI debe tener exactamente 8 dígitos numéricos.');
+    if (!first || !last) errors.push('Nombres y apellidos son obligatorios.');
+    if (first.length > 100 || last.length > 100) errors.push('Nombres y apellidos: máximo 100 caracteres cada uno.');
+    if (cargo.length > 150) errors.push('El cargo no puede superar los 150 caracteres.');
+    if (turno.length > 50) errors.push('El turno no puede superar los 50 caracteres.');
+    if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) errors.push('La fecha de entrega no es válida.');
+    if (errors.length > 0) {
+      errors.forEach((e) => req.flash('error', e));
+      return res.redirect(back);
+    }
+
+    let employeeId = current.employee_id;
+    let linked = '';
+    if (employeeId) {
+      // Persona ya vinculada al directorio: se corrige su ficha (afecta todas sus asignaciones).
+      const [[other]] = await pool.query('SELECT id, first_name, last_name FROM employees WHERE dni = ? AND id <> ?', [dni, employeeId]);
+      if (other) {
+        req.flash('error', `Ya existe otro empleado con el DNI ${dni} (${other.first_name} ${other.last_name}). Si es otra persona, usa Reasignar.`);
+        return res.redirect(back);
+      }
+      await pool.query(
+        'UPDATE employees SET dni = ?, first_name = ?, last_name = ?, cargo = COALESCE(NULLIF(?, ""), cargo) WHERE id = ?',
+        [dni, first, last, cargo, employeeId]
+      );
+    } else {
+      // Asignacion importada como texto: se vincula a un empleado del directorio (existente por DNI, o nuevo).
+      const existing = await employeeService.findByDni(dni);
+      if (existing) {
+        employeeId = existing.id;
+        linked = `vinculado al empleado existente ${existing.first_name} ${existing.last_name}`;
+      } else {
+        const [ins] = await pool.query(
+          `INSERT INTO employees (dni, first_name, last_name, area, sede, cargo, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [dni, first, last, device.area, device.sede || null, cargo || null, req.session.user.id]
+        );
+        employeeId = ins.insertId;
+        linked = 'creado en el directorio de empleados';
+      }
+    }
+
+    const before = {
+      dni: current.emp_dni || '', nombres: current.emp_first || '', apellidos: current.emp_last || '',
+      texto: current.holder_name || '', cargo: current.cargo || '', turno: current.turno || '',
+      fecha: current.assigned_date || '', obs: current.observacion || '',
+    };
+    const holderName = `${first} ${last}`;
+    await pool.query(
+      `UPDATE mobile_device_assignments
+       SET employee_id = ?, holder_name = ?, cargo = ?, turno = ?, assigned_date = ?, observacion = ?
+       WHERE id = ?`,
+      [employeeId, holderName, cargo || null, turno || null, fecha || null, obs || null, current.id]
+    );
+
+    const parts = [];
+    const cmp = (label, a, b) => { if (a !== b) parts.push(`${label}: "${a || '—'}" → "${b || '—'}"`); };
+    cmp('DNI', before.dni, dni);
+    if (before.nombres || before.apellidos) {
+      cmp('Nombres', before.nombres, first);
+      cmp('Apellidos', before.apellidos, last);
+    } else {
+      cmp('Usuario (texto importado)', before.texto, holderName);
+    }
+    cmp('Cargo', before.cargo, cargo);
+    cmp('Turno', before.turno, turno);
+    cmp('Fecha de entrega', before.fecha, fecha);
+    cmp('Observación', before.obs, obs);
+    if (linked) parts.push(linked);
+
+    if (parts.length > 0) {
+      await touchDevice(device.id);
+      await auditService.log(req, {
+        user: req.session.user,
+        action: 'celular_usuario_editado',
+        target: `Celular ${device.imei}`,
+        detail: parts.join('; '),
+      });
+      req.flash('success', 'Datos del usuario actualizados. El cambio quedó registrado en Auditoría.');
+    } else {
+      req.flash('success', 'No había cambios que guardar.');
+    }
+    res.redirect(back);
   } catch (err) {
     next(err);
   }
@@ -374,7 +523,7 @@ router.post('/:id/devolver', canWrite, verifyCsrfToken, async (req, res, next) =
       'UPDATE mobile_device_assignments SET returned_date = CURDATE() WHERE device_id = ? AND returned_date IS NULL',
       [req.params.id]
     );
-    await pool.query('UPDATE mobile_devices SET status = "en_stock" WHERE id = ?', [req.params.id]);
+    await pool.query('UPDATE mobile_devices SET status = "en_stock", updated_at = NOW() WHERE id = ?', [req.params.id]);
     req.flash('success', 'Celular devuelto a stock.');
     res.redirect(`/celulares/${req.params.id}`);
   } catch (err) {
@@ -509,6 +658,7 @@ router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next)
     } else if (tipo === 'baja') {
       await pool.query('UPDATE mobile_devices SET status = "de_baja" WHERE id = ?', [req.params.id]);
     }
+    await touchDevice(req.params.id);
     req.flash('success', 'Incidente registrado correctamente.');
     res.redirect(redirectTo);
   } catch (err) {
@@ -538,6 +688,7 @@ router.post('/:id/incidentes/:incidentId/resolver', canWrite, verifyCsrfToken, a
       activeAssignment ? 'asignado' : 'en_stock',
       req.params.id,
     ]);
+    await touchDevice(req.params.id);
     req.flash('success', 'Reparación marcada como resuelta.');
     res.redirect(`/celulares/${req.params.id}`);
   } catch (err) {
@@ -651,7 +802,7 @@ router.get('/:id', async (req, res, next) => {
       return res.redirect('/celulares');
     }
     const [assignments] = await pool.query(
-      `SELECT a.*, e.dni
+      `SELECT a.*, e.dni, e.first_name AS emp_first_name, e.last_name AS emp_last_name
        FROM mobile_device_assignments a
        LEFT JOIN employees e ON e.id = a.employee_id
        WHERE a.device_id = ? ORDER BY a.created_at DESC`,

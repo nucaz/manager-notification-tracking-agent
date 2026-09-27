@@ -205,6 +205,54 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
 }
 
 // ---------------------------------------------------------------------
+// Cambios de un equipo: IMEI repetido, fecha de actualizacion y auditoria
+// ---------------------------------------------------------------------
+// true si otro equipo (distinto de exceptId) ya usa ese IMEI.
+async function imeiTaken(imei, exceptId = null) {
+  const [rows] = await pool.query(
+    'SELECT id FROM mobile_devices WHERE imei = ? AND id <> ? LIMIT 1',
+    [imei, exceptId || 0]
+  );
+  return rows.length > 0;
+}
+
+// "Ultima actualizacion" del equipo: MariaDB solo la mueve cuando cambia una
+// columna del propio equipo; cambiar la asignacion, registrar un incidente,
+// etc. no la tocaba, asi que se fuerza a mano en esos casos.
+async function touchDevice(deviceId) {
+  await pool.query('UPDATE mobile_devices SET updated_at = NOW() WHERE id = ?', [deviceId]);
+}
+
+const DEVICE_FIELD_LABELS = {
+  imei: 'IMEI', phone_country_code_id: 'País', phone_number: 'Número de línea', has_chip: 'Tiene chip',
+  asset_code: 'Código de activo', brand: 'Marca', model: 'Modelo', operadora: 'Operadora',
+  area: 'Área', sede: 'Sede', status: 'Estado', notes: 'Notas',
+};
+
+const norm = (v) => (v === null || v === undefined ? '' : String(v));
+
+// Compara la fila actual del equipo con los datos nuevos del formulario y
+// devuelve un texto legible ("IMEI: A → B; Sede: X → Y") con solo lo que
+// cambio, o '' si no hubo cambios. Se usa para el registro de auditoria.
+async function describeDeviceChanges(oldRow, data) {
+  const [countries] = await pool.query('SELECT id, calling_code FROM phone_country_codes');
+  const code = Object.fromEntries(countries.map((c) => [String(c.id), `+${c.calling_code}`]));
+  const show = (field, v) => {
+    if (field === 'has_chip') return v ? 'Sí' : 'No';
+    if (field === 'phone_country_code_id') return code[norm(v)] || norm(v);
+    return norm(v);
+  };
+  const parts = [];
+  for (const field of Object.keys(DEVICE_FIELD_LABELS)) {
+    if (!(field in data)) continue;
+    const a = field === 'has_chip' ? (oldRow[field] ? '1' : '0') : norm(oldRow[field]);
+    const b = field === 'has_chip' ? (data[field] ? '1' : '0') : norm(data[field]);
+    if (a !== b) parts.push(`${DEVICE_FIELD_LABELS[field]}: "${show(field, oldRow[field])}" → "${show(field, data[field])}"`);
+  }
+  return parts.join('; ');
+}
+
+// ---------------------------------------------------------------------
 // Exportacion (CSV / Excel)
 // ---------------------------------------------------------------------
 // Las primeras 15 columnas repiten las de la plantilla de importacion (mismo
@@ -214,6 +262,7 @@ const EXPORT_HEADERS = [
   'IMEI', 'Número', 'Tiene chip', 'Código', 'Marca', 'Modelo', 'Área', 'Sede', 'Usuario asignado',
   'Cargo', 'Turno', 'Fecha de entrega', 'Observación', 'Estado', 'Operadora',
   'País', 'Código de país', 'Observación de la asignación', 'Incidentes (total)', 'Fecha de alta',
+  'Última actualización',
 ];
 
 // Mismos filtros que el listado de /celulares (q, area, sede, status).
@@ -257,10 +306,12 @@ async function fetchDevicesForExport({ q, area, sede, status } = {}) {
     d.assignment_obs || '',
     d.incident_count,
     d.created_at || '',
+    d.updated_at || '',
   ]);
 }
 
 module.exports = {
   IMEI_REGEX, MODEL_REGEX, STATUSES, EXPORT_HEADERS,
   validateDeviceData, importDevices, fetchDevicesForExport,
+  imeiTaken, touchDevice, describeDeviceChanges,
 };

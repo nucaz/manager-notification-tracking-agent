@@ -166,7 +166,27 @@ con código manual fuera de secuencia. Se calcula en el momento: buscar
 el número más alto ya usado con el prefijo configurado y sumar 1. Más
 lento que leer un contador, pero siempre consistente con la tabla real.
 
-## 10. Convención de commits de este repo
+## 10. Corregir datos con trazabilidad: auditoría con antes/después y "última actualización" real
+
+Al permitir corregir un dato ya registrado (DNI, IMEI, número de línea) el
+cambio tiene que quedar en `audit_log` con **el valor anterior y el nuevo**
+(`Campo: "antes" → "después"`), y solo cuando algo cambió de verdad: un
+guardado sin cambios no debe ensuciar la auditoría. Patrón en
+`mobileDeviceService.describeDeviceChanges` y en `POST /celulares/:id/usuario`.
+
+Dos trampas encontradas:
+- `updated_at ... ON UPDATE CURRENT_TIMESTAMP` solo se mueve si cambia una
+  columna **de esa misma tabla**. Cambiar la asignación, devolver a stock o
+  registrar un incidente no tocaba "última actualización" del equipo; hay que
+  forzarlo (`touchDevice`) en cada acción que modifique datos relacionados.
+- Al editar un dato que identifica algo (IMEI) hay que rechazar el valor si ya
+  lo usa **otro** registro (`imeiTaken(imei, exceptId)`); sin restricción
+  UNIQUE en la base, la única barrera es la de aplicación.
+Y al corregir a la persona asignada: si ya está vinculada a `employees` se
+corrige su ficha (rechazando un DNI que ya es de otro empleado); si se importó
+solo como texto, se vincula por DNI a un empleado existente o se crea uno.
+
+## 11. Convención de commits de este repo
 
 Cuando hay varios cambios sin commitear que en realidad son features
 distintas mezcladas, se organizan en commits temáticos separados y

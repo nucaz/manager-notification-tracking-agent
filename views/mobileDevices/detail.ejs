@@ -33,6 +33,8 @@
         <tr><th>Área</th><td><%= item.area %></td></tr>
         <tr><th>Sede</th><td><%= item.sede || '—' %></td></tr>
         <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
+        <tr><th>Registrado</th><td><%= item.created_at || '—' %></td></tr>
+        <tr><th>Última actualización</th><td><%= item.updated_at || '—' %></td></tr>
       </table>
     </div>
 
@@ -159,6 +161,57 @@
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button class="btn btn-outline-secondary btn-sm" type="submit">Devolver a stock</button>
           </form>
+          <button class="btn btn-outline-primary btn-sm mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#formEditarUsuario">
+            <i class="bi bi-pencil"></i> Corregir datos del usuario
+          </button>
+          <div class="collapse mb-3" id="formEditarUsuario">
+            <div class="border rounded p-2 bg-light">
+              <div class="form-text mb-2">
+                Para corregir un error de tipeo (no cambia de persona: para eso usa Reasignar).
+                Cada cambio queda registrado en Auditoría.
+                <% if (!currentAssignment.employee_id) { %>
+                  <br><strong>Este usuario se importó como texto ("<%= currentAssignment.holder_name %>")</strong>:
+                  completa DNI, nombres y apellidos para vincularlo al directorio de empleados.
+                <% } %>
+              </div>
+              <form action="/celulares/<%= item.id %>/usuario" method="post">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="mb-2">
+                  <label class="form-label small">DNI *</label>
+                  <input type="text" name="dni" class="form-control form-control-sm" required
+                    inputmode="numeric" pattern="\d{8}" maxlength="8" title="8 dígitos numéricos"
+                    value="<%= currentAssignment.dni || '' %>">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Nombres *</label>
+                  <input type="text" name="first_name" class="form-control form-control-sm" required maxlength="100"
+                    value="<%= currentAssignment.emp_first_name || '' %>">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Apellidos *</label>
+                  <input type="text" name="last_name" class="form-control form-control-sm" required maxlength="100"
+                    value="<%= currentAssignment.emp_last_name || '' %>">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Cargo</label>
+                  <input type="text" name="cargo" class="form-control form-control-sm" maxlength="150" value="<%= currentAssignment.cargo || '' %>">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Turno</label>
+                  <input type="text" name="turno" class="form-control form-control-sm" maxlength="50" value="<%= currentAssignment.turno || '' %>">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Fecha de entrega</label>
+                  <input type="date" name="assigned_date" class="form-control form-control-sm" value="<%= currentAssignment.assigned_date || '' %>">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Observación</label>
+                  <input type="text" name="observacion" class="form-control form-control-sm" value="<%= currentAssignment.observacion || '' %>">
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary">Guardar corrección</button>
+              </form>
+            </div>
+          </div>
         <% } %>
         <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#formAsignar">
           <%= currentAssignment ? 'Reasignar' : 'Asignar' %>
