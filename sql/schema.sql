@@ -223,6 +223,8 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   brand VARCHAR(100),                           -- marca, ej: Samsung, Oppo
   model VARCHAR(20),
   operadora VARCHAR(50),                        -- Entel, Claro, Movistar, Bitel... (catalog_items, extensible)
+  purchase_date DATE,                           -- fecha de compra del equipo
+  condicion ENUM('nuevo','usado'),              -- estado del equipo al ingresar al inventario
   area VARCHAR(100) NOT NULL,                   -- area/departamento (texto libre)
   sede VARCHAR(100),                            -- sede fisica (texto libre)
   status ENUM('en_stock','asignado','en_reparacion','de_baja') NOT NULL DEFAULT 'en_stock',

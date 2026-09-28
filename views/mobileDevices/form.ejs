@@ -69,6 +69,18 @@
         value="<%= operadoraEsOtro ? item.operadora : '' %>"
         oninput="var o=document.querySelector('#operadora_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
     </div>
+    <div class="col-md-4">
+      <label class="form-label">Fecha de compra</label>
+      <input type="date" name="purchase_date" class="form-control" value="<%= item.purchase_date || '' %>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Condición</label>
+      <select name="condicion" class="form-select">
+        <option value="">— Sin especificar —</option>
+        <option value="nuevo" <%= item.condicion === 'nuevo' ? 'selected' : '' %>>Nuevo</option>
+        <option value="usado" <%= item.condicion === 'usado' ? 'selected' : '' %>>Usado</option>
+      </select>
+    </div>
 
     <div class="col-md-3 d-flex align-items-end">
       <div class="form-check">
@@ -151,7 +163,7 @@
 
   <div class="mt-4">
     <button type="submit" class="btn btn-primary">Guardar</button>
-    <a href="/celulares" class="btn btn-outline-secondary">Cancelar</a>
+    <a href="<%= item.id ? '/celulares/' + item.id : '/celulares' %>" class="btn btn-outline-secondary">Cancelar</a>
   </div>
 </form>
 

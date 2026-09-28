@@ -186,7 +186,25 @@ Y al corregir a la persona asignada: si ya está vinculada a `employees` se
 corrige su ficha (rechazando un DNI que ya es de otro empleado); si se importó
 solo como texto, se vincula por DNI a un empleado existente o se crea uno.
 
-## 11. Convención de commits de este repo
+## 12. Auditoria "siempre", no solo en crear/editar
+
+Cuando se pide que "siempre quede registro" de lo que se hizo, no alcanza
+con auditar creacion y edicion del registro principal - hay que cubrir
+TODAS las acciones que cambian datos: eliminar (individual y masivo, con
+el dato ya leido ANTES de borrar, porque despues no se puede consultar),
+asignar, devolver a stock, registrar un incidente, resolverlo. Cada
+accion de escritura de un modulo es candidata a auditoria, no solo el
+formulario de alta/edicion.
+
+Decision de arquitectura que no cambio con esto: campos nuevos que son un
+solo valor por equipo (fecha de compra, condicion nuevo/usado) van como
+columna directa en `mobile_devices`, no en una tabla hija - las tablas
+hijas (`mobile_device_assignments`, `mobile_device_incidents`) existen
+porque ESAS si son 1-a-muchos (historial de asignaciones, varios
+incidentes por equipo). Agregar una tabla hija para un dato 1-a-1 seria
+sobre-ingenieria.
+
+## 13. Convención de commits de este repo
 
 Cuando hay varios cambios sin commitear que en realidad son features
 distintas mezcladas, se organizan en commits temáticos separados y

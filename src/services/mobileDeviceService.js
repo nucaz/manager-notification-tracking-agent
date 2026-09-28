@@ -12,6 +12,7 @@ const IMEI_REGEX = /^\d{15}$/;
 const MODEL_REGEX = /^[A-Za-zÀ-ÿ0-9\s-]{1,20}$/;
 
 const STATUSES = ['en_stock', 'asignado', 'en_reparacion', 'de_baja'];
+const CONDICIONES = ['nuevo', 'usado'];
 
 // Validaciones de negocio que no se pueden expresar solo con atributos
 // HTML (requieren consultar el largo esperado del pais elegido). Devuelve
@@ -43,6 +44,12 @@ async function validateDeviceData(data) {
   }
   if (data.notes && data.notes.length > 250) {
     errors.push('Las notas no pueden superar los 250 caracteres.');
+  }
+  if (data.condicion && !CONDICIONES.includes(data.condicion)) {
+    errors.push(`La condición debe ser una de: ${CONDICIONES.join(', ')}.`);
+  }
+  if (data.purchase_date && !/^\d{4}-\d{2}-\d{2}$/.test(data.purchase_date)) {
+    errors.push('La fecha de compra no es válida.');
   }
   if (data.phone_number) {
     if (!/^\d+$/.test(data.phone_number)) {
@@ -124,7 +131,9 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
     const turno = String(cell(row, 'Turno'));
     const obs = String(cell(row, 'Observación'));
     const estadoRaw = String(cell(row, 'Estado')).toLowerCase();
+    const condicionRaw = String(cell(row, 'Condición')).toLowerCase();
     const assignedDate = parseDate(cell(row, 'Fecha de entrega'));
+    const purchaseDate = parseDate(cell(row, 'Fecha de compra'));
 
     const data = {
       imei,
@@ -134,6 +143,8 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
       brand: String(cell(row, 'Marca')) || null,
       model: String(cell(row, 'Modelo')) || null,
       operadora: String(cell(row, 'Operadora')) || null,
+      condicion: condicionRaw || null,
+      purchase_date: purchaseDate || null,
       area,
       sede: String(cell(row, 'Sede')) || null,
       notes: obs || null,
@@ -141,6 +152,7 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
 
     const problems = await validateDeviceData(data);
     if (assignedDate === undefined) problems.push('La fecha de entrega no se entiende (usa AAAA-MM-DD o DD/MM/AAAA).');
+    if (purchaseDate === undefined) problems.push('La fecha de compra no se entiende (usa AAAA-MM-DD o DD/MM/AAAA).');
     if (estadoRaw && !STATUSES.includes(estadoRaw)) problems.push(`Estado inválido "${estadoRaw}" (usa ${STATUSES.join(', ')}).`);
     if (holder.length > 150) problems.push('El usuario asignado supera los 150 caracteres.');
     if (cargo.length > 150) problems.push('El cargo supera los 150 caracteres.');
@@ -165,12 +177,13 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
       const [result] = await conn.query(
         `INSERT INTO mobile_devices
           (imei, phone_country_code_id, phone_number, has_chip, asset_code, brand, model, operadora,
-           area, sede, status, notes, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           condicion, purchase_date, area, sede, status, notes, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           data.imei, data.phone_country_code_id, data.phone_number,
           hasChipRaw ? parseBool(hasChipRaw) : (phone ? 1 : 0),
           data.asset_code, data.brand, data.model, data.operadora,
+          data.condicion, data.purchase_date,
           data.area, data.sede, status, data.notes, userId,
         ]
       );
@@ -226,6 +239,7 @@ async function touchDevice(deviceId) {
 const DEVICE_FIELD_LABELS = {
   imei: 'IMEI', phone_country_code_id: 'País', phone_number: 'Número de línea', has_chip: 'Tiene chip',
   asset_code: 'Código de activo', brand: 'Marca', model: 'Modelo', operadora: 'Operadora',
+  condicion: 'Condición', purchase_date: 'Fecha de compra',
   area: 'Área', sede: 'Sede', status: 'Estado', notes: 'Notas',
 };
 
@@ -255,12 +269,12 @@ async function describeDeviceChanges(oldRow, data) {
 // ---------------------------------------------------------------------
 // Exportacion (CSV / Excel)
 // ---------------------------------------------------------------------
-// Las primeras 15 columnas repiten las de la plantilla de importacion (mismo
+// Las primeras 17 columnas repiten las de la plantilla de importacion (mismo
 // nombre y orden), asi un archivo exportado se puede volver a importar. Las
 // demas son informativas.
 const EXPORT_HEADERS = [
-  'IMEI', 'Número', 'Tiene chip', 'Código', 'Marca', 'Modelo', 'Área', 'Sede', 'Usuario asignado',
-  'Cargo', 'Turno', 'Fecha de entrega', 'Observación', 'Estado', 'Operadora',
+  'IMEI', 'Número', 'Tiene chip', 'Código', 'Marca', 'Modelo', 'Fecha de compra', 'Condición',
+  'Área', 'Sede', 'Usuario asignado', 'Cargo', 'Turno', 'Fecha de entrega', 'Observación', 'Estado', 'Operadora',
   'País', 'Código de país', 'Observación de la asignación', 'Incidentes (total)', 'Fecha de alta',
   'Última actualización',
 ];
@@ -292,6 +306,8 @@ async function fetchDevicesForExport({ q, area, sede, status } = {}) {
     d.asset_code || '',
     d.brand || '',
     d.model || '',
+    d.purchase_date || '',
+    d.condicion || '',
     d.area,
     d.sede || '',
     d.holder_name || '',

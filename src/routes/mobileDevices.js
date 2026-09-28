@@ -40,7 +40,7 @@ router.use(requireAuth, moduleRequired('celulares'));
 
 const FIELDS = [
   'imei', 'phone_country_code_id', 'phone_number', 'has_chip', 'asset_code', 'brand', 'model',
-  'operadora', 'area', 'sede', 'status', 'notes',
+  'operadora', 'condicion', 'purchase_date', 'area', 'sede', 'status', 'notes',
 ];
 
 async function loadCatalogOptions() {
@@ -91,6 +91,8 @@ const IMPORT_COLUMNS = [
   { header: 'Código', field: 'asset_code' },
   { header: 'Marca', field: 'brand' },
   { header: 'Modelo', field: 'model' },
+  { header: 'Fecha de compra', field: 'purchase_date', type: 'date' },
+  { header: 'Condición', field: 'condicion' },
   { header: 'Área', field: 'area', required: true },
   { header: 'Sede', field: 'sede' },
   { header: 'Usuario asignado', field: 'holder_name' },
@@ -206,7 +208,7 @@ router.get('/exportar.xlsx', async (req, res, next) => {
     sheet.getRow(1).font = { bold: true };
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: mobileDeviceService.EXPORT_HEADERS.length } };
-    const widths = [18, 12, 10, 10, 12, 14, 26, 16, 34, 24, 14, 14, 40, 14, 12, 10, 8, 30, 10, 20, 20];
+    const widths = [18, 12, 10, 10, 12, 14, 14, 10, 26, 16, 34, 24, 14, 14, 40, 14, 12, 10, 8, 30, 10, 20, 20];
     widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -319,7 +321,21 @@ router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => 
 
 router.post('/:id/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
+    const [[device]] = await pool.query(
+      'SELECT imei, asset_code, area, sede, status FROM mobile_devices WHERE id = ?',
+      [req.params.id]
+    );
+    if (!device) {
+      req.flash('error', 'Celular no encontrado.');
+      return res.redirect('/celulares');
+    }
     await pool.query('DELETE FROM mobile_devices WHERE id = ?', [req.params.id]);
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'celular_eliminado',
+      target: `Celular ${device.imei}`,
+      detail: `Código ${device.asset_code || '—'}, área ${device.area}, sede ${device.sede || '—'}, estado ${device.status}`,
+    });
     req.flash('success', 'Celular eliminado.');
     res.redirect('/celulares');
   } catch (err) {
@@ -334,7 +350,16 @@ router.post('/eliminar-multiple', canWrite, verifyCsrfToken, async (req, res, ne
       req.flash('error', 'No seleccionaste ningún celular para eliminar.');
       return res.redirect('/celulares');
     }
+    const [devices] = await pool.query('SELECT imei FROM mobile_devices WHERE id IN (?)', [ids]);
     const [result] = await pool.query('DELETE FROM mobile_devices WHERE id IN (?)', [ids]);
+    const imeis = devices.map((d) => d.imei);
+    const listado = imeis.length > 20 ? `${imeis.slice(0, 20).join(', ')}... y ${imeis.length - 20} más` : imeis.join(', ');
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'celular_eliminado_multiple',
+      target: `${result.affectedRows} celular(es)`,
+      detail: `IMEI: ${listado}`,
+    });
     req.flash('success', `${result.affectedRows} celular(es) eliminado(s).`);
     res.redirect('/celulares');
   } catch (err) {
@@ -357,6 +382,11 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
     if (!/^\d{8}$/.test(dni)) {
       req.flash('error', 'El DNI debe tener exactamente 8 dígitos numéricos.');
       return res.redirect(`/celulares/${req.params.id}`);
+    }
+    const [[deviceBefore]] = await pool.query('SELECT imei FROM mobile_devices WHERE id = ?', [req.params.id]);
+    if (!deviceBefore) {
+      req.flash('error', 'Celular no encontrado.');
+      return res.redirect('/celulares');
     }
     const employeeId = await employeeService.upsert(
       { dni, first_name, last_name, area, sede, cargo },
@@ -388,6 +418,12 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
       sede || null,
       req.params.id,
     ]);
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'celular_asignado',
+      target: `Celular ${deviceBefore.imei}`,
+      detail: `Asignado a ${holderName} (DNI ${dni}), ${cargo || 'sin cargo'}, área ${area}${sede ? `, sede ${sede}` : ''}`,
+    });
     req.flash('success', 'Celular asignado correctamente.');
     res.redirect(`/celulares/${req.params.id}`);
   } catch (err) {
@@ -519,11 +555,26 @@ router.post('/:id/usuario', canWrite, verifyCsrfToken, async (req, res, next) =>
 // Cierra la asignacion activa sin crear una nueva (vuelve a stock).
 router.post('/:id/devolver', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
+    const [[device]] = await pool.query('SELECT imei FROM mobile_devices WHERE id = ?', [req.params.id]);
+    if (!device) {
+      req.flash('error', 'Celular no encontrado.');
+      return res.redirect('/celulares');
+    }
+    const [[activeAssignment]] = await pool.query(
+      'SELECT holder_name FROM mobile_device_assignments WHERE device_id = ? AND returned_date IS NULL',
+      [req.params.id]
+    );
     await pool.query(
       'UPDATE mobile_device_assignments SET returned_date = CURDATE() WHERE device_id = ? AND returned_date IS NULL',
       [req.params.id]
     );
     await pool.query('UPDATE mobile_devices SET status = "en_stock", updated_at = NOW() WHERE id = ?', [req.params.id]);
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'celular_devuelto_stock',
+      target: `Celular ${device.imei}`,
+      detail: activeAssignment ? `Devuelto por ${activeAssignment.holder_name}` : 'Devuelto a stock',
+    });
     req.flash('success', 'Celular devuelto a stock.');
     res.redirect(`/celulares/${req.params.id}`);
   } catch (err) {
@@ -648,6 +699,11 @@ router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next)
       req.flash('error', 'El tipo y la fecha del incidente son obligatorios.');
       return res.redirect(redirectTo);
     }
+    const [[device]] = await pool.query('SELECT imei FROM mobile_devices WHERE id = ?', [req.params.id]);
+    if (!device) {
+      req.flash('error', 'Celular no encontrado.');
+      return res.redirect('/celulares');
+    }
     await pool.query(
       `INSERT INTO mobile_device_incidents (device_id, tipo, fecha, descripcion, costo, created_by)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -659,6 +715,12 @@ router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next)
       await pool.query('UPDATE mobile_devices SET status = "de_baja" WHERE id = ?', [req.params.id]);
     }
     await touchDevice(req.params.id);
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'celular_incidente_registrado',
+      target: `Celular ${device.imei}`,
+      detail: `Tipo ${tipo}, fecha ${fecha}${costo ? `, costo ${costo}` : ''}${descripcion ? `: ${descripcion}` : ''}`,
+    });
     req.flash('success', 'Incidente registrado correctamente.');
     res.redirect(redirectTo);
   } catch (err) {
@@ -680,15 +742,20 @@ router.post('/:id/incidentes/:incidentId/resolver', canWrite, verifyCsrfToken, a
       req.flash('error', 'No se encontró una reparación pendiente con ese id.');
       return res.redirect(`/celulares/${req.params.id}`);
     }
+    const [[device]] = await pool.query('SELECT imei FROM mobile_devices WHERE id = ?', [req.params.id]);
     const [[activeAssignment]] = await pool.query(
       'SELECT id FROM mobile_device_assignments WHERE device_id = ? AND returned_date IS NULL',
       [req.params.id]
     );
-    await pool.query('UPDATE mobile_devices SET status = ? WHERE id = ?', [
-      activeAssignment ? 'asignado' : 'en_stock',
-      req.params.id,
-    ]);
+    const nuevoEstado = activeAssignment ? 'asignado' : 'en_stock';
+    await pool.query('UPDATE mobile_devices SET status = ? WHERE id = ?', [nuevoEstado, req.params.id]);
     await touchDevice(req.params.id);
+    await auditService.log(req, {
+      user: req.session.user,
+      action: 'celular_incidente_resuelto',
+      target: `Celular ${device ? device.imei : req.params.id}`,
+      detail: `Reparación #${req.params.incidentId} resuelta, equipo vuelve a "${nuevoEstado}"`,
+    });
     req.flash('success', 'Reparación marcada como resuelta.');
     res.redirect(`/celulares/${req.params.id}`);
   } catch (err) {

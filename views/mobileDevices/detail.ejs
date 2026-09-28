@@ -8,10 +8,11 @@
     </span>
   </div>
   <div>
+    <a href="/celulares" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver al listado</a>
     <% if (currentUser.role !== 'lector') { %>
       <a href="/celulares/<%= item.id %>/editar" class="btn btn-outline-primary">Editar</a>
       <form action="/celulares/<%= item.id %>/eliminar" method="post" class="d-inline"
-            onsubmit="return confirm('¿Eliminar este celular? Esta acción no se puede deshacer.');">
+            onsubmit="return confirm('¿Eliminar este celular (IMEI <%= item.imei %>)? Esta acción no se puede deshacer.');">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <button class="btn btn-outline-danger" type="submit">Eliminar</button>
       </form>
@@ -30,6 +31,8 @@
         <tr><th>Tiene chip</th><td><%= item.has_chip ? 'Sí' : 'No' %></td></tr>
         <tr><th>Número de línea</th><td><%= item.phone_number ? ('+' + item.calling_code + ' ' + item.phone_number + (item.country_name ? ' (' + item.country_name + ')' : '')) : '—' %></td></tr>
         <tr><th>Operadora</th><td><%= item.operadora || '—' %></td></tr>
+        <tr><th>Fecha de compra</th><td><%= item.purchase_date || '—' %></td></tr>
+        <tr><th>Condición</th><td><%= item.condicion === 'nuevo' ? 'Nuevo' : item.condicion === 'usado' ? 'Usado' : '—' %></td></tr>
         <tr><th>Área</th><td><%= item.area %></td></tr>
         <tr><th>Sede</th><td><%= item.sede || '—' %></td></tr>
         <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>

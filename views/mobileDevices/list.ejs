@@ -50,6 +50,24 @@
   <div class="col-auto">
     <button class="btn btn-outline-secondary" type="submit">Filtrar</button>
   </div>
+  <div class="col-auto dropdown">
+    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">
+      <i class="bi bi-layout-three-columns"></i> Columnas
+    </button>
+    <div class="dropdown-menu p-2" id="columnPicker" style="min-width:220px;">
+      <div class="form-text mb-1">Elige qué columnas ver (se recuerda en este navegador).</div>
+      <% [
+        ['sede', 'Sede'], ['operadora', 'Operadora'], ['numero', 'Número de línea'],
+        ['compra', 'Fecha de compra'], ['condicion', 'Condición'],
+        ['registrado', 'Registrado'], ['actualizado', 'Últ. actualización'],
+      ].forEach(function(c) { %>
+        <div class="form-check">
+          <input type="checkbox" class="form-check-input col-toggle" id="col_<%= c[0] %>" data-col="<%= c[0] %>">
+          <label class="form-check-label" for="col_<%= c[0] %>"><%= c[1] %></label>
+        </div>
+      <% }); %>
+    </div>
+  </div>
 </form>
 
 <div class="card p-3">
@@ -68,8 +86,11 @@
           <% if (currentUser.role !== 'lector') { %>
             <th><input type="checkbox" id="selectAllCheckbox" onchange="document.querySelectorAll('.row-check').forEach(function(cb){cb.checked = this.checked;}, this); updateBulkDeleteButton();"></th>
           <% } %>
-          <th>IMEI</th><th>Código</th><th>Modelo</th><th>Área</th><th>Sede</th>
-          <th>Usuario asignado</th><th>Estado</th><th>Registrado</th><th>Últ. actualización</th><th></th>
+          <th>IMEI</th><th>Código</th><th>Modelo</th><th>Área</th><th data-col="sede">Sede</th>
+          <th data-col="operadora">Operadora</th><th data-col="numero">Número de línea</th>
+          <th data-col="compra">Fecha de compra</th><th data-col="condicion">Condición</th>
+          <th>Usuario asignado</th><th>Estado</th>
+          <th data-col="registrado">Registrado</th><th data-col="actualizado">Últ. actualización</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -82,15 +103,19 @@
             <td><%= item.asset_code || '—' %></td>
             <td><%= item.model || '—' %></td>
             <td><%= item.area %></td>
-            <td><%= item.sede || '—' %></td>
+            <td data-col="sede"><%= item.sede || '—' %></td>
+            <td data-col="operadora"><%= item.operadora || '—' %></td>
+            <td data-col="numero"><%= item.phone_number || '—' %></td>
+            <td data-col="compra"><%= item.purchase_date || '—' %></td>
+            <td data-col="condicion"><%= item.condicion === 'nuevo' ? 'Nuevo' : item.condicion === 'usado' ? 'Usado' : '—' %></td>
             <td><%= item.holder_name || '—' %></td>
             <td>
               <span class="badge <%= item.status === 'asignado' ? 'bg-success' : item.status === 'en_stock' ? 'bg-secondary' : item.status === 'en_reparacion' ? 'bg-warning text-dark' : 'bg-danger' %>">
                 <%= item.status %>
               </span>
             </td>
-            <td class="text-nowrap small"><%= item.created_at ? String(item.created_at).slice(0, 16) : '—' %></td>
-            <td class="text-nowrap small"><%= item.updated_at ? String(item.updated_at).slice(0, 16) : '—' %></td>
+            <td data-col="registrado" class="text-nowrap small"><%= item.created_at ? String(item.created_at).slice(0, 16) : '—' %></td>
+            <td data-col="actualizado" class="text-nowrap small"><%= item.updated_at ? String(item.updated_at).slice(0, 16) : '—' %></td>
             <td class="text-end">
               <a href="/celulares/<%= item.id %>" class="btn btn-sm btn-outline-secondary">Ver</a>
               <% if (currentUser.role !== 'lector') { %>
@@ -100,7 +125,7 @@
           </tr>
         <% }); %>
         <% if (items.length === 0) { %>
-          <tr><td colspan="11" class="text-center text-muted py-4">No hay celulares registrados.</td></tr>
+          <tr><td colspan="15" class="text-center text-muted py-4">No hay celulares registrados.</td></tr>
         <% } %>
       </tbody>
     </table>
@@ -122,5 +147,39 @@
     }
   </script>
 <% } %>
+
+<script>
+(function () {
+  // Que columnas opcionales se ven en este listado - preferencia de cada
+  // navegador (localStorage), no del servidor: por eso no viaja en la URL
+  // ni se guarda en la base de datos.
+  var DEFAULTS = { sede: true, operadora: false, numero: false, compra: false, condicion: false, registrado: true, actualizado: true };
+  var prefs = DEFAULTS;
+  try {
+    var saved = JSON.parse(localStorage.getItem('glpiCelularesColumnas') || 'null');
+    if (saved) prefs = Object.assign({}, DEFAULTS, saved);
+  } catch (e) {}
+
+  function apply() {
+    Object.keys(prefs).forEach(function (key) {
+      var visible = prefs[key];
+      document.querySelectorAll('[data-col="' + key + '"]').forEach(function (el) {
+        el.classList.toggle('d-none', !visible);
+      });
+      var cb = document.getElementById('col_' + key);
+      if (cb) cb.checked = visible;
+    });
+  }
+  apply();
+
+  document.querySelectorAll('.col-toggle').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      prefs[cb.getAttribute('data-col')] = cb.checked;
+      apply();
+      try { localStorage.setItem('glpiCelularesColumnas', JSON.stringify(prefs)); } catch (e) {}
+    });
+  });
+})();
+</script>
 
 <%- include('../partials/foot') %>
