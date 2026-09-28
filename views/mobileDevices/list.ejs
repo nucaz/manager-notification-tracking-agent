@@ -118,6 +118,9 @@
             <td data-col="actualizado" class="text-nowrap small"><%= item.updated_at ? String(item.updated_at).slice(0, 16) : '—' %></td>
             <td class="text-end">
               <a href="/celulares/<%= item.id %>" class="btn btn-sm btn-outline-secondary">Ver</a>
+              <a href="/celulares/<%= item.id %>/qr.png?download=1" class="btn btn-sm btn-outline-secondary" title="Descargar código QR">
+                <i class="bi bi-qr-code"></i>
+              </a>
               <% if (currentUser.role !== 'lector') { %>
                 <a href="/celulares/<%= item.id %>/editar" class="btn btn-sm btn-outline-primary">Editar</a>
               <% } %>

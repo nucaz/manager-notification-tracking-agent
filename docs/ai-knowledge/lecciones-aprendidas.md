@@ -204,7 +204,36 @@ porque ESAS si son 1-a-muchos (historial de asignaciones, varios
 incidentes por equipo). Agregar una tabla hija para un dato 1-a-1 seria
 sobre-ingenieria.
 
-## 13. Convención de commits de este repo
+## 14. Confirmar "guardar" ademas de "eliminar", solo donde ya habia datos
+
+Cuando se pide confirmacion adicional para "modificar, eliminar o
+actualizar" en varios modulos: eliminar ya tenia `confirm()` en todas las
+pantallas de este repo (se verifico con un grep de todas las
+`action="...eliminar..."` antes de tocar nada). Lo nuevo fue agregarlo
+tambien a **guardar una edicion**, y solo ahi - nunca al crear un
+registro nuevo, porque no hay nada que sobrescribir. El patron
+(`views/*/form.ejs`, todas comparten `action="<%= item.id ? '.../editar'
+: '.../nuevo' %>"`) es condicionar el `onsubmit` a `item.id`:
+
+```ejs
+<form method="post" action="<%= item.id ? '/x/' + item.id + '/editar' : '/x/nuevo' %>"
+      <%- item.id ? 'onsubmit="return confirm('¿Guardar los cambios...?');"' : '' %>>
+```
+
+Ojo con el mismo bug de la seccion 6: esto se escribe con `<%- %>`, no
+`<%= %>`, porque arma un atributo HTML completo como string. Se aplico el
+mismo criterio a dos acciones de Celulares que no se llaman "editar" pero
+si modifican datos ya existentes: "Corregir datos del usuario" (siempre
+confirma, es edicion pura) y "Reasignar" (confirma solo si ya habia una
+asignacion activa - la primera asignacion a un equipo en stock es más
+"crear" que "modificar"). Quedo deliberadamente FUERA de este alcance el
+checklist fisico por area de `celulares/resumen` (guardado frecuente, bajo
+riesgo, no es un "registro" en el sentido de licencias/dominios/etc.) y
+la pantalla de Configuracion general (un formulario grande de ajustes,
+no un registro individual) - si se pide extenderlo ahi, es una decision
+aparte, no automatica.
+
+## 15. Convención de commits de este repo
 
 Cuando hay varios cambios sin commitear que en realidad son features
 distintas mezcladas, se organizan en commits temáticos separados y

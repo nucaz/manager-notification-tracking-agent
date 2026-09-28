@@ -177,7 +177,8 @@
                   completa DNI, nombres y apellidos para vincularlo al directorio de empleados.
                 <% } %>
               </div>
-              <form action="/celulares/<%= item.id %>/usuario" method="post">
+              <form action="/celulares/<%= item.id %>/usuario" method="post"
+                    onsubmit="return confirm('¿Guardar la corrección de estos datos? Se sobrescribirán los datos actuales y quedará en Auditoría.');">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <div class="mb-2">
                   <label class="form-label small">DNI *</label>
@@ -225,7 +226,8 @@
             <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">Buscar</button>
           </form>
 
-          <form action="/celulares/<%= item.id %>/asignar" method="post">
+          <form action="/celulares/<%= item.id %>/asignar" method="post"
+                <%- currentAssignment ? 'onsubmit="return confirm(\'¿Reasignar este celular? Se cerrará la asignación actual y se creará una nueva.\');"' : '' %>>
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <div class="mb-2">
               <label class="form-label small">DNI *</label>
@@ -298,6 +300,15 @@
           </form>
         </div>
       <% } %>
+    </div>
+
+    <div class="card p-3 mb-3 text-center">
+      <h5 class="text-start">Código QR</h5>
+      <img src="/celulares/<%= item.id %>/qr.png" alt="Código QR del celular <%= item.imei %>" width="180" height="180" class="mx-auto d-block border rounded p-1 bg-white">
+      <div class="form-text mt-1">Al leerlo se obtiene el IMEI, número de línea, modelo y código de activo.</div>
+      <a href="/celulares/<%= item.id %>/qr.png?download=1" class="btn btn-sm btn-outline-secondary mt-2">
+        <i class="bi bi-download"></i> Descargar QR
+      </a>
     </div>
 
     <div class="card p-3">

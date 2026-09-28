@@ -1,5 +1,6 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
+const QRCode = require('qrcode');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/modules');
@@ -849,6 +850,44 @@ router.get('/inventario/exportar.xlsx', async (req, res, next) => {
     const buffer = await workbook.xlsx.writeBuffer();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="inventario_celulares_${mes}.xlsx"`);
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Texto plano (no una URL) para que cualquier lector de QR muestre estos 4
+// datos de inmediato, sin depender de tener sesión ni conexión a la app -
+// pensado para una etiqueta física pegada al equipo.
+function buildQrText(d) {
+  const numero = d.phone_number ? `${d.calling_code ? '+' + d.calling_code + ' ' : ''}${d.phone_number}` : '—';
+  return [
+    `IMEI: ${d.imei}`,
+    `Número: ${numero}`,
+    `Modelo: ${[d.brand, d.model].filter(Boolean).join(' ') || '—'}`,
+    `Código: ${d.asset_code || '—'}`,
+  ].join('\n');
+}
+
+router.get('/:id/qr.png', async (req, res, next) => {
+  try {
+    const [[device]] = await pool.query(
+      `SELECT d.imei, d.phone_number, d.brand, d.model, d.asset_code, c.calling_code
+       FROM mobile_devices d
+       LEFT JOIN phone_country_codes c ON c.id = d.phone_country_code_id
+       WHERE d.id = ?`,
+      [req.params.id]
+    );
+    if (!device) {
+      req.flash('error', 'Celular no encontrado.');
+      return res.redirect('/celulares');
+    }
+    const buffer = await QRCode.toBuffer(buildQrText(device), { width: 300, margin: 1 });
+    res.setHeader('Content-Type', 'image/png');
+    if (req.query.download) {
+      const nombre = (device.asset_code || device.imei).replace(/[^A-Za-z0-9-]/g, '');
+      res.setHeader('Content-Disposition', `attachment; filename="qr_${nombre}.png"`);
+    }
     res.send(buffer);
   } catch (err) {
     next(err);

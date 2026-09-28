@@ -2,7 +2,8 @@
 
 <h2 class="mb-3"><%= title %></h2>
 
-<form method="post" class="card p-4" action="<%= item.id ? '/usuarios/' + item.id + '/editar' : '/usuarios/nuevo' %>" style="max-width:520px;">
+<form method="post" class="card p-4" action="<%= item.id ? '/usuarios/' + item.id + '/editar' : '/usuarios/nuevo' %>" style="max-width:520px;"
+      <%- item.id ? 'onsubmit="return confirm(\'¿Guardar los cambios en este usuario? Se sobrescribirán los datos actuales.\');"' : '' %>>
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
   <div class="mb-3">
     <label class="form-label">Nombre completo *</label>
