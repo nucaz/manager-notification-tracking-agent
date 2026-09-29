@@ -64,7 +64,7 @@
     <li><a class="nav-link {{ 'active' if request.url.path == '/deployments' else '' }}" href="/deployments"><i class="bi bi-rocket-takeoff"></i> <span>Despliegues</span></a></li>
     <li><a class="nav-link {{ 'active' if request.url.path == '/analitica' else '' }}" href="/analitica"><i class="bi bi-graph-up"></i> <span>Analítica</span></a></li>
     <li><a class="nav-link {{ 'active' if request.url.path.startswith('/reportes') else '' }}" href="/reportes"><i class="bi bi-file-earmark-text"></i> <span>Auditoría IA</span></a></li>
-    <li><a class="nav-link {{ 'active' if request.url.path == '/backups' else '' }}" href="/backups"><i class="bi bi-archive"></i> <span>Respaldos</span></a></li>
+    <li><a class="nav-link {{ 'active' if request.url.path.startswith('/backups') else '' }}" href="/backups"><i class="bi bi-archive"></i> <span>Respaldos</span></a></li>
     <li class="sidebar-section">Sistema</li>
     <li><a class="nav-link {{ 'active' if request.url.path == '/configuracion' else '' }}" href="/configuracion"><i class="bi bi-gear"></i> <span>Configuración</span></a></li>
   </ul>

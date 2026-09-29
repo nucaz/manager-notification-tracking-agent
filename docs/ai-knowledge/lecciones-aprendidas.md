@@ -240,3 +240,33 @@ distintas mezcladas, se organizan en commits temáticos separados y
 ordenados (no un solo commit gigante), cada uno con un mensaje que
 explica el POR QUÉ del cambio, no solo el qué. Ver el historial real de
 `git log` de este repo como referencia de estilo y de granularidad.
+
+## 16. Un token en la URL de git queda guardado en disco
+
+`git clone https://TOKEN@github.com/...` guarda esa URL, con el token, en
+`.git/config` del clon; ademas el token es visible en la lista de
+procesos mientras corre el comando. El comentario del codigo decia "nunca
+se guarda": era falso, y se confirmo mirando los clones reales. Correcto:
+URL limpia + cabecera `Authorization: Basic base64(x-access-token:TOKEN)`
+pasada con `GIT_CONFIG_COUNT/GIT_CONFIG_KEY_0/GIT_CONFIG_VALUE_0` (git >=
+2.31), que no toca disco ni argv. Ojo: `git remote show origin` tambien
+va a la red; para la rama por defecto usar primero
+`git symbolic-ref refs/remotes/origin/HEAD` (local). Y verificar la
+autenticacion contra un repo **privado**: con uno publico cualquier
+cambio "funciona" aunque la autenticacion este rota.
+
+## 17. Antes de enviar algo fuera del servidor, revisar que secretos lleva
+
+La base del sidecar iba a viajar a OneDrive dentro de los respaldos, y
+tenia el token de GitHub en texto plano. Primero se cifro (con migracion
+automatica al arrancar), despues se construyo el envio. Mismo criterio
+para cualquier "exportar/respaldar hacia afuera".
+
+## 18. Incrementales que se puedan restaurar
+
+Un `.diff` de `git log -p` sirve para leer cambios pero no para
+restaurar. Para respaldos incrementales de git: `git bundle create x
+--all --not <puntas anteriores>` y restaurar con `git fetch bundle
+"+refs/*:refs/*"` en orden sobre un repo bare. Si falta alguna punta
+anterior en el clon (force-push, re-clonado), se empieza una cadena
+nueva con un completo. La retencion borra cadenas enteras.

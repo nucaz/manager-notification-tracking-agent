@@ -40,6 +40,10 @@ services:
       # (en vez de que este modulo los clone el mismo desde GitHub),
       # monta esa carpeta real aca en modo solo-lectura, por ejemplo:
       # - /home/usuario/proyectos:/data/repos-externos:ro
+      # Destino externo tipo "Disco local / USB" (Respaldos -> Destinos
+      # externos): monte aca el disco del servidor y use /data/externo
+      # como carpeta del destino. Ejemplo:
+      # - /mnt/usb-respaldos:/data/externo
 
   db:
     image: mariadb:11

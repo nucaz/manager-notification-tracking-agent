@@ -237,6 +237,25 @@ def backups_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/backups/destinos", response_class=HTMLResponse)
+def backup_destinations_page(request: Request):
+    return templates.TemplateResponse("backup_destinations.html", {"request": request})
+
+
+@router.get("/backups/trabajos", response_class=HTMLResponse)
+def backup_jobs_page(request: Request, db: Session = Depends(get_db)):
+    repos = db.query(models.Repo).order_by(models.Repo.name).all()
+    return templates.TemplateResponse("backup_jobs.html", {"request": request, "repos": repos})
+
+
+@router.get("/backups/trabajos/{job_id}", response_class=HTMLResponse)
+def backup_job_detail_page(request: Request, job_id: int, db: Session = Depends(get_db)):
+    job = db.get(models.BackupJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Trabajo no encontrado.")
+    return templates.TemplateResponse("backup_job_detail.html", {"request": request, "job": job})
+
+
 @router.get("/analitica", response_class=HTMLResponse)
 def analitica_page(request: Request, dias: int = 30, db: Session = Depends(get_db)):
     dias = max(7, min(dias, 180))

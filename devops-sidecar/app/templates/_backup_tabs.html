@@ -1,0 +1,5 @@
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {{ 'active' if request.url.path == '/backups' else '' }}" href="/backups"><i class="bi bi-archive"></i> Respaldos del servidor</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if request.url.path.startswith('/backups/trabajos') else '' }}" href="/backups/trabajos"><i class="bi bi-calendar2-check"></i> Trabajos programados</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if request.url.path == '/backups/destinos' else '' }}" href="/backups/destinos"><i class="bi bi-cloud-arrow-up"></i> Destinos externos</a></li>
+</ul>

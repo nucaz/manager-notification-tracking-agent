@@ -83,12 +83,82 @@ def weekly_job() -> None:
         db.close()
 
 
+DIAS = {"mon": "lunes", "tue": "martes", "wed": "miercoles", "thu": "jueves", "fri": "viernes", "sat": "sabado", "sun": "domingo"}
+
+
+def _backup_job_id(job_id: int) -> str:
+    return f"backup_job_{job_id}"
+
+
+def backup_trigger(job: models.BackupJob) -> CronTrigger:
+    """Trigger de un trabajo de respaldo. Lanza ValueError con un mensaje
+    claro si la programacion no es valida (la API lo muestra al guardar)."""
+    tz = scheduler.timezone
+    if job.frequency == "daily":
+        return CronTrigger(hour=job.hour, minute=job.minute, timezone=tz)
+    if job.frequency == "weekly":
+        return CronTrigger(day_of_week=job.day_of_week, hour=job.hour, minute=job.minute, timezone=tz)
+    if job.frequency == "monthly":
+        return CronTrigger(day=job.day_of_month, hour=job.hour, minute=job.minute, timezone=tz)
+    if job.frequency == "cron":
+        try:
+            return CronTrigger.from_crontab(job.cron_expr or "", timezone=tz)
+        except ValueError as e:
+            raise ValueError(f"Expresion cron no valida ('{job.cron_expr}'): use 5 campos, ej. '0 2 * * 1-5'.") from e
+    raise ValueError(f"Frecuencia desconocida: {job.frequency}")
+
+
+def describe_schedule(job: models.BackupJob) -> str:
+    hhmm = f"{job.hour:02d}:{job.minute:02d}"
+    if job.frequency == "daily":
+        return f"Todos los dias a las {hhmm}"
+    if job.frequency == "weekly":
+        return f"Cada {DIAS.get(job.day_of_week, job.day_of_week)} a las {hhmm}"
+    if job.frequency == "monthly":
+        return f"El dia {job.day_of_month} de cada mes a las {hhmm}"
+    return f"Cron: {job.cron_expr}"
+
+
+def schedule_backup_job(job: models.BackupJob) -> None:
+    from .services import backup_jobs  # import diferido: backup_jobs importa database/models
+
+    if not job.enabled:
+        unschedule_backup_job(job.id)
+        return
+    scheduler.add_job(
+        backup_jobs.run_job,
+        trigger=backup_trigger(job),
+        id=_backup_job_id(job.id),
+        args=[job.id],
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+
+
+def unschedule_backup_job(job_id: int) -> None:
+    job = scheduler.get_job(_backup_job_id(job_id))
+    if job:
+        job.remove()
+
+
+def next_backup_run(job_id: int):
+    job = scheduler.get_job(_backup_job_id(job_id))
+    return getattr(job, "next_run_time", None) if job else None
+
+
 def start_scheduler() -> None:
     db = SessionLocal()
     try:
         repos = db.query(models.Repo).filter(models.Repo.active.is_(True)).all()
         for repo in repos:
             schedule_repo_sync(repo)
+        for job in db.query(models.BackupJob).filter(models.BackupJob.enabled.is_(True)).all():
+            try:
+                schedule_backup_job(job)
+            except ValueError as e:
+                logger.error("Trabajo de respaldo '%s' sin programar: %s", job.name, e)
     finally:
         db.close()
 

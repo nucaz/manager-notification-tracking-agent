@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Destinos externos{% endblock %}
+{% block content %}
+{% include "_backup_tabs.html" %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Destinos externos</h2>
+  <button class="btn btn-primary" id="btnNew"><i class="bi bi-plus-lg"></i> Nuevo destino</button>
+</div>
+<div class="alert alert-light border small">
+  Adonde se envían los respaldos, fuera de este servidor: OneDrive (personal o Microsoft 365, varias cuentas),
+  Google Drive, S3/Backblaze/Wasabi, SFTP, carpetas compartidas de Windows o NAS, Nextcloud y discos USB.
+  Las credenciales se guardan cifradas y nunca se vuelven a mostrar. Un destino se usa desde un
+  <a href="/backups/trabajos">trabajo programado</a>.
+</div>
+<div id="msg"></div>
+
+<div class="card p-3 mb-3 d-none" id="formCard">
+  <h5 id="formTitle">Nuevo destino</h5>
+  <form id="destForm" autocomplete="off">
+    <div class="row g-2">
+      <div class="col-md-4"><label class="form-label">Nombre</label>
+        <input class="form-control" name="name" required maxlength="120" placeholder="OneDrive Sistemas"></div>
+      <div class="col-md-5"><label class="form-label">Tipo</label>
+        <select class="form-select" name="kind" id="kindSelect"></select></div>
+      <div class="col-md-3 d-flex align-items-end gap-3">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="enabled" id="fEnabled" checked>
+          <label class="form-check-label" for="fEnabled">Activo</label></div>
+      </div>
+      <div class="col-12"><label class="form-label">Carpeta de destino</label>
+        <input class="form-control" name="remote_path" required value="devops-sidecar">
+        <div class="form-text" id="pathHelp"></div></div>
+    </div>
+    <div class="row g-2 mt-1" id="kindFields"></div>
+    <div class="border rounded p-2 mt-3">
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="encrypt" id="fEncrypt">
+        <label class="form-check-label fw-semibold" for="fEncrypt">Cifrar antes de enviar (rclone crypt: contenido y nombres)</label></div>
+      <div class="form-text">Quien tenga acceso a la cuenta no podrá leer los respaldos. <strong>Guarde la contraseña fuera del servidor:</strong>
+        sin ella los respaldos cifrados son irrecuperables. Se pueden descifrar sin esta aplicación, con rclone y la misma contraseña.</div>
+      <div class="row g-2 mt-1 d-none" id="cryptFields"></div>
+    </div>
+    <div class="mt-3 d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Guardar</button>
+      <button type="button" class="btn btn-outline-secondary" id="btnCancel">Cancelar</button>
+    </div>
+  </form>
+</div>
+
+<div class="card p-3">
+  <table class="table align-middle mb-0">
+    <thead><tr><th>Destino</th><th>Tipo</th><th>Carpeta</th><th>Cifrado</th><th>Última prueba</th><th></th></tr></thead>
+    <tbody id="destTable"><tr><td colspan="6" class="text-muted text-center py-4">Cargando…</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let KINDS = {}; let CRYPT = []; let DESTS = []; let editing = null;
+const form = document.getElementById('destForm');
+const msg = document.getElementById('msg');
+
+function show(text, kind = 'success') { msg.innerHTML = `<div class="alert alert-${kind}">${esc(text)}</div>`; window.scrollTo(0, 0); }
+
+function fieldHtml(f, dest) {
+  const isSecret = !!f.secret;
+  const already = dest && (dest.secrets_set || []).includes(f.key);
+  const value = dest && !isSecret ? (dest.config[f.key] ?? '') : (f.default ?? '');
+  const ph = isSecret && already ? 'Configurado - dejar vacío para conservarlo' : '';
+  const req = f.required && !(isSecret && already) ? 'required' : '';
+  let input;
+  if (f.type === 'select') {
+    input = `<select class="form-select" name="cfg_${f.key}">` + f.options.map(([v, l]) =>
+      `<option value="${esc(v)}" ${String(value) === v ? 'selected' : ''}>${esc(l)}</option>`).join('') + '</select>';
+  } else if (f.type === 'textarea') {
+    input = `<textarea class="form-control font-monospace small" rows="3" name="cfg_${f.key}" ${req} placeholder="${esc(ph)}">${isSecret ? '' : esc(value)}</textarea>`;
+  } else {
+    input = `<input class="form-control" type="${f.type === 'password' ? 'password' : 'text'}" name="cfg_${f.key}" value="${isSecret ? '' : esc(value)}" ${req} placeholder="${esc(ph)}" autocomplete="new-password">`;
+  }
+  const wide = f.type === 'textarea' ? 'col-12' : 'col-md-6';
+  return `<div class="${wide}"><label class="form-label">${esc(f.label)}</label>${input}${f.help ? `<div class="form-text">${esc(f.help)}</div>` : ''}</div>`;
+}
+
+function renderKind(dest) {
+  const kind = document.getElementById('kindSelect').value;
+  const spec = KINDS[kind];
+  document.getElementById('pathHelp').textContent = spec.path_help || '';
+  document.getElementById('kindFields').innerHTML = spec.fields.map((f) => fieldHtml(f, dest)).join('');
+  document.getElementById('cryptFields').innerHTML = CRYPT.map((f) => fieldHtml(f, dest)).join('');
+}
+
+function openForm(dest) {
+  editing = dest ? dest.id : null;
+  document.getElementById('formTitle').textContent = dest ? `Editar destino: ${dest.name}` : 'Nuevo destino';
+  form.elements['name'].value = dest ? dest.name : '';
+  form.elements['kind'].value = dest ? dest.kind : 'onedrive';
+  form.elements['kind'].disabled = !!dest;
+  form.elements['remote_path'].value = dest ? dest.remote_path : 'devops-sidecar';
+  form.elements['enabled'].checked = dest ? dest.enabled : true;
+  form.elements['encrypt'].checked = dest ? dest.encrypt : false;
+  renderKind(dest);
+  document.getElementById('cryptFields').classList.toggle('d-none', !form.elements['encrypt'].checked);
+  document.getElementById('formCard').classList.remove('d-none');
+  form.elements['name'].focus();
+}
+
+document.getElementById('kindSelect').addEventListener('change', () => renderKind(null));
+document.getElementById('fEncrypt').addEventListener('change', (e) => document.getElementById('cryptFields').classList.toggle('d-none', !e.target.checked));
+document.getElementById('btnNew').addEventListener('click', () => openForm(null));
+document.getElementById('btnCancel').addEventListener('click', () => document.getElementById('formCard').classList.add('d-none'));
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const config = {};
+  form.querySelectorAll('[name^="cfg_"]').forEach((el) => { config[el.name.slice(4)] = el.value; });
+  const payload = { name: form.elements['name'].value, kind: form.elements['kind'].value, remote_path: form.elements['remote_path'].value,
+    enabled: form.elements['enabled'].checked, encrypt: form.elements['encrypt'].checked, config };
+  if (editing && !confirm('¿Guardar los cambios en este destino?')) return;
+  const res = await fetch(editing ? `/api/backup-destinations/${editing}` : '/api/backup-destinations', {
+    method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { show(data.detail || 'No se pudo guardar.', 'danger'); return; }
+  document.getElementById('formCard').classList.add('d-none');
+  show(`Destino "${data.name}" guardado. Use "Probar" para comprobar la conexión.`);
+  load();
+});
+
+async function load() {
+  const res = await fetch('/api/backup-destinations');
+  DESTS = await res.json();
+  const tb = document.getElementById('destTable');
+  if (!DESTS.length) { tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Todavía no hay destinos. Cree uno con "Nuevo destino".</td></tr>'; return; }
+  tb.innerHTML = DESTS.map((d) => `
+    <tr>
+      <td><strong>${esc(d.name)}</strong> ${d.enabled ? '' : '<span class="badge bg-secondary">desactivado</span>'}
+        <div class="small text-muted">${esc(d.account_label || '')}</div></td>
+      <td class="small">${esc(d.kind_label)}</td>
+      <td class="small font-monospace">${esc(d.remote_path)}</td>
+      <td>${d.encrypt ? '<span class="badge bg-success"><i class="bi bi-lock"></i> sí</span>' : '<span class="badge bg-light text-dark">no</span>'}</td>
+      <td class="small">${d.last_test_at ? `<span class="${d.last_test_ok ? 'text-success' : 'text-danger'}">${d.last_test_ok ? 'OK' : 'ERROR'}</span> ${esc(new Date(d.last_test_at + 'Z').toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }))}<div class="text-muted">${esc(d.last_test_message || '')}</div>` : '<span class="text-muted">sin probar</span>'}</td>
+      <td class="text-end text-nowrap">
+        <button class="btn btn-sm btn-outline-primary" data-act="test" data-id="${d.id}">Probar</button>
+        <button class="btn btn-sm btn-outline-secondary" data-act="edit" data-id="${d.id}">Editar</button>
+        <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${d.id}"><i class="bi bi-trash"></i></button>
+      </td>
+    </tr>`).join('');
+}
+
+document.getElementById('destTable').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const d = DESTS.find((x) => x.id === Number(btn.dataset.id));
+  if (btn.dataset.act === 'edit') { openForm(d); return; }
+  if (btn.dataset.act === 'del') {
+    if (!confirm(`¿Eliminar el destino "${d.name}"? Los respaldos que ya están en ese destino NO se borran.`)) return;
+    const res = await fetch(`/api/backup-destinations/${d.id}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    show(data.message || data.detail || 'Listo.', res.ok ? 'success' : 'danger');
+    load();
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Probando…';
+  const res = await fetch(`/api/backup-destinations/${d.id}/test`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  show(data.message || data.detail || 'Error de red.', res.ok && data.ok ? 'success' : 'danger');
+  load();
+});
+
+(async () => {
+  const k = await (await fetch('/api/backup-destinations/kinds')).json();
+  KINDS = k.kinds; CRYPT = k.crypt_fields;
+  document.getElementById('kindSelect').innerHTML = Object.entries(KINDS).map(([key, v]) => `<option value="${key}">${esc(v.label)}</option>`).join('');
+  load();
+})();
+</script>
+{% endblock %}

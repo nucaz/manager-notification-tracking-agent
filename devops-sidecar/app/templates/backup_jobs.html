@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Trabajos de respaldo{% endblock %}
+{% block content %}
+{% include "_backup_tabs.html" %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Trabajos programados</h2>
+  <button class="btn btn-primary" id="btnNew"><i class="bi bi-plus-lg"></i> Nuevo trabajo</button>
+</div>
+<div class="alert alert-light border small">
+  Cada trabajo respalda los repositorios elegidos según su programación, en <strong>cadenas</strong>:
+  un respaldo <strong>completo</strong> seguido de N <strong>incrementales</strong> (solo los commits nuevos). Al completarse la cadena,
+  el siguiente vuelve a ser completo. La retención borra cadenas enteras, nunca un completo del que dependan incrementales.
+  Todo lo que no llegó a un destino (por ejemplo, OneDrive caído) se reintenta en la siguiente ejecución.
+</div>
+<div id="msg"></div>
+
+<div class="card p-3 mb-3 d-none" id="formCard">
+  <h5 id="formTitle">Nuevo trabajo</h5>
+  <form id="jobForm">
+    <div class="row g-3">
+      <div class="col-md-6"><label class="form-label">Nombre</label>
+        <input class="form-control" name="name" required maxlength="120" placeholder="Respaldo diario a OneDrive"></div>
+      <div class="col-md-6 d-flex align-items-end"><div class="form-check">
+        <input class="form-check-input" type="checkbox" name="enabled" id="jEnabled" checked>
+        <label class="form-check-label" for="jEnabled">Activo (se ejecuta según la programación)</label></div></div>
+
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Repositorios</label>
+        <div class="border rounded p-2" style="max-height: 180px; overflow:auto">
+          <div class="form-text mb-1">Sin marcar ninguno = todos los repositorios activos (incluye los que se agreguen después).</div>
+          {% for r in repos %}
+            <div class="form-check"><input class="form-check-input repo-check" type="checkbox" value="{{ r.id }}" id="repo{{ r.id }}">
+              <label class="form-check-label" for="repo{{ r.id }}">{{ r.name }}</label></div>
+          {% else %}
+            <div class="text-muted small">No hay repositorios registrados.</div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Qué respaldar</label>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="include_bundle" id="cBundle" checked>
+          <label class="form-check-label" for="cBundle">Historial git completo / incremental (git bundle, restaurable)</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="include_diff" id="cDiff" checked>
+          <label class="form-check-label" for="cDiff">Cambios legibles (.diff) desde el respaldo anterior</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="include_content" id="cContent">
+          <label class="form-check-label" for="cContent">Archivos tal cual, sin .git (solo en los completos)</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="include_sidecar_db" id="cDb" checked>
+          <label class="form-check-label" for="cDb">Base de configuración del sidecar (sidecar.db)</label></div>
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Programación</label>
+        <div class="row g-2">
+          <div class="col-6"><select class="form-select" name="frequency" id="freq">
+            <option value="daily">Diaria</option><option value="weekly">Semanal</option>
+            <option value="monthly">Mensual</option><option value="cron">Personalizada (cron)</option></select></div>
+          <div class="col-3"><input class="form-control" type="number" name="hour" min="0" max="23" value="2" title="Hora"></div>
+          <div class="col-3"><input class="form-control" type="number" name="minute" min="0" max="59" value="0" title="Minuto"></div>
+          <div class="col-6 freq-weekly"><select class="form-select" name="day_of_week">
+            <option value="mon">Lunes</option><option value="tue">Martes</option><option value="wed">Miércoles</option>
+            <option value="thu">Jueves</option><option value="fri">Viernes</option><option value="sat">Sábado</option>
+            <option value="sun" selected>Domingo</option></select></div>
+          <div class="col-6 freq-monthly"><input class="form-control" type="number" name="day_of_month" min="1" max="28" value="1" title="Día del mes (1-28)"></div>
+          <div class="col-12 freq-cron"><input class="form-control font-monospace" name="cron_expr" placeholder="0 2 * * 1-5  (minuto hora día mes día-semana)"></div>
+        </div>
+        <div class="form-text">Hora del servidor (America/Lima).</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Cadena y retención</label>
+        <div class="row g-2 align-items-center">
+          <div class="col-8 small">Incrementales entre completos</div>
+          <div class="col-4"><input class="form-control" type="number" name="incrementals_per_full" min="0" max="365" value="6"></div>
+          <div class="col-8 small">Cadenas a conservar en este servidor</div>
+          <div class="col-4"><input class="form-control" type="number" name="keep_chains_local" min="1" max="100" value="2"></div>
+          <div class="col-8 small">Cadenas a conservar en cada destino externo</div>
+          <div class="col-4"><input class="form-control" type="number" name="keep_chains_remote" min="1" max="1000" value="4"></div>
+        </div>
+        <div class="form-text" id="chainHelp"></div>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label fw-semibold">Destinos externos</label>
+        <div id="destChecks" class="d-flex flex-wrap gap-3"></div>
+        <div class="form-text">Sin destinos, el trabajo solo guarda en este servidor. Configure destinos en <a href="/backups/destinos">Destinos externos</a>.</div>
+      </div>
+    </div>
+    <div class="mt-3 d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Guardar</button>
+      <button type="button" class="btn btn-outline-secondary" id="btnCancel">Cancelar</button>
+    </div>
+  </form>
+</div>
+
+<div class="card p-3">
+  <table class="table align-middle mb-0">
+    <thead><tr><th>Trabajo</th><th>Programación</th><th>Cadena / retención</th><th>Destinos</th><th>Última ejecución</th><th></th></tr></thead>
+    <tbody id="jobsTable"><tr><td colspan="6" class="text-center text-muted py-4">Cargando…</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const form = document.getElementById('jobForm');
+const F = (n) => form.elements[n];
+const msg = document.getElementById('msg');
+let JOBS = []; let DESTS = []; let editing = null;
+const fmt = (iso) => iso ? new Date(iso + 'Z').toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '';
+const STATUS = { ok: ['success', 'OK'], ok_con_avisos: ['warning', 'OK con avisos'], error: ['danger', 'Error'], en_curso: ['info', 'En curso'] };
+
+function show(text, kind = 'success') { msg.innerHTML = `<div class="alert alert-${kind}">${esc(text)}</div>`; window.scrollTo(0, 0); }
+
+function updateFreq() {
+  const f = F('frequency').value;
+  document.querySelectorAll('.freq-weekly').forEach((el) => el.classList.toggle('d-none', f !== 'weekly'));
+  document.querySelectorAll('.freq-monthly').forEach((el) => el.classList.toggle('d-none', f !== 'monthly'));
+  document.querySelectorAll('.freq-cron').forEach((el) => el.classList.toggle('d-none', f !== 'cron'));
+  F('hour').closest('.col-3').classList.toggle('d-none', f === 'cron');
+  F('minute').closest('.col-3').classList.toggle('d-none', f === 'cron');
+}
+function updateChainHelp() {
+  const n = Number(F('incrementals_per_full').value || 0);
+  const l = Number(F('keep_chains_local').value || 1), r = Number(F('keep_chains_remote').value || 1);
+  document.getElementById('chainHelp').textContent = n === 0
+    ? `Cada ejecución es un completo. Se conservan ${l} en el servidor y ${r} en cada destino.`
+    : `1 completo + ${n} incrementales = ${n + 1} ejecuciones por cadena. En el servidor se conservan ${l} cadena(s) (~${l * (n + 1)} ejecuciones) y en cada destino ${r} (~${r * (n + 1)} ejecuciones).`;
+}
+['incrementals_per_full', 'keep_chains_local', 'keep_chains_remote'].forEach((n) => F(n).addEventListener('input', updateChainHelp));
+F('frequency').addEventListener('change', updateFreq);
+
+function openForm(job) {
+  editing = job ? job.id : null;
+  document.getElementById('formTitle').textContent = job ? `Editar trabajo: ${job.name}` : 'Nuevo trabajo';
+  const d = job || { name: '', enabled: true, repo_ids: [], include_bundle: true, include_diff: true, include_content: false,
+    include_sidecar_db: true, frequency: 'daily', hour: 2, minute: 0, day_of_week: 'sun', day_of_month: 1, cron_expr: '',
+    incrementals_per_full: 6, keep_chains_local: 2, keep_chains_remote: 4, destination_ids: [] };
+  ['name', 'frequency', 'hour', 'minute', 'day_of_week', 'day_of_month', 'incrementals_per_full', 'keep_chains_local', 'keep_chains_remote']
+    .forEach((k) => { F(k).value = d[k]; });
+  F('cron_expr').value = d.cron_expr || '';
+  ['enabled', 'include_bundle', 'include_diff', 'include_content', 'include_sidecar_db'].forEach((k) => { F(k).checked = d[k]; });
+  document.querySelectorAll('.repo-check').forEach((cb) => { cb.checked = d.repo_ids.includes(Number(cb.value)); });
+  document.getElementById('destChecks').innerHTML = DESTS.length ? DESTS.map((x) => `
+    <div class="form-check"><input class="form-check-input dest-check" type="checkbox" value="${x.id}" id="d${x.id}" ${d.destination_ids.includes(x.id) ? 'checked' : ''}>
+    <label class="form-check-label" for="d${x.id}">${esc(x.name)} <span class="text-muted small">(${esc(x.kind_label)}${x.encrypt ? ', cifrado' : ''}${x.enabled ? '' : ', desactivado'})</span></label></div>`).join('')
+    : '<span class="text-muted small">No hay destinos configurados.</span>';
+  updateFreq(); updateChainHelp();
+  document.getElementById('formCard').classList.remove('d-none');
+  F('name').focus();
+}
+
+document.getElementById('btnNew').addEventListener('click', () => openForm(null));
+document.getElementById('btnCancel').addEventListener('click', () => document.getElementById('formCard').classList.add('d-none'));
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    name: F('name').value, enabled: F('enabled').checked, frequency: F('frequency').value,
+    hour: Number(F('hour').value), minute: Number(F('minute').value), day_of_week: F('day_of_week').value,
+    day_of_month: Number(F('day_of_month').value), cron_expr: F('cron_expr').value,
+    include_bundle: F('include_bundle').checked, include_diff: F('include_diff').checked,
+    include_content: F('include_content').checked, include_sidecar_db: F('include_sidecar_db').checked,
+    incrementals_per_full: Number(F('incrementals_per_full').value), keep_chains_local: Number(F('keep_chains_local').value),
+    keep_chains_remote: Number(F('keep_chains_remote').value),
+    repo_ids: [...document.querySelectorAll('.repo-check:checked')].map((cb) => Number(cb.value)),
+    destination_ids: [...document.querySelectorAll('.dest-check:checked')].map((cb) => Number(cb.value)),
+  };
+  if (editing && !confirm('¿Guardar los cambios en este trabajo? La nueva programación se aplica de inmediato.')) return;
+  const res = await fetch(editing ? `/api/backup-jobs/${editing}` : '/api/backup-jobs', {
+    method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { show(typeof data.detail === 'string' ? data.detail : 'Revise los datos del formulario.', 'danger'); return; }
+  document.getElementById('formCard').classList.add('d-none');
+  show(`Trabajo "${data.name}" guardado. ${data.next_run ? 'Próxima ejecución: ' + data.next_run : 'Está pausado.'}`);
+  load();
+});
+
+async function load() {
+  [JOBS, DESTS] = await Promise.all([(await fetch('/api/backup-jobs')).json(), (await fetch('/api/backup-destinations')).json()]);
+  const tb = document.getElementById('jobsTable');
+  if (!JOBS.length) { tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Todavía no hay trabajos. Cree uno con "Nuevo trabajo".</td></tr>'; return; }
+  tb.innerHTML = JOBS.map((j) => {
+    const st = j.running ? STATUS.en_curso : (STATUS[j.last_status] || ['secondary', 'sin ejecutar']);
+    return `<tr>
+      <td><a href="/backups/trabajos/${j.id}"><strong>${esc(j.name)}</strong></a> ${j.enabled ? '' : '<span class="badge bg-secondary">pausado</span>'}
+        <div class="small text-muted">${esc(j.repo_names.join(', '))}</div></td>
+      <td class="small">${esc(j.schedule_text)}<div class="text-muted">${j.next_run ? 'Próxima: ' + esc(j.next_run) : ''}</div></td>
+      <td class="small">1 completo + ${j.incrementals_per_full} incr.<div class="text-muted">conserva ${j.keep_chains_local} aquí / ${j.keep_chains_remote} fuera</div></td>
+      <td class="small">${j.destination_names.length ? esc(j.destination_names.join(', ')) : '<span class="text-muted">solo servidor</span>'}</td>
+      <td class="small"><span class="badge bg-${st[0]}">${st[1]}</span><div class="text-muted">${esc(fmt(j.last_run_at))}</div></td>
+      <td class="text-end text-nowrap">
+        <button class="btn btn-sm btn-outline-success" data-act="run" data-id="${j.id}" ${j.running ? 'disabled' : ''}>Ejecutar ahora</button>
+        <button class="btn btn-sm btn-outline-secondary" data-act="edit" data-id="${j.id}">Editar</button>
+        <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${j.id}"><i class="bi bi-trash"></i></button>
+      </td></tr>`;
+  }).join('');
+}
+
+document.getElementById('jobsTable').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const j = JOBS.find((x) => x.id === Number(btn.dataset.id));
+  if (btn.dataset.act === 'edit') { openForm(j); return; }
+  if (btn.dataset.act === 'del') {
+    if (!confirm(`¿Eliminar el trabajo "${j.name}"? Deja de ejecutarse; los respaldos ya generados no se borran.`)) return;
+    const res = await fetch(`/api/backup-jobs/${j.id}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    show(data.message || data.detail || 'Listo.', res.ok ? 'success' : 'danger');
+    load();
+    return;
+  }
+  btn.disabled = true;
+  const res = await fetch(`/api/backup-jobs/${j.id}/run`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  show(data.message || data.detail || 'Error de red.', res.ok ? 'info' : 'danger');
+  setTimeout(load, 1500);
+});
+
+load();
+setInterval(() => { if (JOBS.some((j) => j.running)) load(); }, 5000);
+</script>
+{% endblock %}

@@ -180,6 +180,60 @@ tener la **misma** clave en su `.env` que el servidor de origen — si no,
 las API keys guardadas quedan cifradas e ilegibles, y hay que volver a
 escribirlas desde Configuración.
 
+### 3.6 Respaldos externos y trabajos programados
+
+**Respaldos → Destinos externos**: cuentas adonde enviar los respaldos,
+fuera del servidor. Usa `rclone` (incluido en la imagen, versión fija y
+SHA-256 verificado en el build). Puede haber varios destinos del mismo
+tipo:
+
+| Tipo | Cómo se autoriza |
+|---|---|
+| OneDrive personal y Microsoft 365 (varias cuentas) | En un PC con navegador: `rclone authorize "onedrive"`, iniciar sesión con la cuenta y pegar el JSON. La unidad y la cuenta se detectan solas |
+| Google Drive | `rclone authorize "drive"` y pegar el JSON |
+| S3 (AWS, Backblaze B2, Wasabi, R2, MinIO) | Access key y secret; en S3 con *object lock* los respaldos quedan inmutables |
+| SFTP | Usuario y contraseña o llave; recomendado pegar la huella (`ssh-keyscan`) |
+| Carpeta compartida de Windows / NAS (SMB) | Usuario y contraseña |
+| WebDAV / Nextcloud | Usuario y contraseña o token de app |
+| Disco local o USB | Montarlo en el contenedor (ver `docker-compose.yml`) y usar su ruta |
+
+Cada destino puede **cifrar** los respaldos (rclone crypt: contenido y
+nombres de archivo). Guarde la contraseña fuera del servidor: sin ella
+los respaldos cifrados son irrecuperables. **Probar** crea, lee y borra
+un archivo de prueba.
+
+**Respaldos → Trabajos programados**: qué repos, qué contenido, cuándo
+(diario, semanal, mensual o cron) y adónde. Estilo Veeam: cada repo forma
+**cadenas** de un completo + N incrementales:
+
+- Completo: `git bundle --all` (todo el historial, ramas y tags).
+- Incremental: `git bundle` solo con los commits nuevos desde el punto
+  anterior. Si no hubo commits, no se crea.
+- Opcionales: `.diff` legible, archivos sin `.git` (solo en completos) y
+  copia de `sidecar.db`.
+- Retención por cadenas enteras, por separado en el servidor y en los
+  destinos: nunca se borra un completo del que dependa un incremental.
+- Lo que no llegó a un destino (por ejemplo, OneDrive caído) se reenvía
+  en la siguiente ejecución, y cada envío se verifica (`rclone check` o
+  `cryptcheck`).
+
+**Restaurar sin el sidecar**: cada carpeta de cadena trae `RESTAURAR.txt`
+y `manifest.json` (con SHA-256). Con los bundles de la cadena:
+
+```bash
+git init --bare restaurado.git
+git -C restaurado.git fetch "$PWD/00_completo_....bundle" "+refs/*:refs/*"
+git -C restaurado.git fetch "$PWD/01_incremental_....bundle" "+refs/*:refs/*"   # en orden
+git clone restaurado.git trabajo
+```
+
+Si el destino está cifrado, descargar primero con rclone usando un remoto
+`crypt` con la misma contraseña (y la segunda contraseña, si se usó).
+
+Pruebas de extremo a extremo (WebDAV, SFTP y S3 reales con `rclone serve`,
+cifrado, restauración, caída de un destino y retención):
+`docker compose exec devops-sidecar python tests/test_respaldos_externos.py`
+
 ## 4. Seguridad (decisiones deliberadas)
 
 - El dashboard/API (todo menos el webhook) está detrás de **HTTP Basic
@@ -193,10 +247,18 @@ escribirlas desde Configuración.
   terceros) se **sanean con `bleach`** antes de mostrarse en HTML — una
   inyección de prompt en un commit/comentario no puede terminar
   ejecutando `<script>` en el navegador de quien lea el reporte.
-- El token de GitHub de un repo privado se guarda en texto plano en
-  SQLite — misma deuda técnica ya documentada y aceptada en
-  `glpi-licencias-app` para otros secretos (ver su bitácora), no una
-  omisión de esta implementación puntual.
+- El token de GitHub de cada repo se guarda **cifrado** en SQLite
+  (`enc:v1:...`, con `CREDENTIALS_ENC_KEY`) y git lo recibe por una
+  cabecera `Authorization` pasada en variables de entorno
+  (`GIT_CONFIG_COUNT/KEY/VALUE`), **nunca dentro de la URL**. Antes iba en
+  la URL y `git clone` lo dejaba guardado en `.git/config` de cada clon.
+  Al arrancar, la app cifra los tokens que sigan en texto plano y quita el
+  token de la URL de `origin` de todos los clones, incluidos los huérfanos
+  de repos ya eliminados de la app.
+- Las credenciales de los destinos externos (tokens OAuth, claves S3,
+  contraseñas) también van cifradas, y la API nunca las devuelve. Para
+  SFTP se puede fijar la huella del servidor (`known_hosts`); sin ella
+  rclone no verifica la identidad del servidor.
 - Los comandos de git corren siempre con `subprocess` pasando argumentos
   como lista (nunca un string armado a mano ni `shell=True`) — sin
   riesgo de inyección de comandos aunque la URL de un repo viniera de un

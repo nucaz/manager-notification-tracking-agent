@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ job.name }}{% endblock %}
+{% block content %}
+{% include "_backup_tabs.html" %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <a href="/backups/trabajos" class="small"><i class="bi bi-arrow-left"></i> Volver a trabajos</a>
+    <h2 class="mb-0">{{ job.name }}</h2>
+  </div>
+  <button class="btn btn-outline-success" id="btnRun"><i class="bi bi-play-fill"></i> Ejecutar ahora</button>
+</div>
+<div id="msg"></div>
+
+<div class="card p-3 mb-3">
+  <h5>Puntos de restauración</h5>
+  <div class="form-text mb-2">Agrupados por cadena: el completo (00) y sus incrementales. Para restaurar se necesita el completo y todos los incrementales anteriores al punto elegido; cada carpeta incluye <code>RESTAURAR.txt</code> con los pasos.</div>
+  <div id="points" class="small text-muted">Cargando…</div>
+</div>
+
+<div class="card p-3">
+  <h5>Ejecuciones</h5>
+  <div id="runs" class="small text-muted">Cargando…</div>
+</div>
+
+<script>
+const JOB_ID = {{ job.id }};
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = (iso) => iso ? new Date(iso + 'Z').toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '';
+const kb = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).toFixed(1) + ' KB';
+const RUN = { ok: 'success', ok_con_avisos: 'warning', error: 'danger', en_curso: 'info' };
+const TR = { ok: ['success', 'check2'], error: ['danger', 'x'], borrado: ['secondary', 'trash'] };
+
+async function load() {
+  const [points, runs] = await Promise.all([
+    (await fetch(`/api/backup-jobs/${JOB_ID}/points`)).json(),
+    (await fetch(`/api/backup-jobs/${JOB_ID}/runs`)).json(),
+  ]);
+  const groups = {};
+  points.forEach((p) => { (groups[`${p.repo}|${p.chain_label}`] ??= []).push(p); });
+  const html = Object.entries(groups).map(([key, pts]) => {
+    const [repo, label] = key.split('|');
+    pts.sort((a, b) => a.seq - b.seq);
+    const title = repo === '_sidecar_db' ? 'Base del sidecar' : repo;
+    return `<div class="border rounded p-2 mb-2">
+      <div class="fw-semibold">${esc(title)} <span class="text-muted font-monospace">cadena ${esc(label)}</span>
+        ${pts.every((p) => p.local_deleted) ? '<span class="badge bg-light text-dark">ya no está en el servidor</span>' : ''}</div>
+      <table class="table table-sm mb-0 mt-1"><tbody>${pts.map((p) => `<tr>
+        <td class="text-nowrap">${p.kind === 'full' ? '<span class="badge bg-primary">Completo</span>' : `<span class="badge bg-info text-dark">Incremental ${p.seq}</span>`}</td>
+        <td class="text-nowrap">${esc(fmt(p.created_at))}</td>
+        <td>${p.files.map((f) => `<div class="font-monospace" title="SHA-256 ${esc(f.sha256)}">${esc(f.name)} <span class="text-muted">${kb(f.size)}</span></div>`).join('')}</td>
+        <td>${p.transfers.length ? p.transfers.map((t) => `<span class="badge bg-${TR[t.status]?.[0] || 'secondary'}" title="${esc(t.message || '')}"><i class="bi bi-${TR[t.status]?.[1] || 'dot'}"></i> ${esc(t.destination)}${t.verified && t.status === 'ok' ? ' ✓' : ''}</span>`).join(' ') : '<span class="text-muted">solo servidor</span>'}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }).join('');
+  document.getElementById('points').innerHTML = html || 'Todavía no hay puntos de restauración. Use "Ejecutar ahora" o espere a la programación.';
+  document.getElementById('runs').innerHTML = runs.length ? runs.map((r) => `
+    <details class="mb-1"><summary><span class="badge bg-${RUN[r.status] || 'secondary'}">${esc(r.status)}</span>
+      ${esc(fmt(r.started_at))} <span class="text-muted">(${esc(r.trigger)})</span></summary>
+      <pre class="bg-light p-2 small mb-0" style="white-space: pre-wrap">${esc(r.log)}</pre></details>`).join('')
+    : 'Sin ejecuciones todavía.';
+  return runs.some((r) => r.status === 'en_curso');
+}
+
+document.getElementById('btnRun').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  const res = await fetch(`/api/backup-jobs/${JOB_ID}/run`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  document.getElementById('msg').innerHTML = `<div class="alert alert-${res.ok ? 'info' : 'danger'}">${esc(data.message || data.detail)}</div>`;
+  setTimeout(async () => { await load(); e.target.disabled = false; }, 2000);
+});
+
+load();
+setInterval(load, 8000);
+</script>
+{% endblock %}

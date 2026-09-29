@@ -131,3 +131,131 @@ class BackupRun(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     repo = relationship("Repo", back_populates="backup_runs")
+
+
+# ---------------------------------------------------------------------------
+# Respaldos externos y trabajos programados (estilo Veeam)
+# ---------------------------------------------------------------------------
+class BackupDestination(Base):
+    """Un destino externo de respaldos: una cuenta + una carpeta. Puede
+    haber varios del mismo tipo (ej. dos OneDrive M365 y uno personal).
+    Toda la configuracion del proveedor (tokens, claves, contrasenas) va
+    en config_enc como JSON cifrado con crypto_service - nunca se devuelve
+    al navegador. Ver services/rclone_service.py."""
+    __tablename__ = "backup_destinations"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), unique=True, nullable=False)
+    # onedrive | gdrive | s3 | sftp | smb | webdav | local
+    kind = Column(String(20), nullable=False)
+    config_enc = Column(Text, nullable=False)
+    # Carpeta dentro del destino (en S3: "bucket/carpeta").
+    remote_path = Column(String(500), nullable=False, default="devops-sidecar")
+    # Cifrado del lado del cliente con rclone crypt (contenido y nombres).
+    # La contrasena va dentro de config_enc.
+    encrypt = Column(Boolean, nullable=False, default=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    account_label = Column(String(200), nullable=True)  # ej. correo de la cuenta, para mostrar
+    last_test_at = Column(DateTime, nullable=True)
+    last_test_ok = Column(Boolean, nullable=True)
+    last_test_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class BackupJob(Base):
+    """Trabajo de respaldo programado: que se respalda, cuando, adonde y
+    con que politica de cadena/retencion. Cada (trabajo, repositorio)
+    forma cadenas: un completo seguido de hasta `incrementals_per_full`
+    incrementales; la retencion borra cadenas enteras, nunca un completo
+    del que dependan incrementales."""
+    __tablename__ = "backup_jobs"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), unique=True, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    # JSON: lista de ids de repos; vacia = todos los repos activos.
+    repo_ids_json = Column(Text, nullable=False, default="[]")
+    include_bundle = Column(Boolean, nullable=False, default=True)    # git bundle (historial completo / incremental)
+    include_content = Column(Boolean, nullable=False, default=False)  # archivos sin .git (solo en completos)
+    include_diff = Column(Boolean, nullable=False, default=True)      # .diff legible de los cambios
+    include_sidecar_db = Column(Boolean, nullable=False, default=True)
+    # daily | weekly | monthly | cron
+    frequency = Column(String(10), nullable=False, default="daily")
+    hour = Column(Integer, nullable=False, default=2)
+    minute = Column(Integer, nullable=False, default=0)
+    day_of_week = Column(String(3), nullable=False, default="sun")
+    day_of_month = Column(Integer, nullable=False, default=1)
+    cron_expr = Column(String(100), nullable=True)
+    incrementals_per_full = Column(Integer, nullable=False, default=6)
+    keep_chains_local = Column(Integer, nullable=False, default=2)
+    keep_chains_remote = Column(Integer, nullable=False, default=4)
+    # JSON: lista de ids de BackupDestination.
+    destination_ids_json = Column(Text, nullable=False, default="[]")
+    last_run_at = Column(DateTime, nullable=True)
+    last_status = Column(String(30), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    points = relationship("BackupPoint", back_populates="job", cascade="all, delete-orphan")
+    runs = relationship("BackupJobRun", back_populates="job", cascade="all, delete-orphan")
+
+
+class BackupJobRun(Base):
+    """Una ejecucion de un trabajo (programada o manual), con su resumen."""
+    __tablename__ = "backup_job_runs"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("backup_jobs.id", ondelete="CASCADE"), nullable=False)
+    trigger = Column(String(20), nullable=False, default="programado")  # programado | manual
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    # en_curso | ok | ok_con_avisos | error
+    status = Column(String(20), nullable=False, default="en_curso")
+    log = Column(Text, nullable=True)
+
+    job = relationship("BackupJob", back_populates="runs")
+
+
+class BackupPoint(Base):
+    """Punto de restauracion: un completo (seq 0) o un incremental (seq
+    1..n) de un repo dentro de una cadena. repo_id NULL = copia de la base
+    del propio sidecar. files_json: [{name, path, size, sha256}]."""
+    __tablename__ = "backup_points"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("backup_jobs.id", ondelete="CASCADE"), nullable=False)
+    run_id = Column(Integer, ForeignKey("backup_job_runs.id", ondelete="SET NULL"), nullable=True)
+    repo_id = Column(Integer, ForeignKey("repos.id", ondelete="SET NULL"), nullable=True)
+    repo_name = Column(String(200), nullable=False)  # se conserva aunque se borre el repo
+    kind = Column(String(12), nullable=False)  # full | incremental
+    chain_id = Column(Integer, nullable=True)  # id del punto completo que inicia la cadena
+    seq = Column(Integer, nullable=False, default=0)
+    chain_label = Column(String(60), nullable=False)  # carpeta de la cadena (local y remota)
+    files_json = Column(Text, nullable=False, default="[]")
+    # Puntas de todas las referencias al crear el punto: el siguiente
+    # incremental incluye solo los commits nuevos desde aqui.
+    refs_json = Column(Text, nullable=True)
+    total_bytes = Column(Integer, nullable=False, default=0)
+    local_deleted = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    job = relationship("BackupJob", back_populates="points")
+    transfers = relationship("BackupTransfer", back_populates="point", cascade="all, delete-orphan")
+
+
+class BackupTransfer(Base):
+    """Envio de un punto a un destino externo, con su verificacion."""
+    __tablename__ = "backup_transfers"
+
+    id = Column(Integer, primary_key=True)
+    point_id = Column(Integer, ForeignKey("backup_points.id", ondelete="CASCADE"), nullable=False)
+    destination_id = Column(Integer, ForeignKey("backup_destinations.id", ondelete="CASCADE"), nullable=False)
+    # ok | error | borrado
+    status = Column(String(12), nullable=False)
+    remote_path = Column(String(500), nullable=True)
+    bytes = Column(Integer, nullable=False, default=0)
+    verified = Column(Boolean, nullable=False, default=False)
+    message = Column(Text, nullable=True)
+    finished_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    point = relationship("BackupPoint", back_populates="transfers")
+    destination = relationship("BackupDestination")
