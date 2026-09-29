@@ -270,3 +270,17 @@ restaurar. Para respaldos incrementales de git: `git bundle create x
 "+refs/*:refs/*"` en orden sobre un repo bare. Si falta alguna punta
 anterior en el clon (force-push, re-clonado), se empieza una cadena
 nueva con un completo. La retencion borra cadenas enteras.
+
+## 19. Un mirror "que solo agrega" se congela tras el primer force-push
+
+Primera version del mirror protegido: `git push` sin `+`, para que un
+force-push en el origen no pise el respaldo. Funciona, pero despues la
+rama del respaldo queda en la version vieja y rechaza para siempre los
+commits nuevos (el respaldo deja de respaldar sin que nadie lo note). Lo
+revelo la prueba de "mirror automatico tras sync". Correcto: guardar la
+punta vieja en una rama aparte (`sidecar-conservado/<rama>-<fecha>`) y
+recien entonces actualizar con `--force-with-lease=<rama>:<punta vieja>`.
+Mismo criterio para los avisos: si algo esperado (una rama borrada que el
+respaldo conserva) deja el estado en "aviso" en cada ejecucion, la gente
+aprende a ignorar los avisos; eso va como informacion, no como aviso.
+

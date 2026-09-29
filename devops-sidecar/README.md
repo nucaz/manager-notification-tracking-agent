@@ -234,6 +234,41 @@ Pruebas de extremo a extremo (WebDAV, SFTP y S3 reales con `rclone serve`,
 cifrado, restauración, caída de un destino y retención):
 `docker compose exec devops-sidecar python tests/test_respaldos_externos.py`
 
+### 3.7 Mirror de respaldo y cuenta colaboradora → principal
+
+En la página de cada repositorio, sección **Mirror de respaldo y
+sincronización con la cuenta principal**:
+
+- **Mirror de respaldo**: copia todas las ramas y etiquetas a *otro*
+  repositorio (GitHub, GitLab, Azure DevOps, Gitea o un repositorio bare
+  en un disco montado), manualmente o después de cada sincronización.
+  - *Protegido* (recomendado): nunca pierde nada. Una rama borrada en el
+    origen se conserva. Si el origen reescribe historial (force-push), la
+    versión anterior queda en `sidecar-conservado/<rama>-<fecha>` y la
+    rama sigue recibiendo commits.
+  - *Exacto* (`git push --mirror`): el destino queda idéntico al origen,
+    borrados incluidos. **Probar** lista qué ramas borraría. Si el origen
+    queda sin ramas, no se envía nada.
+  - No se permite un mirror hacia un repositorio registrado en el sidecar
+    ni hacia el principal de una sincronización.
+- **Colaborador → principal**: si este repositorio es el de una cuenta
+  colaboradora, sube sus commits nuevos al repositorio de la cuenta que
+  compartió el acceso. Por defecto a la rama `sidecar-sync/<rama>` y abre
+  el **Pull Request** (GitHub por API; GitLab con *push options*; en otros
+  servidores se informa para abrirlo a mano). Si el PR ya existe, queda
+  actualizado. En modo *directo* solo sube si es avance rápido; nunca
+  fuerza. Para un repositorio **personal de otra cuenta** hace falta un
+  **token clásico con alcance `repo`**: los tokens de grano fino no
+  acceden a repositorios personales ajenos (**Probar** lo detecta y
+  también avisa si el token solo tiene lectura).
+
+Cada destino Git trabaja en su propio repositorio bare
+(`/data/repos/.sidecar-git-targets/<id>.git`), separado del clon que se
+audita. El token va cifrado y viaja por cabecera, igual que el de GitHub.
+
+Pruebas (repos bare locales como remotos; la API de GitHub y Microsoft
+Graph simuladas): `docker compose exec devops-sidecar python tests/test_git_y_restauracion.py`
+
 ## 4. Seguridad (decisiones deliberadas)
 
 - El dashboard/API (todo menos el webhook) está detrás de **HTTP Basic
@@ -259,6 +294,11 @@ cifrado, restauración, caída de un destino y retención):
   contraseñas) también van cifradas, y la API nunca las devuelve. Para
   SFTP se puede fijar la huella del servidor (`known_hosts`); sin ella
   rclone no verifica la identidad del servidor.
+- Mirror y sincronización con la cuenta principal nunca fuerzan sobre un
+  repositorio de trabajo: el mirror exacto no se permite hacia un
+  repositorio registrado; la sincronización colaborador → principal va a
+  una rama aparte + Pull Request, o directo solo con avance rápido. Una
+  restauración que se sube a Git es atómica y sin forzar.
 - Los comandos de git corren siempre con `subprocess` pasando argumentos
   como lista (nunca un string armado a mano ni `shell=True`) — sin
   riesgo de inyección de comandos aunque la URL de un repo viniera de un

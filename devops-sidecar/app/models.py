@@ -28,6 +28,7 @@ class Repo(Base):
     commit_stats = relationship("CommitStat", back_populates="repo", cascade="all, delete-orphan")
     audit_reports = relationship("AuditReport", back_populates="repo", cascade="all, delete-orphan")
     backup_runs = relationship("BackupRun", back_populates="repo", cascade="all, delete-orphan")
+    git_targets = relationship("GitTarget", back_populates="repo", cascade="all, delete-orphan")
 
 
 class AppSetting(Base):
@@ -259,3 +260,56 @@ class BackupTransfer(Base):
 
     point = relationship("BackupPoint", back_populates="transfers")
     destination = relationship("BackupDestination")
+
+
+# ---------------------------------------------------------------------------
+# Git: mirror de respaldo a otro servidor y colaborador -> principal
+# ---------------------------------------------------------------------------
+class GitTarget(Base):
+    """Otro repositorio Git relacionado con un repo registrado:
+    - purpose='mirror': copia de respaldo en OTRO repositorio (GitHub,
+      GitLab, Azure DevOps, Gitea o un repo bare en un disco montado).
+    - purpose='upstream': el repositorio PRINCIPAL al que una cuenta
+      colaboradora sube sus cambios (a una rama + Pull Request, o directo
+      solo si es avance rapido). Nunca se fuerza ni se usa --mirror aqui.
+    El token va cifrado (crypto_service) y git lo recibe por cabecera."""
+    __tablename__ = "git_targets"
+
+    id = Column(Integer, primary_key=True)
+    repo_id = Column(Integer, ForeignKey("repos.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(120), nullable=False)
+    purpose = Column(String(10), nullable=False)  # mirror | upstream
+    url = Column(String(500), nullable=False)
+    auth_user = Column(String(120), nullable=True)
+    token_enc = Column(Text, nullable=True)
+    # mirror: exacto (--mirror, borra/fuerza como el origen) | protegido (solo agrega)
+    mirror_mode = Column(String(10), nullable=False, default="protegido")
+    # upstream: rama del colaborador (vacia = la rama por defecto) y rama del principal
+    source_branch = Column(String(200), nullable=True)
+    base_branch = Column(String(200), nullable=True)
+    push_mode = Column(String(10), nullable=False, default="pr")  # pr | directo
+    schedule = Column(String(12), nullable=False, default="manual")  # manual | after_sync
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_run_at = Column(DateTime, nullable=True)
+    last_status = Column(String(12), nullable=True)  # ok | aviso | error
+    last_message = Column(Text, nullable=True)
+    last_pr_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    repo = relationship("Repo", back_populates="git_targets")
+    runs = relationship("GitTargetRun", back_populates="target", cascade="all, delete-orphan")
+
+
+class GitTargetRun(Base):
+    __tablename__ = "git_target_runs"
+
+    id = Column(Integer, primary_key=True)
+    target_id = Column(Integer, ForeignKey("git_targets.id", ondelete="CASCADE"), nullable=False)
+    trigger = Column(String(20), nullable=False, default="manual")  # manual | tras_sync
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    status = Column(String(12), nullable=False, default="en_curso")  # en_curso | ok | aviso | error
+    log = Column(Text, nullable=True)
+
+    target = relationship("GitTarget", back_populates="runs")
+

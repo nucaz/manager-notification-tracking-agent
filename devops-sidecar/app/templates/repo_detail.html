@@ -113,6 +113,83 @@
   <a href="/backups" class="btn btn-sm btn-link ps-0 mt-1">Ver historial completo de respaldos &rarr;</a>
 </div>
 
+<div class="card p-3 mt-3" id="gitTargetsCard">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <h6 class="mb-0"><i class="bi bi-git"></i> Mirror de respaldo y sincronización con la cuenta principal</h6>
+    <button class="btn btn-sm btn-primary" id="gtNew"><i class="bi bi-plus-lg"></i> Agregar</button>
+  </div>
+  <div class="form-text mt-1">
+    <strong>Mirror de respaldo</strong>: copia todas las ramas y etiquetas a <em>otro</em> repositorio (GitHub, GitLab, Azure DevOps, Gitea o un repositorio bare en un disco montado).
+    <strong>Colaborador → principal</strong>: si este repositorio es el de una cuenta colaboradora, sube sus commits nuevos al repositorio de la cuenta principal en una rama y abre un Pull Request. Nunca se fuerza ni se usa <code>--mirror</code> sobre el principal.
+  </div>
+  <div id="gtMsg" class="mt-2"></div>
+
+  <form id="gtForm" class="border rounded p-3 mt-2 d-none" autocomplete="off">
+    <h6 id="gtFormTitle">Nuevo</h6>
+    <div class="row g-2">
+      <div class="col-md-4"><label class="form-label" for="gtName">Nombre</label>
+        <input class="form-control" id="gtName" required maxlength="120" placeholder="Mirror GitLab"></div>
+      <div class="col-md-8"><label class="form-label" for="gtPurpose">Tipo</label>
+        <select class="form-select" id="gtPurpose">
+          <option value="mirror">Mirror de respaldo en otro repositorio</option>
+          <option value="upstream">Colaborador → repositorio principal (Pull Request)</option>
+        </select></div>
+      <div class="col-12"><label class="form-label" for="gtUrl">URL del repositorio <span id="gtUrlWhat">de respaldo</span></label>
+        <input class="form-control font-monospace" id="gtUrl" required placeholder="https://github.com/cuenta/repo-respaldo.git">
+        <div class="form-text">https://... de GitHub, GitLab, Azure DevOps o Gitea, o la ruta de un repositorio bare dentro del contenedor (ej. <code>/data/externo/git/proyecto.git</code>). Sin usuario ni token dentro de la URL.</div></div>
+      <div class="col-md-4"><label class="form-label" for="gtUser">Usuario</label>
+        <input class="form-control" id="gtUser" placeholder="automático">
+        <div class="form-text">GitHub: vacío. GitLab: <code>oauth2</code>. Azure DevOps: cualquiera. Gitea: su usuario.</div></div>
+      <div class="col-md-8"><label class="form-label" for="gtToken">Token de acceso</label>
+        <input class="form-control" type="password" id="gtToken" autocomplete="new-password">
+        <div class="form-text">Con permiso de escritura en ese repositorio. Para un repositorio <strong>personal de otra cuenta</strong> donde usted es colaborador use un <strong>token clásico con alcance <code>repo</code></strong>: los de grano fino no acceden a repositorios personales ajenos.</div>
+        <div class="form-check d-none" id="gtClearWrap"><input class="form-check-input" type="checkbox" id="gtClear"><label class="form-check-label" for="gtClear">Quitar el token guardado</label></div></div>
+    </div>
+
+    <div id="gtMirrorOpts" class="mt-2">
+      <label class="form-label">Modo del mirror</label>
+      <div class="form-check"><input class="form-check-input" type="radio" name="gtMode" id="gtModeProt" value="protegido" checked>
+        <label class="form-check-label" for="gtModeProt"><strong>Protegido (recomendado)</strong>: solo agrega. Si en el origen se borra una rama o se reescribe el historial (force-push), el respaldo conserva la versión anterior.</label></div>
+      <div class="form-check"><input class="form-check-input" type="radio" name="gtMode" id="gtModeExact" value="exacto">
+        <label class="form-check-label" for="gtModeExact"><strong>Exacto</strong> (<code>git push --mirror</code>): el destino queda idéntico al origen. <span class="text-danger">También borra y sobrescribe en el destino</span>; un borrado accidental en el origen se copia al respaldo.</label></div>
+    </div>
+
+    <div id="gtUpstreamOpts" class="row g-2 mt-1 d-none">
+      <div class="col-md-4"><label class="form-label" for="gtSrc">Rama del colaborador</label>
+        <input class="form-control font-monospace" id="gtSrc" placeholder="la rama por defecto"></div>
+      <div class="col-md-4"><label class="form-label" for="gtBase">Rama del principal (base)</label>
+        <input class="form-control font-monospace" id="gtBase" placeholder="la rama por defecto"></div>
+      <div class="col-md-4"><label class="form-label" for="gtPush">Cómo subir</label>
+        <select class="form-select" id="gtPush">
+          <option value="pr">Rama sidecar-sync/… + Pull Request (recomendado)</option>
+          <option value="directo">Directo a la rama base (solo avance rápido)</option>
+        </select></div>
+      <div class="col-12 form-text">Pull Request: la cuenta principal revisa y aprueba; funciona aunque la rama base esté protegida. Directo: solo si el principal no tiene commits que falten en el colaborador, y nunca forzando.</div>
+    </div>
+
+    <div class="row g-2 mt-1">
+      <div class="col-md-6"><label class="form-label" for="gtSchedule">Cuándo</label>
+        <select class="form-select" id="gtSchedule">
+          <option value="after_sync">Automático, después de cada sincronización de este repositorio</option>
+          <option value="manual">Solo manual (botón Ejecutar)</option>
+        </select></div>
+      <div class="col-md-6 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" id="gtEnabled" checked>
+        <label class="form-check-label" for="gtEnabled">Activo</label></div></div>
+    </div>
+    <div class="mt-3 d-flex gap-2">
+      <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="gtCancel">Cancelar</button>
+    </div>
+  </form>
+
+  <div class="table-responsive mt-2">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Nombre</th><th>Tipo</th><th>Cuándo</th><th>Último resultado</th><th></th></tr></thead>
+      <tbody id="gtTable"><tr><td colspan="5" class="text-muted">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card p-3 mt-3 asistente-widget" data-contexto="repo_detail" data-repo-id="{{ repo.id }}">
   <h6 class="mb-2"><i class="bi bi-stars"></i> Preguntar a la IA sobre "{{ repo.name }}"</h6>
   <div class="input-group input-group-sm">
@@ -203,5 +280,132 @@ document.getElementById('btnAuditNow').addEventListener('click', async (e) => {
     btn.innerHTML = originalText;
   }
 });
+</script>
+
+<script>
+(() => {
+  const REPO_ID = {{ repo.id }};
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (iso) => iso ? new Date(iso + 'Z').toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '';
+  const $ = (id) => document.getElementById(id);
+  const ST = { ok: 'success', aviso: 'warning', error: 'danger', en_curso: 'info' };
+  let TARGETS = []; let editing = null;
+
+  const show = (text, kind = 'success') => { $('gtMsg').innerHTML = `<div class="alert alert-${kind} py-2 small mb-0" style="white-space: pre-wrap">${esc(text)}</div>`; };
+  const mode = () => document.querySelector('input[name="gtMode"]:checked').value;
+
+  function togglePurpose() {
+    const up = $('gtPurpose').value === 'upstream';
+    $('gtMirrorOpts').classList.toggle('d-none', up);
+    $('gtUpstreamOpts').classList.toggle('d-none', !up);
+    $('gtUrlWhat').textContent = up ? 'principal (de la cuenta que compartió el acceso)' : 'de respaldo';
+    $('gtUrl').placeholder = up ? 'https://github.com/cuenta-principal/proyecto.git' : 'https://github.com/cuenta/repo-respaldo.git';
+  }
+
+  function openForm(t) {
+    editing = t ? t.id : null;
+    $('gtFormTitle').textContent = t ? `Editar: ${t.name}` : 'Nuevo';
+    $('gtName').value = t ? t.name : '';
+    $('gtPurpose').value = t ? t.purpose : 'mirror';
+    $('gtUrl').value = t ? t.url : '';
+    $('gtUser').value = t ? (t.auth_user || '') : '';
+    $('gtToken').value = '';
+    $('gtToken').placeholder = t && t.token_set ? 'Configurado - dejar vacío para conservarlo' : '';
+    $('gtClearWrap').classList.toggle('d-none', !(t && t.token_set));
+    $('gtClear').checked = false;
+    (t && t.mirror_mode === 'exacto' ? $('gtModeExact') : $('gtModeProt')).checked = true;
+    $('gtSrc').value = t ? (t.source_branch || '') : '';
+    $('gtBase').value = t ? (t.base_branch || '') : '';
+    $('gtPush').value = t ? t.push_mode : 'pr';
+    $('gtSchedule').value = t ? t.schedule : 'after_sync';
+    $('gtEnabled').checked = t ? t.enabled : true;
+    togglePurpose();
+    $('gtForm').classList.remove('d-none');
+    $('gtName').focus();
+  }
+
+  async function load() {
+    TARGETS = await (await fetch(`/api/repos/${REPO_ID}/git-targets`)).json();
+    $('gtTable').innerHTML = TARGETS.length ? TARGETS.map((t) => {
+      const kind = t.purpose === 'mirror'
+        ? `<span class="badge bg-${t.mirror_mode === 'exacto' ? 'danger' : 'primary'}">Mirror ${t.mirror_mode}</span>`
+        : `<span class="badge bg-success">Colaborador → principal</span> <span class="small text-muted">${t.push_mode === 'pr' ? 'Pull Request' : 'directo'}</span>`;
+      const last = t.running ? '<span class="badge bg-info">ejecutando…</span>'
+        : t.last_status ? `<span class="badge bg-${ST[t.last_status] || 'secondary'}">${esc(t.last_status)}</span> <span class="small text-muted">${esc(fmt(t.last_run_at))}</span>
+            <div class="small">${esc(t.last_message)}</div>${t.last_pr_url ? `<a class="small" href="${esc(t.last_pr_url)}" target="_blank" rel="noopener">Ver Pull Request</a>` : ''}`
+        : '<span class="small text-muted">nunca</span>';
+      return `<tr>
+        <td><strong>${esc(t.name)}</strong> ${t.enabled ? '' : '<span class="badge bg-secondary">pausado</span>'}<div class="small font-monospace text-muted text-break">${esc(t.url)}</div></td>
+        <td>${kind}</td>
+        <td class="small">${t.schedule === 'after_sync' ? 'tras cada sync' : 'manual'}</td>
+        <td style="max-width: 28rem">${last}</td>
+        <td class="text-end text-nowrap">
+          <button class="btn btn-sm btn-outline-primary" data-act="test" data-id="${t.id}">Probar</button>
+          <button class="btn btn-sm btn-outline-success" data-act="run" data-id="${t.id}">Ejecutar</button>
+          <button class="btn btn-sm btn-outline-secondary" data-act="log" data-id="${t.id}" title="Historial"><i class="bi bi-list-ul"></i></button>
+          <button class="btn btn-sm btn-outline-secondary" data-act="edit" data-id="${t.id}" title="Editar"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${t.id}" title="Eliminar"><i class="bi bi-trash"></i></button>
+        </td></tr>`;
+    }).join('') : '<tr><td colspan="5" class="text-muted small">Sin mirrors ni cuenta principal configurados.</td></tr>';
+    return TARGETS.some((t) => t.running);
+  }
+
+  $('gtPurpose').addEventListener('change', togglePurpose);
+  $('gtNew').addEventListener('click', () => openForm(null));
+  $('gtCancel').addEventListener('click', () => $('gtForm').classList.add('d-none'));
+
+  $('gtForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = { name: $('gtName').value, purpose: $('gtPurpose').value, url: $('gtUrl').value, auth_user: $('gtUser').value,
+      token: $('gtToken').value, clear_token: $('gtClear').checked, mirror_mode: mode(), source_branch: $('gtSrc').value,
+      base_branch: $('gtBase').value, push_mode: $('gtPush').value, schedule: $('gtSchedule').value, enabled: $('gtEnabled').checked };
+    if (payload.purpose === 'mirror' && payload.mirror_mode === 'exacto' &&
+        !confirm('Mirror EXACTO: el repositorio de destino quedará idéntico al origen y se BORRARÁ en él todo lo que no exista en el origen. ¿Continuar?')) return;
+    if (!confirm(editing ? '¿Guardar los cambios?' : '¿Guardar este destino Git?')) return;
+    const res = await fetch(editing ? `/api/git-targets/${editing}` : `/api/repos/${REPO_ID}/git-targets`, {
+      method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { show(data.detail || 'No se pudo guardar.', 'danger'); return; }
+    $('gtForm').classList.add('d-none');
+    show(`"${data.name}" guardado. Use "Probar" para comprobar el acceso antes de ejecutarlo.`);
+    load();
+  });
+
+  $('gtTable').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const t = TARGETS.find((x) => x.id === Number(btn.dataset.id));
+    const act = btn.dataset.act;
+    if (act === 'edit') { openForm(t); return; }
+    if (act === 'del') {
+      if (!confirm(`¿Eliminar "${t.name}"? El repositorio remoto no se modifica.`)) return;
+      const res = await fetch(`/api/git-targets/${t.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      show(data.message || data.detail, res.ok ? 'success' : 'danger'); load(); return;
+    }
+    if (act === 'log') {
+      const runs = await (await fetch(`/api/git-targets/${t.id}/runs`)).json();
+      show(runs.length ? runs.slice(0, 5).map((r) => `== ${fmt(r.started_at)} (${r.trigger}) ${r.status}\n${r.log}`).join('\n\n') : 'Sin ejecuciones todavía.', 'light');
+      return;
+    }
+    if (act === 'run') {
+      const what = t.purpose === 'mirror'
+        ? (t.mirror_mode === 'exacto' ? `Mirror EXACTO hacia ${t.url}: el destino quedará idéntico al origen (incluye borrados). ¿Ejecutar?` : `¿Enviar el mirror a ${t.url}?`)
+        : `¿Subir los commits nuevos al repositorio principal ${t.url}${t.push_mode === 'pr' ? ' y abrir el Pull Request' : ''}?`;
+      if (!confirm(what)) return;
+    }
+    btn.disabled = true;
+    const res = await fetch(`/api/git-targets/${t.id}/${act}`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    show(data.message || data.detail || 'Error de red.', res.ok && data.ok !== false ? (act === 'test' ? 'success' : 'info') : 'danger');
+    btn.disabled = false;
+    if (act === 'run') {
+      const poll = setInterval(async () => { if (!(await load())) clearInterval(poll); }, 2500);
+      setTimeout(load, 800);
+    }
+  });
+
+  load();
+})();
 </script>
 {% endblock %}

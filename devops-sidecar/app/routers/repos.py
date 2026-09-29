@@ -11,7 +11,7 @@ from .. import models, schemas, scheduler, scoring
 from ..auth import require_dashboard_auth
 from ..config import settings
 from ..database import get_db
-from ..services import ai_client, audit_engine, backup_service, crypto_service, git_service
+from ..services import ai_client, audit_engine, backup_service, crypto_service, git_service, git_targets
 
 router = APIRouter(prefix="/api/repos", tags=["repos"], dependencies=[Depends(require_dashboard_auth)])
 
@@ -379,6 +379,8 @@ def delete_repo(repo_id: int, db: Session = Depends(get_db)):
     if not repo:
         raise HTTPException(status_code=404, detail="Repositorio no encontrado.")
     scheduler.unschedule_repo_sync(repo_id)
+    for target in repo.git_targets:
+        git_targets.remove_workspace(target)
     db.delete(repo)
     db.commit()
     return None

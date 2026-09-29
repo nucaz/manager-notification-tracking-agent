@@ -48,6 +48,10 @@ def sync_repo_job(repo_id: int) -> None:
         logger.info("Sync %s: %s", repo.name, repo.last_sync_status)
     finally:
         db.close()
+    if ok:
+        from .services import git_targets  # import diferido, igual que backup_jobs
+
+        git_targets.run_after_sync(repo_id)
 
 
 def schedule_repo_sync(repo: models.Repo) -> None:

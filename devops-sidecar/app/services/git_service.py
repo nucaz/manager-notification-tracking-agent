@@ -34,7 +34,14 @@ def auth_env(repo: models.Repo) -> dict | None:
     token = repo_token(repo)
     if not token or not repo.github_url.startswith("https://"):
         return None
-    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    return header_env("x-access-token", token)
+
+
+def header_env(user: str, token: str) -> dict:
+    """Entorno de git con la cabecera Authorization: Basic user:token.
+    Sirve para GitHub (x-access-token), GitLab (oauth2), Azure DevOps
+    (cualquier usuario + PAT) y Gitea (usuario + token)."""
+    basic = base64.b64encode(f"{user or 'x-access-token'}:{token}".encode()).decode()
     env = dict(os.environ)
     env.update({
         "GIT_TERMINAL_PROMPT": "0",
@@ -43,6 +50,11 @@ def auth_env(repo: models.Repo) -> dict | None:
         "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
     })
     return env
+
+
+def plain_env() -> dict:
+    """Entorno sin credenciales, que falla en vez de pedir usuario/clave."""
+    return dict(os.environ, GIT_TERMINAL_PROMPT="0")
 
 
 def strip_credentials(url: str) -> str:
