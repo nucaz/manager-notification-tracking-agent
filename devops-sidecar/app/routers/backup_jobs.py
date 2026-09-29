@@ -84,6 +84,15 @@ def _apply_destination(db: Session, dest: models.BackupDestination, payload: Des
         merged["drive_id"] = info["drive_id"]
         merged["drive_type"] = info["drive_type"]
         dest.account_label = info["account"] or dest.account_label
+    identity_changed = any(incoming.get(k) != previous.get(k) for k in ("tenant", "client_id", "target_type", "target"))
+    if payload.kind == "onedrive_app" and (not incoming.get("drive_id") or identity_changed):
+        try:
+            info = rclone_service.discover_onedrive_app(merged)
+        except rclone_service.RcloneError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        merged["drive_id"] = info["drive_id"]
+        merged["drive_type"] = info["drive_type"]
+        dest.account_label = info["account"] or dest.account_label
     if merged.get("drive_type") == "auto":
         merged["drive_type"] = "personal"
     dest.name = payload.name.strip()
@@ -91,7 +100,7 @@ def _apply_destination(db: Session, dest: models.BackupDestination, payload: Des
     dest.remote_path = payload.remote_path.strip()
     dest.encrypt = payload.encrypt
     dest.enabled = payload.enabled
-    if payload.kind != "onedrive":
+    if payload.kind not in ("onedrive", "onedrive_app"):
         dest.account_label = merged.get("user") or merged.get("host") or merged.get("access_key_id") or dest.account_label
     rclone_service.store_config(dest, merged)
 

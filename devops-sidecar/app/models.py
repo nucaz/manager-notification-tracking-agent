@@ -313,3 +313,26 @@ class GitTargetRun(Base):
 
     target = relationship("GitTarget", back_populates="runs")
 
+
+# ---------------------------------------------------------------------------
+# Restauraciones (desde el servidor o desde un destino externo)
+# ---------------------------------------------------------------------------
+class RestoreRun(Base):
+    """Una restauracion o prueba de restauracion. Trabaja con la carpeta
+    de la cadena y su manifest.json, no con las filas de BackupPoint: asi
+    tambien sirve cuando se perdio el servidor y solo queda el destino
+    externo. Los archivos generados viven en backups_path/restores/<id>."""
+    __tablename__ = "restore_runs"
+
+    id = Column(Integer, primary_key=True)
+    destination_id = Column(Integer, ForeignKey("backup_destinations.id", ondelete="SET NULL"), nullable=True)
+    source_label = Column(String(200), nullable=False)  # "Servidor" o el nombre del destino
+    chain_path = Column(String(500), nullable=False)  # trabajo/repo/cadena
+    repo_name = Column(String(200), nullable=False)
+    seq = Column(Integer, nullable=False, default=0)
+    mode = Column(String(12), nullable=False)  # verificar | descargar | subir
+    status = Column(String(12), nullable=False, default="en_curso")  # en_curso | ok | error
+    log = Column(Text, nullable=True)
+    outputs_json = Column(Text, nullable=False, default="[]")  # [{name, size}]
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime, nullable=True)

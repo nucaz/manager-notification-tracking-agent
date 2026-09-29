@@ -13,7 +13,7 @@
 
 <div class="card p-3 mb-3">
   <h5>Puntos de restauración</h5>
-  <div class="form-text mb-2">Agrupados por cadena: el completo (00) y sus incrementales. Para restaurar se necesita el completo y todos los incrementales anteriores al punto elegido; cada carpeta incluye <code>RESTAURAR.txt</code> con los pasos.</div>
+  <div class="form-text mb-2">Agrupados por cadena: el completo (00) y sus incrementales. Para restaurar se necesita el completo y todos los incrementales anteriores al punto elegido: el botón <strong>Restaurar</strong> los aplica en orden y verifica cada archivo. Cada carpeta incluye además <code>RESTAURAR.txt</code> para hacerlo a mano, sin el sidecar.</div>
   <div id="points" class="small text-muted">Cargando…</div>
 </div>
 
@@ -49,6 +49,7 @@ async function load() {
         <td class="text-nowrap">${esc(fmt(p.created_at))}</td>
         <td>${p.files.map((f) => `<div class="font-monospace" title="SHA-256 ${esc(f.sha256)}">${esc(f.name)} <span class="text-muted">${kb(f.size)}</span></div>`).join('')}</td>
         <td>${p.transfers.length ? p.transfers.map((t) => `<span class="badge bg-${TR[t.status]?.[0] || 'secondary'}" title="${esc(t.message || '')}"><i class="bi bi-${TR[t.status]?.[1] || 'dot'}"></i> ${esc(t.destination)}${t.verified && t.status === 'ok' ? ' ✓' : ''}</span>`).join(' ') : '<span class="text-muted">solo servidor</span>'}</td>
+        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="/backups/restaurar?point_id=${p.id}" title="Probar, descargar o subir este punto"><i class="bi bi-arrow-counterclockwise"></i> Restaurar</a></td>
       </tr>`).join('')}</tbody></table></div>`;
   }).join('');
   document.getElementById('points').innerHTML = html || 'Todavía no hay puntos de restauración. Use "Ejecutar ahora" o espere a la programación.';

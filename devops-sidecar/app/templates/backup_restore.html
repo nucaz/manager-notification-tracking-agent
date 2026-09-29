@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Restaurar{% endblock %}
+{% block content %}
+{% include "_backup_tabs.html" %}
+<h2 class="mb-2">Restaurar</h2>
+<div class="alert alert-light border small">
+  Recupera un punto (el completo y sus incrementales, en orden) desde el servidor o desde un destino externo, aunque esté cifrado.
+  Antes de reconstruir se verifica el SHA-256 de cada archivo. <strong>Probar restauración</strong> reconstruye y comprueba el
+  repositorio sin dejar nada: úselo cada tanto para saber que sus respaldos sirven. Si perdió el servidor, instale el sidecar,
+  cree el destino con las mismas credenciales (y contraseña de cifrado) y use <strong>Explorar</strong>.
+</div>
+<div id="msg"></div>
+
+<div class="card p-3 mb-3 d-none" id="pointCard">
+  <h5 class="mb-1">Punto seleccionado</h5>
+  <div id="pointInfo" class="small mb-2"></div>
+  <label class="form-label" for="pointSource">Leer desde</label>
+  <select class="form-select" id="pointSource"></select>
+</div>
+
+<div class="card p-3 mb-3">
+  <h5>Explorar un destino externo</h5>
+  <div class="row g-2 align-items-end">
+    <div class="col-md-8"><label class="form-label" for="exDest">Destino</label><select class="form-select" id="exDest"></select></div>
+    <div class="col-md-4"><button class="btn btn-outline-primary w-100" id="btnExplore"><i class="bi bi-search"></i> Explorar</button></div>
+  </div>
+  <div id="chains" class="mt-3"></div>
+</div>
+
+<div class="card p-3 mb-3 d-none" id="actionCard">
+  <h5>Acción</h5>
+  <div id="actionWhat" class="small mb-2"></div>
+  <div class="d-flex flex-wrap gap-3 mb-2">
+    <div class="form-check"><input class="form-check-input" type="radio" name="rMode" id="rmV" value="verificar" checked>
+      <label class="form-check-label" for="rmV"><strong>Probar restauración</strong> (no deja archivos)</label></div>
+    <div class="form-check"><input class="form-check-input" type="radio" name="rMode" id="rmD" value="descargar">
+      <label class="form-check-label" for="rmD"><strong>Preparar descarga</strong> (repositorio git + .zip de archivos)</label></div>
+    <div class="form-check" id="rmSWrap"><input class="form-check-input" type="radio" name="rMode" id="rmS" value="subir">
+      <label class="form-check-label" for="rmS"><strong>Subir a un repositorio Git</strong></label></div>
+  </div>
+  <div id="pushFields" class="row g-2 d-none">
+    <div class="col-12"><label class="form-label" for="pUrl">URL del repositorio (recomendado: uno nuevo y vacío)</label>
+      <input class="form-control font-monospace" id="pUrl" placeholder="https://github.com/cuenta/proyecto-restaurado.git"></div>
+    <div class="col-md-4"><label class="form-label" for="pUser">Usuario</label><input class="form-control" id="pUser" placeholder="automático"></div>
+    <div class="col-md-8"><label class="form-label" for="pToken">Token con permiso de escritura</label>
+      <input class="form-control" type="password" id="pToken" autocomplete="new-password">
+      <div class="form-text">Se usa solo durante esta restauración y no se guarda. Nunca se fuerza: si el repositorio ya tiene ramas con otro historial, se detiene.</div></div>
+  </div>
+  <button class="btn btn-primary mt-3" id="btnStart"><i class="bi bi-arrow-counterclockwise"></i> Iniciar</button>
+</div>
+
+<div class="card p-3">
+  <h5>Historial de restauraciones</h5>
+  <div class="form-text mb-2">Los archivos para descargar se borran solos a los 3 días.</div>
+  <div id="history" class="small text-muted">Cargando…</div>
+</div>
+
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = (iso) => iso ? new Date(iso + 'Z').toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '';
+const kb = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).toFixed(1) + ' KB';
+const $ = (id) => document.getElementById(id);
+const ST = { ok: 'success', error: 'danger', en_curso: 'info' };
+const MODES = { verificar: 'prueba', descargar: 'descarga', subir: 'subida a Git' };
+let selection = null;  // { point_id } o { destination_id, chain_path, seq }
+
+function show(text, kind = 'success') { $('msg').innerHTML = `<div class="alert alert-${kind}">${esc(text)}</div>`; window.scrollTo(0, 0); }
+
+function select(sel, text, isDb) {
+  selection = sel;
+  $('actionWhat').innerHTML = text;
+  $('rmSWrap').classList.toggle('d-none', !!isDb);
+  if (isDb && $('rmS').checked) $('rmV').checked = true;
+  $('pushFields').classList.toggle('d-none', !$('rmS').checked);
+  $('actionCard').classList.remove('d-none');
+  $('actionCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+document.querySelectorAll('input[name="rMode"]').forEach((r) => r.addEventListener('change', () => $('pushFields').classList.toggle('d-none', !$('rmS').checked)));
+
+async function loadDestinations() {
+  const dests = await (await fetch('/api/backup-destinations')).json();
+  $('exDest').innerHTML = dests.length ? dests.map((d) => `<option value="${d.id}">${esc(d.name)} — ${esc(d.kind_label)}${d.encrypt ? ' (cifrado)' : ''}</option>`).join('')
+    : '<option value="">No hay destinos: créelos en "Destinos externos"</option>';
+}
+
+$('btnExplore').addEventListener('click', async () => {
+  const id = $('exDest').value;
+  if (!id) return;
+  $('chains').innerHTML = '<div class="text-muted small">Listando el destino…</div>';
+  const res = await fetch(`/api/backup-destinations/${id}/explorar`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { $('chains').innerHTML = `<div class="alert alert-danger">${esc(data.detail || 'No se pudo explorar.')}</div>`; return; }
+  if (!data.chains.length) { $('chains').innerHTML = '<div class="text-muted small">No se encontraron respaldos en ese destino.</div>'; return; }
+  $('chains').innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Trabajo</th><th>Repositorio</th><th>Cadena</th><th>Punto</th><th></th></tr></thead><tbody>
+    ${data.chains.map((c, i) => `<tr>
+      <td class="small">${esc(c.job)}</td>
+      <td>${c.is_db ? 'Base del sidecar' : esc(c.repo)}</td>
+      <td class="font-monospace small">${esc(c.chain_label)}${c.has_manifest ? '' : ' <span class="badge bg-warning text-dark" title="Sin manifest.json">sin manifest</span>'}</td>
+      <td><select class="form-select form-select-sm" id="seq_${i}">${c.points.map((p) => `<option value="${p.seq}" ${p === c.points[c.points.length - 1] ? 'selected' : ''}>${p.seq === 0 ? 'Completo' : 'Incremental ' + p.seq} (${kb(p.size)})</option>`).join('')}</select></td>
+      <td><button class="btn btn-sm btn-outline-primary" data-i="${i}">Elegir</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+  $('chains').querySelectorAll('button[data-i]').forEach((b) => b.addEventListener('click', () => {
+    const c = data.chains[Number(b.dataset.i)];
+    const seq = Number($(`seq_${b.dataset.i}`).value);
+    $('pointCard').classList.add('d-none');
+    select({ destination_id: Number(id), chain_path: c.path, seq },
+      `<strong>${esc(c.is_db ? 'Base del sidecar' : c.repo)}</strong>, cadena <span class="font-monospace">${esc(c.chain_label)}</span>, punto ${seq === 0 ? 'completo' : '#' + seq} — desde <strong>${esc(data.destination)}</strong>`, c.is_db);
+  }));
+});
+
+$('btnStart').addEventListener('click', async () => {
+  if (!selection) return;
+  const mode = document.querySelector('input[name="rMode"]:checked').value;
+  const body = { mode, ...selection };
+  if (selection.point_id) body.source = $('pointSource').value;
+  if (mode === 'subir') {
+    Object.assign(body, { push_url: $('pUrl').value, push_user: $('pUser').value, push_token: $('pToken').value });
+    if (!confirm(`¿Subir el repositorio restaurado a ${body.push_url}? No se fuerza nada: si ya tiene ramas con otro historial, se detiene.`)) return;
+  } else if (!confirm(mode === 'verificar' ? '¿Probar la restauración de este punto?' : '¿Preparar la descarga de este punto?')) return;
+  $('btnStart').disabled = true;
+  const res = await fetch('/api/restores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  $('btnStart').disabled = false;
+  $('pToken').value = '';
+  show(data.message || data.detail || 'Error de red.', res.ok ? 'info' : 'danger');
+  loadHistory();
+});
+
+async function loadHistory() {
+  const rows = await (await fetch('/api/restores')).json();
+  $('history').innerHTML = rows.length ? rows.map((r) => `
+    <details class="mb-2" ${r.status === 'en_curso' ? 'open' : ''}><summary>
+      <span class="badge bg-${ST[r.status] || 'secondary'}">${esc(r.status)}</span>
+      #${r.id} ${esc(fmt(r.created_at))} — ${esc(MODES[r.mode] || r.mode)} de <strong>${esc(r.repo === '_sidecar_db' ? 'base del sidecar' : r.repo)}</strong>
+      punto ${r.seq === 0 ? 'completo' : '#' + r.seq} desde ${esc(r.source)}</summary>
+      ${r.outputs.map((o) => `<a class="btn btn-sm btn-success mt-1 me-1" href="/api/restores/${r.id}/archivo/${encodeURIComponent(o.name)}"><i class="bi bi-download"></i> ${esc(o.name)} (${kb(o.size)})</a>`).join('')}
+      <pre class="bg-light p-2 small mb-0 mt-1" style="white-space: pre-wrap">${esc(r.log || 'En curso…')}</pre></details>`).join('')
+    : 'Todavía no hay restauraciones.';
+  if (rows.some((r) => r.status === 'en_curso')) setTimeout(loadHistory, 2500);
+}
+
+(async () => {
+  await loadDestinations();
+  loadHistory();
+  const pid = new URLSearchParams(location.search).get('point_id');
+  if (!pid) return;
+  const res = await fetch(`/api/backup-points/${encodeURIComponent(pid)}/sources`);
+  if (!res.ok) { show('Ese punto ya no existe.', 'warning'); return; }
+  const data = await res.json();
+  const p = data.point;
+  $('pointInfo').innerHTML = `Trabajo <strong>${esc(p.job)}</strong> — <strong>${esc(p.is_db ? 'Base del sidecar' : p.repo)}</strong>, cadena <span class="font-monospace">${esc(p.chain_label)}</span>, ${p.seq === 0 ? 'completo' : 'incremental #' + p.seq} del ${esc(fmt(p.created_at))}`;
+  $('pointSource').innerHTML = data.sources.length ? data.sources.map((s) => `<option value="${esc(s.source)}">${esc(s.label)}</option>`).join('')
+    : '<option value="">No está en el servidor ni confirmado en ningún destino</option>';
+  $('pointCard').classList.remove('d-none');
+  if (data.sources.length) select({ point_id: p.id }, 'El punto seleccionado arriba.', p.is_db);
+})();
+</script>
+{% endblock %}

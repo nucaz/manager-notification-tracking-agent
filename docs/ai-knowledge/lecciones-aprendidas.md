@@ -284,3 +284,11 @@ Mismo criterio para los avisos: si algo esperado (una rama borrada que el
 respaldo conserva) deja el estado en "aviso" en cada ejecucion, la gente
 aprende a ignorar los avisos; eso va como informacion, no como aviso.
 
+## 20. Restaurar desde el manifest, no desde la base
+
+El caso real de una restauracion es haber perdido el servidor, y con el
+la base que sabe que puntos hay. La restauracion lee la carpeta de la
+cadena y su `manifest.json` (con SHA-256), y el destino se puede explorar
+sin la base. Subir un repo restaurado va con `git push --atomic`: sin
+eso, si `main` era rechazado igual se subian las etiquetas al repositorio
+equivocado.

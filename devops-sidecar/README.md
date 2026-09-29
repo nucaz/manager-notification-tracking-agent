@@ -190,6 +190,7 @@ tipo:
 | Tipo | Cómo se autoriza |
 |---|---|
 | OneDrive personal y Microsoft 365 (varias cuentas) | En un PC con navegador: `rclone authorize "onedrive"`, iniciar sesión con la cuenta y pegar el JSON. La unidad y la cuenta se detectan solas |
+| Microsoft 365 con aplicación aprobada por el administrador (OneDrive de un usuario o biblioteca de SharePoint) | Registrar una aplicación en Entra ID con permiso **de aplicación** `Files.ReadWrite.All` (OneDrive) o `Sites.ReadWrite.All` / `Sites.Selected` (SharePoint) y consentimiento del administrador. Se cargan tenant, ID de aplicación, secreto y el correo o la URL del sitio. No depende de una sesión de usuario: solo vence el secreto |
 | Google Drive | `rclone authorize "drive"` y pegar el JSON |
 | S3 (AWS, Backblaze B2, Wasabi, R2, MinIO) | Access key y secret; en S3 con *object lock* los respaldos quedan inmutables |
 | SFTP | Usuario y contraseña o llave; recomendado pegar la huella (`ssh-keyscan`) |
@@ -229,6 +230,27 @@ git clone restaurado.git trabajo
 
 Si el destino está cifrado, descargar primero con rclone usando un remoto
 `crypt` con la misma contraseña (y la segunda contraseña, si se usó).
+
+**Respaldos → Restaurar**: aplica el completo y los incrementales en orden
+hasta el punto elegido, desde el servidor o desde cualquier destino
+(también cifrado). Antes verifica el SHA-256 de cada archivo contra el
+`manifest.json`, y después corre `git fsck`. Tres modos:
+
+- **Probar restauración**: reconstruye y comprueba, sin dejar archivos.
+  Conviene hacerlo cada tanto: un respaldo que nunca se probó no es un
+  respaldo.
+- **Preparar descarga**: un `.git.tar.gz` con el repositorio completo
+  (todas las ramas y etiquetas) y un `.zip` con los archivos de la rama
+  principal. Se borran solos a los 3 días.
+- **Subir a un repositorio Git** (idealmente uno nuevo y vacío), con
+  `git push --atomic` y sin forzar: si el destino tiene ramas con otro
+  historial no se sube nada. El token se usa solo en memoria.
+
+Si se perdió el servidor: instalar el sidecar, crear el destino con las
+mismas credenciales (y la misma contraseña de cifrado) y usar
+**Explorar**, que lista las cadenas del destino sin necesitar la base
+anterior. La copia de `sidecar.db` también se puede verificar y descargar
+desde ahí.
 
 Pruebas de extremo a extremo (WebDAV, SFTP y S3 reales con `rclone serve`,
 cifrado, restauración, caída de un destino y retención):

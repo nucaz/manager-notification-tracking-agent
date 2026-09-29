@@ -256,6 +256,11 @@ def backup_job_detail_page(request: Request, job_id: int, db: Session = Depends(
     return templates.TemplateResponse("backup_job_detail.html", {"request": request, "job": job})
 
 
+@router.get("/backups/restaurar", response_class=HTMLResponse)
+def backup_restore_page(request: Request):
+    return templates.TemplateResponse("backup_restore.html", {"request": request})
+
+
 @router.get("/analitica", response_class=HTMLResponse)
 def analitica_page(request: Request, dias: int = 30, db: Session = Depends(get_db)):
     dias = max(7, min(dias, 180))

@@ -7,7 +7,7 @@
   <button class="btn btn-primary" id="btnNew"><i class="bi bi-plus-lg"></i> Nuevo destino</button>
 </div>
 <div class="alert alert-light border small">
-  Adonde se envían los respaldos, fuera de este servidor: OneDrive (personal o Microsoft 365, varias cuentas),
+  Adonde se envían los respaldos, fuera de este servidor: OneDrive (personal o Microsoft 365, varias cuentas, o con una aplicación aprobada por el administrador),
   Google Drive, S3/Backblaze/Wasabi, SFTP, carpetas compartidas de Windows o NAS, Nextcloud y discos USB.
   Las credenciales se guardan cifradas y nunca se vuelven a mostrar. Un destino se usa desde un
   <a href="/backups/trabajos">trabajo programado</a>.
@@ -30,6 +30,7 @@
         <input class="form-control" name="remote_path" required value="devops-sidecar">
         <div class="form-text" id="pathHelp"></div></div>
     </div>
+    <div class="alert alert-info small py-2 mt-2 mb-0 d-none" id="kindHelp"></div>
     <div class="row g-2 mt-1" id="kindFields"></div>
     <div class="border rounded p-2 mt-3">
       <div class="form-check"><input class="form-check-input" type="checkbox" name="encrypt" id="fEncrypt">
@@ -83,6 +84,8 @@ function renderKind(dest) {
   const kind = document.getElementById('kindSelect').value;
   const spec = KINDS[kind];
   document.getElementById('pathHelp').textContent = spec.path_help || '';
+  document.getElementById('kindHelp').textContent = spec.help || '';
+  document.getElementById('kindHelp').classList.toggle('d-none', !spec.help);
   document.getElementById('kindFields').innerHTML = spec.fields.map((f) => fieldHtml(f, dest)).join('');
   document.getElementById('cryptFields').innerHTML = CRYPT.map((f) => fieldHtml(f, dest)).join('');
 }

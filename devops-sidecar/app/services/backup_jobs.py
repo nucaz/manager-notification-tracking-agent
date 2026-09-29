@@ -266,6 +266,8 @@ def create_db_point(db: Session, job: models.BackupJob, run: models.BackupJobRun
         "Los tokens y claves dentro estan cifrados: hace falta el mismo CREDENTIALS_ENC_KEY del .env.\n",
         encoding="utf-8")
     entry = {"name": gz.name, "size": gz.stat().st_size, "sha256": _sha256(gz)}
+    (folder / "manifest.json").write_text(json.dumps({"repo": DB_KEY, "points": [
+        {"seq": 0, "kind": "full", "created_at": datetime.utcnow().isoformat(), "files": [entry]}]}, indent=2), encoding="utf-8")
     point = models.BackupPoint(job_id=job.id, run_id=run.id, repo_id=None, repo_name=DB_KEY, kind="full", seq=0,
                                chain_label=stamp, files_json=json.dumps([entry]), total_bytes=entry["size"])
     db.add(point)

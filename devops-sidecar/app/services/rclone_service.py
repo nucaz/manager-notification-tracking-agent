@@ -17,10 +17,12 @@ rclone y la contrasena (ver README, "Restaurar sin el sidecar").
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -48,6 +50,25 @@ KINDS = {
             {"key": "client_id", "label": "Client ID propio (opcional)", "type": "text",
              "help": "Solo si el administrador de Microsoft 365 bloquea la app de rclone y registro una propia en Entra ID."},
             {"key": "client_secret", "label": "Client secret (opcional)", "type": "password", "secret": True},
+        ],
+    },
+    "onedrive_app": {
+        "label": "Microsoft 365 con aplicacion aprobada por el administrador (OneDrive o SharePoint, sin vencimiento)",
+        "path_help": "Carpeta dentro de la unidad, ej. Respaldos/devops-sidecar",
+        "help": ("Un administrador registra una aplicacion en Entra ID (portal de Azure -> Registros de aplicaciones), le da el permiso "
+                 "de APLICACION Files.ReadWrite.All (OneDrive de un usuario) o Sites.ReadWrite.All / Sites.Selected (SharePoint) "
+                 "y concede el consentimiento de administrador. No depende de que un usuario inicie sesion: solo vence el secreto."),
+        "fields": [
+            {"key": "tenant", "label": "Tenant (ID del directorio o dominio)", "type": "text", "required": True,
+             "help": "ej. empresa.onmicrosoft.com o el GUID que muestra Entra ID."},
+            {"key": "client_id", "label": "ID de aplicacion (cliente)", "type": "text", "required": True},
+            {"key": "client_secret", "label": "Valor del secreto de cliente", "type": "password", "secret": True, "required": True,
+             "help": "El VALOR (no el ID del secreto). Anote cuando vence: al vencer, los envios fallan hasta cargar uno nuevo."},
+            {"key": "target_type", "label": "Donde guardar", "type": "select", "options": [
+                ["user", "OneDrive de un usuario (ej. una cuenta de respaldos)"], ["site", "Biblioteca de un sitio de SharePoint"]], "default": "user"},
+            {"key": "target", "label": "Usuario o sitio", "type": "text", "required": True,
+             "help": "Usuario: su correo, ej. respaldos@empresa.com. Sitio: su URL, ej. https://empresa.sharepoint.com/sites/TI"},
+            {"key": "drive_id", "label": "ID de la unidad (opcional)", "type": "text", "help": "Se detecta solo."},
         ],
     },
     "gdrive": {
@@ -160,6 +181,8 @@ def validate(kind: str, config: dict, encrypt: bool, remote_path: str) -> list[s
                 problems.append("La autorizacion no trae refresh_token: copie el JSON completo que muestra rclone authorize.")
         except ValueError:
             problems.append("La autorizacion debe ser el JSON que muestra rclone authorize (empieza con {).")
+    if kind == "onedrive_app" and config.get("tenant") and not re.fullmatch(r"[A-Za-z0-9.-]+", config["tenant"]):
+        problems.append("Tenant no valido: use el dominio (empresa.onmicrosoft.com) o el GUID del directorio.")
     if kind == "sftp" and not (config.get("pass") or config.get("key_pem")):
         problems.append("SFTP necesita contrasena o llave privada.")
     if kind == "s3" and config.get("provider") not in ("AWS", None, "") and not config.get("endpoint"):
@@ -204,12 +227,67 @@ def discover_onedrive(token_json: str) -> dict:
     }
 
 
+def graph_app_token(config: dict) -> str:
+    """Token de aplicacion (client credentials) de Microsoft Graph."""
+    try:
+        resp = httpx.post(f"https://login.microsoftonline.com/{quote(config['tenant'], safe='')}/oauth2/v2.0/token", timeout=30, data={
+            "grant_type": "client_credentials", "client_id": config["client_id"], "client_secret": config["client_secret"],
+            "scope": "https://graph.microsoft.com/.default"})
+    except httpx.HTTPError as e:
+        raise RcloneError(f"No se pudo contactar a Microsoft: {e}") from e
+    if resp.status_code != 200:
+        try:
+            desc = resp.json().get("error_description", "").splitlines()[0]
+        except (ValueError, IndexError):
+            desc = resp.text[:200]
+        raise RcloneError(f"Microsoft rechazo la aplicacion: {desc[:300]}")
+    return resp.json()["access_token"]
+
+
+def discover_onedrive_app(config: dict) -> dict:
+    """Unidad (drive) del usuario o del sitio de SharePoint, con el token de
+    la aplicacion. Un 403 aca casi siempre es falta de consentimiento del
+    administrador o del permiso correcto."""
+    access = graph_app_token(config)
+    headers = {"Authorization": f"Bearer {access}"}
+    target = config["target"].strip()
+
+    def get(url):
+        try:
+            r = httpx.get(url, headers=headers, timeout=30)
+        except httpx.HTTPError as e:
+            raise RcloneError(f"No se pudo contactar Microsoft Graph: {e}") from e
+        if r.status_code in (401, 403):
+            raise RcloneError("Microsoft Graph nego el acceso: falta el permiso de aplicacion o el consentimiento del administrador.")
+        if r.status_code == 404:
+            raise RcloneError(f"No se encontro '{target}' en el tenant (revise el correo o la URL del sitio).")
+        if r.status_code != 200:
+            raise RcloneError(f"Microsoft Graph respondio {r.status_code}: {r.text[:200]}")
+        return r.json()
+
+    if config.get("target_type", "user") == "site":
+        parts = urlsplit(target if "://" in target else "https://" + target)
+        if not parts.hostname:
+            raise RcloneError("URL de sitio no valida, ej. https://empresa.sharepoint.com/sites/TI")
+        site = get(f"https://graph.microsoft.com/v1.0/sites/{parts.hostname}:{parts.path.rstrip('/') or '/'}")
+        data = get(f"https://graph.microsoft.com/v1.0/sites/{site['id']}/drive")
+        return {"drive_id": data.get("id", ""), "drive_type": data.get("driveType", "documentLibrary"),
+                "account": site.get("webUrl") or target}
+    data = get(f"https://graph.microsoft.com/v1.0/users/{quote(target)}/drive")
+    return {"drive_id": data.get("id", ""), "drive_type": data.get("driveType", "business"), "account": target}
+
+
 def _conf_sections(dest, config: dict, tmp: Path) -> tuple[str, str]:
     """Devuelve (texto del rclone.conf, destino base 'remoto:ruta').
     tmp: directorio privado de la sesion, para archivos auxiliares."""
     kind = dest.kind
-    base = {"type": kind if kind != "gdrive" else "drive"}
-    if kind == "onedrive":
+    base = {"type": {"gdrive": "drive", "onedrive_app": "onedrive"}.get(kind, kind)}
+    if kind == "onedrive_app":
+        # rclone >= 1.68 obtiene el token solo (client credentials): no hay
+        # token de usuario que renovar ni que venza.
+        base.update({"tenant": config["tenant"], "client_credentials": "true",
+                     "drive_id": config.get("drive_id", ""), "drive_type": config.get("drive_type", "business")})
+    elif kind == "onedrive":
         base.update({"token": config["token"], "drive_id": config.get("drive_id", ""), "drive_type": config.get("drive_type", "personal")})
     elif kind == "gdrive":
         base.update({"token": config["token"], "scope": "drive"})
