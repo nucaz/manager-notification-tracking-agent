@@ -11,7 +11,7 @@ from .. import models, schemas, scheduler, scoring
 from ..auth import require_dashboard_auth
 from ..config import settings
 from ..database import get_db
-from ..services import ai_client, audit_engine, backup_service, git_service
+from ..services import ai_client, audit_engine, backup_service, crypto_service, git_service
 
 router = APIRouter(prefix="/api/repos", tags=["repos"], dependencies=[Depends(require_dashboard_auth)])
 
@@ -81,7 +81,7 @@ def create_repo(payload: schemas.RepoCreate, background_tasks: BackgroundTasks, 
     repo = models.Repo(
         name=payload.name,
         github_url=payload.github_url,
-        github_token=payload.github_token or None,
+        github_token=crypto_service.encrypt(payload.github_token) if payload.github_token else None,
         local_path=local_path,
         sync_interval_minutes=payload.sync_interval_minutes,
     )

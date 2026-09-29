@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from .database import SessionLocal, init_db
 from .routers import asistente, backups, dashboard, deployments, repos, settings as settings_router, stats, webhooks
 from .scheduler import start_scheduler
-from .services import settings_store
+from .services import git_service, settings_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -18,6 +18,12 @@ def on_startup():
     db = SessionLocal()
     try:
         settings_store.load_overrides_into_settings(db)
+        result = git_service.secure_stored_tokens(db)
+        if result["encrypted"] or result["scrubbed"]:
+            logging.getLogger("startup").info(
+                "Tokens de GitHub: %d cifrado(s) en BD, %d URL(s) de origin limpiadas.",
+                result["encrypted"], result["scrubbed"],
+            )
     finally:
         db.close()
     start_scheduler()

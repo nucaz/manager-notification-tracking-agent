@@ -2,34 +2,117 @@
 (nunca via una libreria que reimplemente git - mismo criterio que
 glpi-licencias-app usa mariadb-dump/mariadb reales en vez de reescribir
 el dump a mano)."""
+import base64
+import os
 import re
 import subprocess
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
 
 from .. import models
+from . import crypto_service
 
 
 class GitError(Exception):
     pass
 
 
-def build_clone_url(repo: models.Repo) -> str:
-    """Inserta el token en la URL solo en memoria, para este comando -
-    nunca se loggea ni se guarda la URL con el token embebido."""
-    if repo.github_token and repo.github_url.startswith("https://"):
-        return repo.github_url.replace("https://", f"https://{repo.github_token}@", 1)
-    return repo.github_url
+def repo_token(repo: models.Repo) -> str:
+    """Token de GitHub del repo ya descifrado (en BD se guarda cifrado)."""
+    return crypto_service.decrypt(repo.github_token) if repo.github_token else ""
 
 
-def _run(args, cwd=None, timeout=300):
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+def auth_env(repo: models.Repo) -> dict | None:
+    """Variables de entorno para que git se autentique contra GitHub sin
+    poner el token en la URL: con la URL, `git clone` lo dejaba guardado
+    en .git/config (texto plano en disco) y visible en la lista de
+    procesos. GIT_CONFIG_COUNT/KEY/VALUE (git >= 2.31) inyecta la
+    cabecera Authorization solo para este comando."""
+    token = repo_token(repo)
+    if not token or not repo.github_url.startswith("https://"):
+        return None
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    env = dict(os.environ)
+    env.update({
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "http.extraHeader",
+        "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
+    })
+    return env
 
 
-def _default_branch(local_path: str) -> str:
-    result = _run(["git", "remote", "show", "origin"], cwd=local_path, timeout=60)
+def strip_credentials(url: str) -> str:
+    """https://token@github.com/x/y -> https://github.com/x/y"""
+    parts = urlsplit(url)
+    if parts.scheme in ("http", "https") and "@" in parts.netloc:
+        return urlunsplit((parts.scheme, parts.netloc.split("@", 1)[1], parts.path, parts.query, parts.fragment))
+    return url
+
+
+def scrub_origin_url(local_path: str) -> bool:
+    """Quita el token de la URL de 'origin' si un clon viejo lo tiene
+    guardado en .git/config. Devuelve True si tuvo que limpiarla."""
+    if not (Path(local_path) / ".git").exists():
+        return False
+    current = (_run(["git", "remote", "get-url", "origin"], cwd=local_path, timeout=15).stdout or "").strip()
+    clean = strip_credentials(current)
+    if current and clean != current:
+        _run(["git", "remote", "set-url", "origin", clean], cwd=local_path, timeout=15)
+        return True
+    return False
+
+
+def secure_stored_tokens(db: Session) -> dict:
+    """Migracion al arrancar: cifra los tokens de GitHub que sigan en
+    texto plano en la tabla repos y quita el token de la URL de 'origin'
+    de los clones que ya lo tenian guardado. Idempotente."""
+    from ..config import settings
+
+    encrypted = scrubbed = 0
+    clone_paths = set()
+    for repo in db.query(models.Repo).all():
+        clone_paths.add(repo.local_path)
+        if repo.github_token and not crypto_service.is_encrypted(repo.github_token):
+            new_value = crypto_service.encrypt(repo.github_token)
+            if new_value != repo.github_token:  # sin CREDENTIALS_ENC_KEY encrypt() no cambia nada
+                repo.github_token = new_value
+                encrypted += 1
+    # Tambien clones huerfanos (de repos eliminados de la app, cuya carpeta
+    # quedo en disco) - siguen teniendo el token en su .git/config.
+    base = Path(settings.repos_base_path)
+    if base.exists():
+        for root, dirs, _files in os.walk(base):
+            if ".git" in dirs:
+                clone_paths.add(root)
+                dirs[:] = []  # no bajar dentro de un clon
+            elif Path(root).relative_to(base).parts and len(Path(root).relative_to(base).parts) >= 4:
+                dirs[:] = []
+    for path in sorted(clone_paths):
+        try:
+            if scrub_origin_url(path):
+                scrubbed += 1
+        except Exception:  # noqa: BLE001 - un clon roto no debe impedir que arranque la app
+            pass
+    if encrypted:
+        db.commit()
+    return {"encrypted": encrypted, "scrubbed": scrubbed}
+
+
+def _run(args, cwd=None, timeout=300, env=None):
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
+
+
+def _default_branch(local_path: str, env: dict | None = None) -> str:
+    # Primero sin red: refs/remotes/origin/HEAD lo deja `git clone`.
+    result = _run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path, timeout=15)
+    ref = (result.stdout or "").strip()
+    if result.returncode == 0 and ref.startswith("origin/"):
+        return ref.split("/", 1)[1]
+    result = _run(["git", "remote", "show", "origin"], cwd=local_path, timeout=60, env=env)
     match = re.search(r"HEAD branch:\s*(\S+)", result.stdout or "")
     return match.group(1) if match else "main"
 
@@ -40,20 +123,21 @@ def sync_repo(repo: models.Repo) -> tuple[bool, str]:
     solo lectura para auditar/respaldar - reset --hard es seguro aca
     porque nadie edita a mano este clon local."""
     local_path = Path(repo.local_path)
+    env = auth_env(repo)
     try:
         if not (local_path / ".git").exists():
             local_path.parent.mkdir(parents=True, exist_ok=True)
-            url = build_clone_url(repo)
-            result = _run(["git", "clone", url, str(local_path)], timeout=900)
+            result = _run(["git", "clone", strip_credentials(repo.github_url), str(local_path)], timeout=900, env=env)
             if result.returncode != 0:
                 return False, (result.stderr or "clone fallo")[:500]
             return True, "clonado"
 
-        result = _run(["git", "fetch", "--all", "--prune"], cwd=str(local_path), timeout=600)
+        scrub_origin_url(str(local_path))
+        result = _run(["git", "fetch", "--all", "--prune"], cwd=str(local_path), timeout=600, env=env)
         if result.returncode != 0:
             return False, (result.stderr or "fetch fallo")[:500]
 
-        branch = _default_branch(str(local_path))
+        branch = _default_branch(str(local_path), env)
         result = _run(["git", "reset", "--hard", f"origin/{branch}"], cwd=str(local_path), timeout=120)
         if result.returncode != 0:
             return False, (result.stderr or "reset fallo")[:500]
@@ -171,8 +255,7 @@ def push_branch(repo: models.Repo, branch: str) -> tuple[bool, str]:
     repo.github_token tenga permiso de escritura (repo:write) - si solo
     tiene lectura, esto falla con el error real de git/GitHub, no se
     intenta adivinar ni forzar nada."""
-    url = build_clone_url(repo)
-    result = _run(["git", "push", url, branch], cwd=repo.local_path, timeout=300)
+    result = _run(["git", "push", strip_credentials(repo.github_url), branch], cwd=repo.local_path, timeout=300, env=auth_env(repo))
     if result.returncode != 0:
         return False, (result.stderr or "push fallo")[:800]
     return True, (result.stderr or result.stdout or "push exitoso")[:500]

@@ -14,9 +14,9 @@ class Repo(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(120), unique=True, nullable=False)
     github_url = Column(String(500), nullable=False)
-    # PAT de GitHub para repos privados. Igual que otros secretos de este
-    # proyecto (ver glpi-licencias-app), se guarda en texto plano por ahora
-    # - es una deuda tecnica conocida, no una omision.
+    # PAT de GitHub para repos privados, cifrado con crypto_service
+    # (enc:v1:...). Leerlo siempre con git_service.repo_token(); git lo
+    # recibe por cabecera, nunca dentro de la URL (ver git_service.auth_env).
     github_token = Column(String(255), nullable=True)
     local_path = Column(String(500), nullable=False)
     sync_interval_minutes = Column(Integer, nullable=False, default=60)
