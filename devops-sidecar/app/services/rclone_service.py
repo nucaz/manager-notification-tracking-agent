@@ -117,7 +117,8 @@ KINDS = {
             {"key": "host", "label": "Servidor (nombre o IP)", "type": "text", "required": True},
             {"key": "user", "label": "Usuario", "type": "text", "required": True},
             {"key": "pass", "label": "Contrasena", "type": "password", "secret": True, "obscure": True, "required": True},
-            {"key": "domain", "label": "Dominio (opcional)", "type": "text", "default": "WORKGROUP"},
+            {"key": "domain", "label": "Dominio", "type": "text", "default": "WORKGROUP",
+             "help": "Usuario de Active Directory: el dominio NetBIOS (ej. EMPRESA). Usuario creado en el propio NAS: el nombre del NAS (en Windows: nbtstat -A IP_DEL_NAS). Un NAS fuera de dominio: WORKGROUP."},
             {"key": "port", "label": "Puerto", "type": "text", "default": "445"},
         ],
     },
@@ -417,6 +418,19 @@ def _err(result: subprocess.CompletedProcess) -> str:
     return " | ".join(lines[-3:])[:600] or f"codigo {result.returncode}"
 
 
+def _hint(dest, text: str) -> str:
+    """Pista para los errores que mas se repiten, en el idioma del usuario."""
+    low = text.lower()
+    if dest.kind == "smb" and "logon is invalid" in low:
+        return (" PISTA: el NAS rechazo usuario, contrasena o DOMINIO. Si el usuario fue creado en el propio NAS (no en"
+                " Active Directory), el dominio es el nombre del NAS, no el de la empresa.")
+    if dest.kind == "smb" and "valid share name" in low:
+        return " PISTA: la carpeta debe ser recurso/carpeta (ej. Respaldos/devops-sidecar), con el servidor en su propio campo."
+    if dest.kind == "smb" and ("access denied" in low or "access_denied" in low):
+        return " PISTA: el usuario inicio sesion pero no tiene permiso de escritura en esa carpeta compartida."
+    return ""
+
+
 def test_destination(db, dest) -> tuple[bool, str]:
     """Crea la carpeta, escribe, lee y borra un archivo de prueba."""
     try:
@@ -424,10 +438,10 @@ def test_destination(db, dest) -> tuple[bool, str]:
             probe = ".devops-sidecar-prueba.txt"
             r = s.run(["mkdir", s.path()], timeout=120)
             if r.returncode != 0:
-                return False, "No se pudo crear/abrir la carpeta: " + _err(r)
+                return False, "No se pudo crear/abrir la carpeta: " + _err(r) + _hint(dest, _err(r))
             r = s.run(["rcat", s.path(probe)], timeout=120, stdin="prueba de escritura del DevOps Sidecar\n")
             if r.returncode != 0:
-                return False, "No se pudo escribir: " + _err(r)
+                return False, "No se pudo escribir: " + _err(r) + _hint(dest, _err(r))
             r = s.run(["cat", s.path(probe)], timeout=120)
             if r.returncode != 0 or "prueba de escritura" not in (r.stdout or ""):
                 return False, "Se escribio pero no se pudo leer de vuelta: " + _err(r)
@@ -462,7 +476,7 @@ def upload_dir(db, dest, local_dir: Path, remote_sub: str) -> tuple[bool, str]:
             target = s.path(remote_sub)
             r = s.run(["copy", str(local_dir), target], timeout=LONG_TIMEOUT)
             if r.returncode != 0:
-                return False, "Fallo la subida: " + _err(r)
+                return False, "Fallo la subida: " + _err(r) + _hint(dest, _err(r))
             verb = "cryptcheck" if dest.encrypt else "check"
             v = s.run([verb, str(local_dir), target, "--one-way"], timeout=LONG_TIMEOUT)
             if v.returncode != 0:
