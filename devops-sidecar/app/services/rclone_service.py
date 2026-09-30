@@ -112,7 +112,7 @@ KINDS = {
     },
     "smb": {
         "label": "Carpeta compartida de Windows / NAS (SMB)",
-        "path_help": "recurso/carpeta, ej. Respaldos/devops-sidecar  (para \\\\servidor\\Respaldos\\devops-sidecar)",
+        "path_help": "recurso/carpeta, ej. Respaldos/devops-sidecar. Tambien puede pegar la ruta de Windows (\\\\servidor\\Respaldos\\devops-sidecar): se convierte sola.",
         "fields": [
             {"key": "host", "label": "Servidor (nombre o IP)", "type": "text", "required": True},
             {"key": "user", "label": "Usuario", "type": "text", "required": True},
@@ -167,6 +167,22 @@ def store_config(dest, config: dict) -> None:
     dest.config_enc = crypto_service.encrypt(json.dumps(config))
 
 
+def smb_path(remote_path: str, host: str = "") -> tuple[str, str]:
+    """Carpeta SMB como la espera rclone: "recurso/carpeta". Acepta tambien
+    lo que se copia del Explorador de Windows (\\\\servidor\\recurso\\carpeta
+    o //servidor/recurso/carpeta): quita el servidor y cambia las barras.
+    Devuelve (ruta, servidor encontrado en la ruta o "")."""
+    raw = (remote_path or "").strip()
+    unc = raw.startswith("\\") or raw.startswith("//")  # tambien con una sola barra inicial
+    parts = [p for p in raw.replace("\\", "/").split("/") if p.strip()]
+    found = ""
+    if unc and parts:
+        found = parts.pop(0)
+    elif host and parts and parts[0].lower() == host.strip().lower():
+        found = parts.pop(0)
+    return "/".join(parts), found
+
+
 def validate(kind: str, config: dict, encrypt: bool, remote_path: str) -> list[str]:
     if kind not in KINDS:
         return [f"Tipo de destino desconocido: {kind}"]
@@ -187,6 +203,12 @@ def validate(kind: str, config: dict, encrypt: bool, remote_path: str) -> list[s
         problems.append("SFTP necesita contrasena o llave privada.")
     if kind == "s3" and config.get("provider") not in ("AWS", None, "") and not config.get("endpoint"):
         problems.append("Para ese proveedor S3 indique el endpoint.")
+    if kind == "smb":
+        path, found = smb_path(remote_path, config.get("host", ""))
+        if not path:
+            problems.append("Indique el recurso compartido y la carpeta, ej. VeeamRepo/RESPALDO REPOSITORIOS.")
+        if found and config.get("host") and found.lower() != config["host"].strip().lower():
+            problems.append(f"La carpeta apunta al servidor {found} pero el campo Servidor dice {config['host']}.")
     if kind == "local" and not remote_path.startswith("/"):
         problems.append("Para disco local la carpeta debe ser una ruta absoluta dentro del contenedor (ej. /data/externo).")
     if encrypt and not config.get("crypt_password"):
@@ -316,7 +338,12 @@ def _conf_sections(dest, config: dict, tmp: Path) -> tuple[str, str]:
         if config.get(k):
             base[k] = config[k]
 
-    remote_path = dest.remote_path.strip().strip("/") if kind != "local" else dest.remote_path.rstrip("/")
+    if kind == "smb":
+        remote_path = smb_path(dest.remote_path, config.get("host", ""))[0]
+    elif kind == "local":
+        remote_path = dest.remote_path.rstrip("/")
+    else:
+        remote_path = dest.remote_path.strip().strip("/")
     lines = ["[dst]"] + [f"{k} = {v}" for k, v in base.items() if v != ""]
     target = f"dst:{remote_path}"
     if dest.encrypt:

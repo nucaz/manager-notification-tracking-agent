@@ -42,6 +42,14 @@ function latestTransfers(list) {
   return Object.values(last);
 }
 
+// Lo que el usuario abrio o cerro se respeta al refrescar (antes el
+// refresco automatico cerraba el registro que se estaba leyendo).
+const openState = {};
+function isOpen(r, i) {
+  if (r.id in openState) return openState[r.id];
+  return (i === 0 && r.status !== 'ok') || r.status === 'en_curso';
+}
+
 async function load() {
   const [points, runs] = await Promise.all([
     (await fetch(`/api/backup-jobs/${JOB_ID}/points`)).json(),
@@ -73,10 +81,11 @@ async function load() {
     <pre class="mb-0 mt-1 small" style="white-space: pre-wrap">${esc(errLines.join(String.fromCharCode(10)))}</pre>
     <div class="small mt-1">Use <strong>Probar conexión</strong> para revisar cada destino antes de volver a ejecutar.</div></div>` : '';
   document.getElementById('runs').innerHTML = runs.length ? runs.map((r, i) => `
-    <details class="mb-1" ${i === 0 && r.status !== 'ok' ? 'open' : ''}><summary><span class="badge bg-${RUN[r.status] || 'secondary'}">${esc(r.status)}</span>
+    <details class="mb-1" data-run="${r.id}" ${isOpen(r, i) ? 'open' : ''}><summary><span class="badge bg-${RUN[r.status] || 'secondary'}">${esc(r.status)}</span>
       ${esc(fmt(r.started_at))} <span class="text-muted">(${esc(r.trigger)})</span></summary>
       <pre class="bg-light p-2 small mb-0" style="white-space: pre-wrap">${esc(r.log)}</pre></details>`).join('')
     : 'Sin ejecuciones todavía.';
+  document.querySelectorAll('#runs details').forEach((d) => d.addEventListener('toggle', () => { openState[d.dataset.run] = d.open; }));
   return runs.some((r) => r.status === 'en_curso');
 }
 
@@ -103,10 +112,12 @@ document.getElementById('btnRun').addEventListener('click', async (e) => {
   const res = await fetch(`/api/backup-jobs/${JOB_ID}/run`, { method: 'POST' });
   const data = await res.json().catch(() => ({}));
   document.getElementById('msg').innerHTML = `<div class="alert alert-${res.ok ? 'info' : 'danger'}">${esc(data.message || data.detail)}</div>`;
-  setTimeout(async () => { await load(); e.target.disabled = false; }, 2000);
+  setTimeout(async () => { running = await load(); e.target.disabled = false; }, 2000);
 });
 
-load();
-setInterval(load, 8000);
+// Solo se refresca solo mientras hay una ejecucion en curso.
+let running = false;
+load().then((r) => { running = r; });
+setInterval(async () => { if (running) running = await load(); }, 4000);
 </script>
 {% endblock %}

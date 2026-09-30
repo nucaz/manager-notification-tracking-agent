@@ -141,6 +141,24 @@ def main():
             check("Validacion: cifrado sin contrasena rechazado", bad.status_code == 422)
             bad = c.post("/api/backup-destinations", json={"name": "x", "kind": "onedrive", "remote_path": "a", "config": {"token": "no-es-json"}})
             check("Validacion: autorizacion OneDrive que no es JSON rechazada", bad.status_code == 422)
+            # SMB: la ruta pegada del Explorador de Windows se convierte sola.
+            unc = r"\\172.16.1.223\VeeamRepo\RESPALDO REPOSITORIOS"
+            r = c.post("/api/backup-destinations", json={"name": "NAS Veeam", "kind": "smb", "remote_path": unc,
+                                                         "config": {"user": "user.veeam", "pass": "x"}})
+            smb = r.json()
+            check(f"SMB con ruta de Windows: se guarda como recurso/carpeta ({smb.get('remote_path')})",
+                  r.status_code == 201 and smb["remote_path"] == "VeeamRepo/RESPALDO REPOSITORIOS" and smb["config"]["host"] == "172.16.1.223")
+            db_ = SessionLocal()
+            d_ = db_.get(models.BackupDestination, smb["id"])
+            d_.remote_path = unc  # un destino guardado antes de este arreglo
+            conf_, target_ = rclone_service._conf_sections(d_, rclone_service.load_config(d_), ROOT)
+            db_.close()
+            check("SMB guardado con ruta de Windows antes del arreglo: rclone recibe recurso/carpeta",
+                  target_ == "dst:VeeamRepo/RESPALDO REPOSITORIOS" and "host = 172.16.1.223" in conf_)
+            r = c.post("/api/backup-destinations", json={"name": "NAS otro", "kind": "smb", "remote_path": unc,
+                                                         "config": {"host": "10.0.0.5", "user": "u", "pass": "x"}})
+            check("SMB con servidor distinto en la ruta y en el campo: rechazado", r.status_code == 422)
+            c.delete(f"/api/backup-destinations/{smb['id']}")
 
             defs = {
                 "Disco local": {"kind": "local", "remote_path": str(ROOT / "externo_plano"), "config": {}},

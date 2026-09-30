@@ -72,7 +72,17 @@ def _apply_destination(db: Session, dest: models.BackupDestination, payload: Des
     for k in list(merged):
         if k not in secret and k not in incoming and k in previous:
             merged.pop(k)
-    problems = rclone_service.validate(payload.kind, merged, payload.encrypt, payload.remote_path)
+    remote_path = payload.remote_path.strip()
+    if payload.kind == "smb":
+        # Ruta pegada del Explorador (\\\\servidor\\recurso\\carpeta): se guarda
+        # como recurso/carpeta y, si falta, se toma el servidor de ahi.
+        path, found = rclone_service.smb_path(remote_path, merged.get("host", ""))
+        if found and not merged.get("host"):
+            merged["host"] = found
+        problems = rclone_service.validate(payload.kind, merged, payload.encrypt, remote_path)
+        remote_path = path or remote_path
+    else:
+        problems = rclone_service.validate(payload.kind, merged, payload.encrypt, remote_path)
     if problems:
         raise HTTPException(status_code=422, detail=" ".join(problems))
     if payload.kind == "onedrive" and ("token" in incoming or not merged.get("drive_id")) and \
@@ -97,7 +107,7 @@ def _apply_destination(db: Session, dest: models.BackupDestination, payload: Des
         merged["drive_type"] = "personal"
     dest.name = payload.name.strip()
     dest.kind = payload.kind
-    dest.remote_path = payload.remote_path.strip()
+    dest.remote_path = remote_path
     dest.encrypt = payload.encrypt
     dest.enabled = payload.enabled
     if payload.kind not in ("onedrive", "onedrive_app"):
