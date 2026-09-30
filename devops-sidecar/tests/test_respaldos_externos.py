@@ -270,6 +270,11 @@ def main():
             servers["webdav"].wait()
             commit(work, "archivo4.txt", "contenido 4\n")
             git_service.sync_repo(repo)
+            t = c.post(f"/api/backup-jobs/{job['id']}/test").json()
+            bad = [x for x in t["checks"] if not x["ok"]]
+            check(f"Probar conexion del trabajo detecta el WebDAV caido ({len(bad)} error)",
+                  not t["ok"] and len(bad) == 1 and bad[0]["kind"] == "destino"
+                  and any(x["kind"] == "repo" and x["ok"] for x in t["checks"]))
             status, log = run()
             pts = points()
             check(f"WebDAV caido: ejecucion con error ({status}) y el resto de destinos OK",
@@ -277,6 +282,7 @@ def main():
             servers["webdav"] = serve("webdav", ROOT / "srv_webdav", 18080, ["--user", "u", "--pass", "clave-webdav"])
             status, log = run()
             pts = points()
+            check("Probar conexion con todo en linea: OK", c.post(f"/api/backup-jobs/{job['id']}/test").json()["ok"])
             check(f"WebDAV de vuelta: se reenvia lo pendiente ({status})", status == "ok" and pts[-1][4].count("ok") == 5)
 
             # Retencion: 2 cadenas locales y 2 remotas -> al abrir la 3a se borra la 1a

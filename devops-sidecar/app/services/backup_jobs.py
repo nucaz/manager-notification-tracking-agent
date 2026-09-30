@@ -152,6 +152,30 @@ def _content_tar(local_path: str, dest: Path) -> None:
             tar.add(item, arcname=item.name)
 
 
+def check_repo_ready(repo: models.Repo) -> tuple[bool, str]:
+    """Para "Probar conexion": el clon existe y git puede leer su historial."""
+    local = Path(repo.local_path)
+    if not (local / ".git").exists():
+        return False, "Todavia no esta clonado: sincronicelo primero (Repositorios -> Sincronizar)."
+    r = _git(["rev-parse", "--verify", "HEAD"], str(local), 30)
+    if r.returncode != 0:
+        return False, "El clon no tiene commits legibles: " + (r.stderr or "").strip()[:200]
+    count = (_git(["rev-list", "--count", "--all"], str(local), 120).stdout or "0").strip()
+    status = f" Ultima sincronizacion: {repo.last_sync_status}." if repo.last_sync_status else ""
+    ok = not (repo.last_sync_status or "").startswith("ERROR")
+    return ok, f"Clon listo ({count} commits).{status}"
+
+
+def check_local_space(min_free_mb: int = 500) -> tuple[bool, str]:
+    root = Path(settings.backups_path)
+    root.mkdir(parents=True, exist_ok=True)
+    usage = shutil.disk_usage(root)
+    free_gb = usage.free / 1024 ** 3
+    if usage.free < min_free_mb * 1024 ** 2:
+        return False, f"Queda poco espacio en el disco de respaldos: {free_gb:.2f} GB libres."
+    return True, f"{free_gb:.1f} GB libres en el disco de respaldos."
+
+
 def create_repo_point(db: Session, job: models.BackupJob, run: models.BackupJobRun,
                       repo: models.Repo, log) -> models.BackupPoint | None:
     """Crea el siguiente punto (completo o incremental) de un repo.

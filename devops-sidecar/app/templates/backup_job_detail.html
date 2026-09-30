@@ -7,9 +7,14 @@
     <a href="/backups/trabajos" class="small"><i class="bi bi-arrow-left"></i> Volver a trabajos</a>
     <h2 class="mb-0">{{ job.name }}</h2>
   </div>
-  <button class="btn btn-outline-success" id="btnRun"><i class="bi bi-play-fill"></i> Ejecutar ahora</button>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-primary" id="btnTest"><i class="bi bi-plug"></i> Probar conexión</button>
+    <button class="btn btn-outline-success" id="btnRun"><i class="bi bi-play-fill"></i> Ejecutar ahora</button>
+  </div>
 </div>
 <div id="msg"></div>
+<div id="testResult"></div>
+<div id="lastError"></div>
 
 <div class="card p-3 mb-3">
   <h5>Puntos de restauración</h5>
@@ -29,6 +34,13 @@ const fmt = (iso) => iso ? new Date(iso + 'Z').toLocaleString('es-PE', { dateSty
 const kb = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).toFixed(1) + ' KB';
 const RUN = { ok: 'success', ok_con_avisos: 'warning', error: 'danger', en_curso: 'info' };
 const TR = { ok: ['success', 'check2'], error: ['danger', 'x'], borrado: ['secondary', 'trash'] };
+// Un punto puede tener varios intentos al mismo destino (uno fallido y
+// luego el reenvio correcto): se muestra solo el ultimo por destino.
+function latestTransfers(list) {
+  const last = {};
+  list.forEach((t) => { if (!last[t.destination] || t.at > last[t.destination].at) last[t.destination] = t; });
+  return Object.values(last);
+}
 
 async function load() {
   const [points, runs] = await Promise.all([
@@ -48,18 +60,43 @@ async function load() {
         <td class="text-nowrap">${p.kind === 'full' ? '<span class="badge bg-primary">Completo</span>' : `<span class="badge bg-info text-dark">Incremental ${p.seq}</span>`}</td>
         <td class="text-nowrap">${esc(fmt(p.created_at))}</td>
         <td>${p.files.map((f) => `<div class="font-monospace" title="SHA-256 ${esc(f.sha256)}">${esc(f.name)} <span class="text-muted">${kb(f.size)}</span></div>`).join('')}</td>
-        <td>${p.transfers.length ? p.transfers.map((t) => `<span class="badge bg-${TR[t.status]?.[0] || 'secondary'}" title="${esc(t.message || '')}"><i class="bi bi-${TR[t.status]?.[1] || 'dot'}"></i> ${esc(t.destination)}${t.verified && t.status === 'ok' ? ' ✓' : ''}</span>`).join(' ') : '<span class="text-muted">solo servidor</span>'}</td>
+        <td>${p.transfers.length ? latestTransfers(p.transfers).map((t) => `<div class="mb-1"><span class="badge bg-${TR[t.status]?.[0] || 'secondary'}" title="${esc(t.message || '')}"><i class="bi bi-${TR[t.status]?.[1] || 'dot'}"></i> ${esc(t.destination)}${t.verified && t.status === 'ok' ? ' ✓' : ''}</span>
+          ${t.status === 'error' ? `<div class="small text-danger text-break" style="max-width: 32rem">${esc(t.message || 'Sin detalle')}<span class="text-muted"> · ${esc(fmt(t.at))}</span></div>` : ''}</div>`).join('') : '<span class="text-muted">solo servidor</span>'}</td>
         <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="/backups/restaurar?point_id=${p.id}" title="Probar, descargar o subir este punto"><i class="bi bi-arrow-counterclockwise"></i> Restaurar</a></td>
       </tr>`).join('')}</tbody></table></div>`;
   }).join('');
   document.getElementById('points').innerHTML = html || 'Todavía no hay puntos de restauración. Use "Ejecutar ahora" o espere a la programación.';
-  document.getElementById('runs').innerHTML = runs.length ? runs.map((r) => `
-    <details class="mb-1"><summary><span class="badge bg-${RUN[r.status] || 'secondary'}">${esc(r.status)}</span>
+  const lastRun = runs[0];
+  const errLines = lastRun && lastRun.status !== 'ok' ? lastRun.log.split(/\r?\n/).filter((l) => /ERROR|AVISO|fallo|Fallo/.test(l)) : [];
+  document.getElementById('lastError').innerHTML = errLines.length ? `<div class="alert alert-danger">
+    <strong>Última ejecución (${esc(fmt(lastRun.started_at))}) con problemas:</strong>
+    <pre class="mb-0 mt-1 small" style="white-space: pre-wrap">${esc(errLines.join(String.fromCharCode(10)))}</pre>
+    <div class="small mt-1">Use <strong>Probar conexión</strong> para revisar cada destino antes de volver a ejecutar.</div></div>` : '';
+  document.getElementById('runs').innerHTML = runs.length ? runs.map((r, i) => `
+    <details class="mb-1" ${i === 0 && r.status !== 'ok' ? 'open' : ''}><summary><span class="badge bg-${RUN[r.status] || 'secondary'}">${esc(r.status)}</span>
       ${esc(fmt(r.started_at))} <span class="text-muted">(${esc(r.trigger)})</span></summary>
       <pre class="bg-light p-2 small mb-0" style="white-space: pre-wrap">${esc(r.log)}</pre></details>`).join('')
     : 'Sin ejecuciones todavía.';
   return runs.some((r) => r.status === 'en_curso');
 }
+
+document.getElementById('btnTest').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  document.getElementById('testResult').innerHTML = '<div class="alert alert-light border">Probando cada repositorio y destino (puede tardar unos segundos)…</div>';
+  const res = await fetch(`/api/backup-jobs/${JOB_ID}/test`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  btn.disabled = false;
+  if (!res.ok) { document.getElementById('testResult').innerHTML = `<div class="alert alert-danger">${esc(data.detail || 'No se pudo probar.')}</div>`; return; }
+  const LBL = { repo: 'Repositorio', servidor: 'Servidor', destino: 'Destino' };
+  document.getElementById('testResult').innerHTML = `<div class="card p-3 mb-3 border-${data.ok ? 'success' : 'danger'}">
+    <h6 class="mb-2">${data.ok ? '<i class="bi bi-check-circle text-success"></i> Todo listo para ejecutar' : '<i class="bi bi-exclamation-triangle text-danger"></i> Hay problemas que corregir antes de ejecutar'}</h6>
+    <table class="table table-sm mb-0"><tbody>${data.checks.map((c) => `<tr>
+      <td class="text-nowrap">${c.ok ? '<span class="badge bg-success">OK</span>' : '<span class="badge bg-danger">ERROR</span>'}</td>
+      <td class="text-nowrap small text-muted">${LBL[c.kind] || c.kind}</td>
+      <td class="text-nowrap fw-semibold">${esc(c.name)}</td>
+      <td class="small text-break">${esc(c.message)}</td></tr>`).join('')}</tbody></table></div>`;
+});
 
 document.getElementById('btnRun').addEventListener('click', async (e) => {
   e.target.disabled = true;

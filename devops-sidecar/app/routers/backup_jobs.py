@@ -297,6 +297,42 @@ def run_job_now(job_id: int, background_tasks: BackgroundTasks, db: Session = De
     return {"ok": True, "message": "Trabajo iniciado en segundo plano. Actualice en unos momentos para ver el resultado."}
 
 
+@router.post("/backup-jobs/{job_id}/test")
+def test_job(job_id: int, db: Session = Depends(get_db)):
+    """Prueba previa a ejecutar: cada destino del trabajo (escribe, lee y
+    borra un archivo de prueba) y cada repositorio (clonado y legible).
+    No genera respaldos."""
+    job = db.get(models.BackupJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Trabajo no encontrado.")
+    checks = []
+    repo_ids = backup_jobs.job_repo_ids(job)
+    q = db.query(models.Repo).filter(models.Repo.id.in_(repo_ids)) if repo_ids else         db.query(models.Repo).filter(models.Repo.active.is_(True))
+    repos = q.order_by(models.Repo.name).all()
+    if not repos and not job.include_sidecar_db:
+        checks.append({"kind": "repo", "name": "Repositorios", "ok": False, "message": "El trabajo no tiene repositorios que respaldar."})
+    for repo in repos:
+        ok, msg = backup_jobs.check_repo_ready(repo)
+        checks.append({"kind": "repo", "name": repo.name, "ok": ok, "message": msg})
+    ok, msg = backup_jobs.check_local_space()
+    checks.append({"kind": "servidor", "name": "Disco del servidor", "ok": ok, "message": msg})
+    dest_ids = backup_jobs.job_destination_ids(job)
+    dests = db.query(models.BackupDestination).filter(models.BackupDestination.id.in_(dest_ids)).all() if dest_ids else []
+    if not dests:
+        checks.append({"kind": "destino", "name": "Destinos", "ok": True, "message": "Sin destinos externos: los respaldos quedan solo en el servidor."})
+    for dest in dests:
+        if not dest.enabled:
+            checks.append({"kind": "destino", "name": dest.name, "ok": False, "message": "El destino esta desactivado: el trabajo lo omitira."})
+            continue
+        ok, msg = rclone_service.test_destination(db, dest)
+        dest.last_test_at = datetime.utcnow()
+        dest.last_test_ok = ok
+        dest.last_test_message = msg
+        db.commit()
+        checks.append({"kind": "destino", "name": dest.name, "ok": ok, "message": msg})
+    return {"ok": all(c["ok"] for c in checks), "checks": checks}
+
+
 @router.get("/backup-jobs/{job_id}/points")
 def job_points(job_id: int, db: Session = Depends(get_db)):
     job = db.get(models.BackupJob, job_id)

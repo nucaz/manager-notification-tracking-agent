@@ -413,7 +413,7 @@ def test_destination(db, dest) -> tuple[bool, str]:
                 try:
                     info = json.loads(about.stdout)
                     if info.get("free") is not None:
-                        extra = f" Espacio libre: {info['free'] / 1024 ** 3:.1f} GB."
+                        extra = f" Espacio libre: {info['free'] / 1024 ** 3:.1f} GB." + extra
                 except ValueError:
                     pass
         persist_new_token(db, dest, s)
