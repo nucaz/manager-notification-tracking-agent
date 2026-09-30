@@ -68,7 +68,9 @@ async function getToken(cfg) {
   } catch (err) {
     const hint = /certificate|self.signed|CERT_/i.test(err.message)
       ? ' El certificado HTTPS de GLPI no es de confianza para este servidor (autofirmado o de una CA interna).'
-      : ' Revise que la URL y el puerto sean alcanzables desde el servidor de la app.';
+      : /EAI_AGAIN|ENOTFOUND/.test(err.message)
+        ? ' El servidor de la app no puede resolver ese nombre: use el nombre completo con el dominio (ej. glpi.empresa.local) o la IP de GLPI. Un nombre corto funciona en PCs del dominio, pero no dentro del contenedor.'
+        : ' Revise que la URL y el puerto sean alcanzables desde el servidor de la app.';
     throw new Error(`No se pudo conectar con ${cfg.root}: ${err.message}.${hint}`);
   }
   if (res.status !== 200 || !res.data || !res.data.access_token) {

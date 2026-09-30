@@ -169,6 +169,9 @@ async function main() {
     cfg = { ...cfg, glpi_oauth_password: '' };
     p = await get('/glpi/inventario');
     check('Configuración incompleta: dice qué falta', p.text.includes('falta contraseña'));
+    cfg = { ...cfg, glpi_oauth_password: CLIENT.pass, glpi_base_url: 'http://nombre-corto-inexistente.invalid:8081/api.php/v2.3' };
+    p = await get('/glpi/inventario');
+    check('Nombre que no se resuelve: sugiere el nombre completo o la IP', p.text.includes('no puede resolver ese nombre'));
     cfg = { ...cfg, glpi_api_version: 'legacy' };
     check('Volver a la API clásica', (await glpiClient.apiVersion()) === 'legacy');
   } finally {
