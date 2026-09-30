@@ -5,6 +5,7 @@ const { requireAuth, canWrite } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const employeeService = require('../services/employeeService');
+const mobileLineService = require('../services/mobileLineService');
 const catalogService = require('../services/catalogService');
 const importService = require('../services/importService');
 const { importUploader } = require('../services/uploadService');
@@ -277,10 +278,12 @@ router.get('/:id', async (req, res, next) => {
     const [availableDevices] = await pool.query(
       'SELECT id, imei, asset_code, brand, model FROM mobile_devices WHERE status = "en_stock" ORDER BY imei'
     );
+    const currentLines = await mobileLineService.linesOfEmployee(employee.id);
     res.render('employees/detail', {
       title: `${employee.first_name} ${employee.last_name}`,
       employee,
       currentDevices,
+      currentLines,
       assignmentHistory,
       incidents,
       availableDevices,

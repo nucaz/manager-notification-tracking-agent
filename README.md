@@ -16,7 +16,18 @@ Aplicación web para el seguimiento de:
   reasignación (busca al empleado por DNI y actualiza el área/sede del
   equipo) y devolución a stock, un **resumen por área** con checklist
   de auditoría física (estatus, última fecha, observación), y
-  **eliminación múltiple** desde el listado (selección con checkboxes)
+  **eliminación múltiple** desde el listado (selección con checkboxes).
+  **Decomiso** (denuncia, investigación u observado): queda en el
+  historial de incidentes, el equipo no se puede asignar mientras dure y
+  "Resolver decomiso" lo devuelve a stock (o se registra la baja).
+  **Chips** (`/celulares/chips`): cada chip es un número de línea con
+  operadora, ICCID, plan y costo mensual; puede estar en un celular (doble
+  SIM incluido), asignado a una persona sin celular, como **número de
+  emergencia** (aunque la persona ya tenga celular con chip) o en stock.
+  Filtros combinables con totales, **suma del costo** de lo filtrado y
+  exportación a Excel. El número del celular se mantiene sincronizado con
+  su chip principal. Prueba: `E2E_PERMITIR=1 node tests/celulares_chips_decomiso.e2e.js`
+  (escribe datos de prueba marcados en la base configurada y los borra)
 - **Empleados**: directorio reutilizable por DNI (nombres, apellidos,
   área, sede, cargo) — se alimenta automáticamente al asignar un celular,
   o se gestiona directo desde su propia pantalla

@@ -1,0 +1,408 @@
+// Chips (lineas) del modulo Celulares.
+//
+// Un chip es siempre un numero de linea (mobile_lines). Puede estar:
+// - puesto en un celular (device_id),
+// - asignado a una persona sin celular (mobile_line_assignments): 'personal'
+//   = lo usa en su propio equipo; 'emergencia' = numero de respaldo por si
+//   se bloquea el principal, aunque esa persona ya tenga celular con chip,
+// - o en stock.
+//
+// El celular sigue teniendo phone_number/has_chip: es su chip PRINCIPAL (lo
+// que ya usan el formulario, el QR, la importacion y las exportaciones).
+// Todo cambio que toque las dos cosas pasa por este archivo, para que el
+// numero del celular y el chip no se desalineen.
+const pool = require('../db/pool');
+const employeeService = require('./employeeService');
+
+const ESTADOS = ['activo', 'suspendido', 'de_baja'];
+const USOS = ['personal', 'emergencia'];
+const UBICACIONES = ['en_celular', 'personal', 'emergencia', 'en_stock'];
+
+async function validateLineData(data) {
+  const errors = [];
+  if (!data.phone_number || !/^\d+$/.test(data.phone_number)) {
+    errors.push('El número de línea es obligatorio y debe tener solo dígitos, sin espacios ni guiones.');
+  } else if (data.phone_country_code_id) {
+    const [[country]] = await pool.query(
+      'SELECT mobile_length, country_name FROM phone_country_codes WHERE id = ?',
+      [data.phone_country_code_id]
+    );
+    if (country && data.phone_number.length !== country.mobile_length) {
+      errors.push(`El número de línea de ${country.country_name} debe tener ${country.mobile_length} dígitos.`);
+    }
+  }
+  // ICCID: el numero impreso en el chip. Estandar ITU-T E.118: 19 o 20
+  // digitos (algunas operadoras imprimen 18 o 22); solo digitos.
+  if (data.iccid && !/^\d{18,22}$/.test(data.iccid)) {
+    errors.push('El ICCID debe tener entre 18 y 22 dígitos (el número impreso en el chip).');
+  }
+  if (data.operadora && data.operadora.length > 50) errors.push('La operadora no puede superar los 50 caracteres.');
+  if (data.plan && data.plan.length > 60) errors.push('El plan no puede superar los 60 caracteres.');
+  if (data.costo_plan !== null && data.costo_plan !== undefined && data.costo_plan !== '') {
+    const n = Number(data.costo_plan);
+    if (!Number.isFinite(n) || n < 0 || n > 99999999) errors.push('El costo del plan debe ser un monto válido (0 o más).');
+  }
+  if (data.estado && !ESTADOS.includes(data.estado)) errors.push('Estado de chip no válido.');
+  if (data.notes && data.notes.length > 250) errors.push('Las notas no pueden superar los 250 caracteres.');
+  return errors;
+}
+
+async function numberTaken(number, exceptLineId = null) {
+  const [[row]] = await pool.query('SELECT id FROM mobile_lines WHERE phone_number = ? AND id <> ? LIMIT 1', [number, exceptLineId || 0]);
+  return !!row;
+}
+
+// Para el formulario del celular: ¿se puede usar este numero como chip
+// principal del equipo? Un chip en stock se "toma" (pasa al equipo); uno
+// que ya esta en otro celular o asignado a una persona no.
+async function deviceChipConflict(number, deviceId) {
+  if (!number) return null;
+  const [[line]] = await pool.query(
+    `SELECT l.id, l.device_id, l.estado, d.imei, d.asset_code, a.holder_name, a.uso
+     FROM mobile_lines l
+     LEFT JOIN mobile_devices d ON d.id = l.device_id
+     LEFT JOIN mobile_line_assignments a ON a.line_id = l.id AND a.returned_date IS NULL
+     WHERE l.phone_number = ?`,
+    [number]
+  );
+  if (line) {
+    if (line.device_id && String(line.device_id) !== String(deviceId || '')) {
+      return `El número ${number} ya está en otro celular (IMEI ${line.imei}${line.asset_code ? `, ${line.asset_code}` : ''}). Retírelo de ese equipo primero.`;
+    }
+    if (line.holder_name) {
+      return `El número ${number} está asignado a ${line.holder_name} (${line.uso === 'emergencia' ? 'número de emergencia' : 'sin celular'}). Devuélvalo desde Chips antes de ponerlo en un equipo.`;
+    }
+    if (line.estado === 'de_baja') return `El chip ${number} está dado de baja.`;
+    return null;
+  }
+  // Datos anteriores al registro de chips: otro celular con ese numero.
+  const [[dev]] = await pool.query(
+    'SELECT imei FROM mobile_devices WHERE phone_number = ? AND has_chip = 1 AND id <> ? LIMIT 1',
+    [number, deviceId || 0]
+  );
+  return dev ? `El número ${number} ya lo usa el celular IMEI ${dev.imei}.` : null;
+}
+
+// Tras crear/editar/importar un celular: su chip principal queda
+// registrado y puesto en el equipo; si cambio el numero o se quito el chip,
+// el chip anterior vuelve a stock (no se borra: el numero sigue existiendo).
+async function syncDeviceChip(deviceId, oldNumber, userId, conn = pool) {
+  const [[d]] = await conn.query(
+    'SELECT id, imei, phone_number, has_chip, phone_country_code_id, operadora FROM mobile_devices WHERE id = ?',
+    [deviceId]
+  );
+  if (!d) return;
+  const newNumber = d.has_chip && d.phone_number ? d.phone_number : null;
+  if (oldNumber && oldNumber !== newNumber) {
+    await conn.query('UPDATE mobile_lines SET device_id = NULL WHERE phone_number = ? AND device_id = ?', [oldNumber, deviceId]);
+  }
+  if (!newNumber) return;
+  const [[line]] = await conn.query('SELECT id FROM mobile_lines WHERE phone_number = ?', [newNumber]);
+  if (!line) {
+    await conn.query(
+      `INSERT INTO mobile_lines (phone_country_code_id, phone_number, operadora, device_id, created_by)
+       VALUES (?, ?, ?, ?, ?)`,
+      [d.phone_country_code_id, newNumber, d.operadora, deviceId, userId || null]
+    );
+    return;
+  }
+  await conn.query(
+    `UPDATE mobile_lines SET device_id = ?, phone_country_code_id = COALESCE(?, phone_country_code_id),
+       operadora = COALESCE(?, operadora) WHERE id = ?`,
+    [deviceId, d.phone_country_code_id, d.operadora, line.id]
+  );
+}
+
+async function getLine(lineId) {
+  const [[line]] = await pool.query('SELECT * FROM mobile_lines WHERE id = ?', [lineId]);
+  return line || null;
+}
+
+// Si el chip era el principal de su celular, el celular queda sin numero,
+// o con otro chip que tenga puesto (doble SIM) como nuevo principal.
+async function releaseFromDevice(line, conn = pool) {
+  if (!line.device_id) return null;
+  const deviceId = line.device_id;
+  await conn.query('UPDATE mobile_lines SET device_id = NULL WHERE id = ?', [line.id]);
+  const [[d]] = await conn.query('SELECT id, imei, phone_number FROM mobile_devices WHERE id = ?', [deviceId]);
+  if (d && d.phone_number === line.phone_number) {
+    const [[other]] = await conn.query(
+      'SELECT phone_number, phone_country_code_id, operadora FROM mobile_lines WHERE device_id = ? ORDER BY id LIMIT 1',
+      [deviceId]
+    );
+    if (other) {
+      await conn.query(
+        'UPDATE mobile_devices SET phone_number = ?, phone_country_code_id = ?, operadora = COALESCE(?, operadora), has_chip = 1, updated_at = NOW() WHERE id = ?',
+        [other.phone_number, other.phone_country_code_id, other.operadora, deviceId]
+      );
+    } else {
+      await conn.query('UPDATE mobile_devices SET phone_number = NULL, has_chip = 0, updated_at = NOW() WHERE id = ?', [deviceId]);
+    }
+  }
+  return d;
+}
+
+async function closeAssignment(lineId, note, conn = pool) {
+  const [[active]] = await conn.query(
+    'SELECT id, holder_name, uso FROM mobile_line_assignments WHERE line_id = ? AND returned_date IS NULL',
+    [lineId]
+  );
+  if (!active) return null;
+  await conn.query(
+    `UPDATE mobile_line_assignments SET returned_date = CURDATE(),
+       observacion = TRIM(BOTH ' - ' FROM CONCAT_WS(' - ', observacion, ?)) WHERE id = ?`,
+    [note || null, active.id]
+  );
+  return active;
+}
+
+// Pone el chip en un celular. Devuelve { device, principal } o lanza Error
+// con un mensaje para el usuario.
+async function placeInDevice(lineId, deviceRef) {
+  const line = await getLine(lineId);
+  if (!line) throw new Error('Chip no encontrado.');
+  if (line.estado === 'de_baja') throw new Error('El chip está dado de baja: no se puede poner en un celular.');
+  const ref = String(deviceRef || '').trim();
+  const [[device]] = await pool.query(
+    'SELECT id, imei, asset_code, phone_number, has_chip, status FROM mobile_devices WHERE imei = ? OR asset_code = ? LIMIT 1',
+    [ref, ref]
+  );
+  if (!device) throw new Error(`No se encontró un celular con IMEI o código "${ref}".`);
+  if (device.status === 'de_baja') throw new Error('Ese celular está dado de baja.');
+  if (String(line.device_id) === String(device.id)) throw new Error('El chip ya está en ese celular.');
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const previous = line.device_id ? await releaseFromDevice(line, conn) : null;
+    const assignment = await closeAssignment(line.id, `Chip puesto en el celular ${device.imei}`, conn);
+    await conn.query('UPDATE mobile_lines SET device_id = ? WHERE id = ?', [device.id, line.id]);
+    const principal = !(device.has_chip && device.phone_number);
+    if (principal) {
+      await conn.query(
+        `UPDATE mobile_devices SET phone_number = ?, phone_country_code_id = ?, operadora = COALESCE(?, operadora),
+           has_chip = 1, updated_at = NOW() WHERE id = ?`,
+        [line.phone_number, line.phone_country_code_id, line.operadora, device.id]
+      );
+    } else {
+      await conn.query('UPDATE mobile_devices SET updated_at = NOW() WHERE id = ?', [device.id]);
+    }
+    await conn.commit();
+    return { device, principal, previous, assignment };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+async function removeFromDevice(lineId) {
+  const line = await getLine(lineId);
+  if (!line) throw new Error('Chip no encontrado.');
+  if (!line.device_id) throw new Error('El chip no está en ningún celular.');
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const device = await releaseFromDevice(line, conn);
+    await conn.commit();
+    return device;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// Asigna el chip (sin celular) a una persona, identificada por DNI.
+async function assignLine(lineId, input, userId) {
+  const line = await getLine(lineId);
+  if (!line) throw new Error('Chip no encontrado.');
+  if (line.device_id) throw new Error('El chip está puesto en un celular: se asigna junto con el equipo. Retírelo primero si va a usarse sin celular.');
+  if (line.estado === 'de_baja') throw new Error('El chip está dado de baja.');
+  const { dni, first_name: first, last_name: last, area, sede, cargo, uso, assigned_date: fecha, observacion } = input;
+  if (!dni || !first || !last) throw new Error('DNI, nombres y apellidos son obligatorios.');
+  if (!/^\d{8}$/.test(dni)) throw new Error('El DNI debe tener exactamente 8 dígitos numéricos.');
+  if (!USOS.includes(uso)) throw new Error('Indique el uso: sin celular (personal) o número de emergencia.');
+  if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new Error('La fecha de entrega no es válida.');
+  if (observacion && observacion.length > 250) throw new Error('La observación no puede superar los 250 caracteres.');
+  const employeeId = await employeeService.upsert({ dni, first_name: first, last_name: last, area, sede, cargo }, userId);
+  const holderName = `${first} ${last}`;
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const previous = await closeAssignment(line.id, `Reasignado a ${holderName}`, conn);
+    await conn.query(
+      `INSERT INTO mobile_line_assignments (line_id, employee_id, holder_name, uso, assigned_date, observacion, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [line.id, employeeId, holderName, uso, fecha || null, observacion || null, userId]
+    );
+    await conn.query('UPDATE mobile_lines SET updated_at = NOW() WHERE id = ?', [line.id]);
+    await conn.commit();
+    return { holderName, previous };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// Guarda los datos del chip. Si es el chip principal de su celular, el
+// celular se actualiza igual (numero, pais, operadora). Si pasa a "de baja"
+// sale del celular y se cierra su asignacion.
+async function saveLine(lineId, data, userId) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    let id = lineId;
+    if (!lineId) {
+      const [ins] = await conn.query(
+        `INSERT INTO mobile_lines (phone_country_code_id, phone_number, iccid, operadora, plan, costo_plan, estado, notes, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [data.phone_country_code_id, data.phone_number, data.iccid, data.operadora, data.plan, data.costo_plan,
+          data.estado || 'activo', data.notes, userId]
+      );
+      id = ins.insertId;
+    } else {
+      const [[old]] = await conn.query('SELECT * FROM mobile_lines WHERE id = ?', [lineId]);
+      await conn.query(
+        `UPDATE mobile_lines SET phone_country_code_id = ?, phone_number = ?, iccid = ?, operadora = ?, plan = ?,
+           costo_plan = ?, estado = ?, notes = ? WHERE id = ?`,
+        [data.phone_country_code_id, data.phone_number, data.iccid, data.operadora, data.plan, data.costo_plan,
+          data.estado, data.notes, lineId]
+      );
+      if (old.device_id) {
+        await conn.query(
+          `UPDATE mobile_devices SET phone_number = ?, phone_country_code_id = ?, operadora = ?
+           WHERE id = ? AND phone_number = ?`,
+          [data.phone_number, data.phone_country_code_id, data.operadora, old.device_id, old.phone_number]
+        );
+      }
+      if (data.estado === 'de_baja' && old.estado !== 'de_baja') {
+        await releaseFromDevice({ ...old, phone_number: data.phone_number }, conn);
+        await closeAssignment(lineId, 'Chip dado de baja', conn);
+      }
+    }
+    await conn.commit();
+    return id;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+async function deleteLine(lineId) {
+  const line = await getLine(lineId);
+  if (!line) return null;
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await releaseFromDevice(line, conn);
+    await conn.query('DELETE FROM mobile_lines WHERE id = ?', [lineId]);
+    await conn.commit();
+    return line;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// ---------------------------------------------------------------------
+// Listado con filtros combinables y totales
+// ---------------------------------------------------------------------
+const BASE_SELECT = `
+  SELECT l.*, c.calling_code, c.country_name,
+         d.imei, d.asset_code, d.model, d.status AS device_status,
+         la.id AS line_assignment_id, la.holder_name AS line_holder, la.uso, la.assigned_date AS line_assigned_date,
+         CASE WHEN l.device_id IS NOT NULL THEN 'en_celular' WHEN la.id IS NOT NULL THEN la.uso ELSE 'en_stock' END AS ubicacion,
+         COALESCE(d.area, e.area) AS area, COALESCE(d.sede, e.sede) AS sede,
+         COALESCE(da.holder_name, la.holder_name) AS holder,
+         (d.phone_number = l.phone_number) AS es_principal
+  FROM mobile_lines l
+  LEFT JOIN phone_country_codes c ON c.id = l.phone_country_code_id
+  LEFT JOIN mobile_devices d ON d.id = l.device_id
+  LEFT JOIN mobile_device_assignments da ON da.device_id = d.id AND da.returned_date IS NULL
+  LEFT JOIN mobile_line_assignments la ON la.line_id = l.id AND la.returned_date IS NULL
+  LEFT JOIN employees e ON e.id = la.employee_id`;
+
+async function listLines({ q, estado, ubicacion, operadora, area, sede, costo } = {}) {
+  let sql = `SELECT * FROM (${BASE_SELECT}) x WHERE 1=1`;
+  const params = [];
+  if (q) {
+    sql += ' AND (x.phone_number LIKE ? OR x.iccid LIKE ? OR x.holder LIKE ? OR x.imei LIKE ? OR x.asset_code LIKE ? OR x.plan LIKE ?)';
+    for (let i = 0; i < 6; i++) params.push(`%${q}%`);
+  }
+  if (estado && ESTADOS.includes(estado)) { sql += ' AND x.estado = ?'; params.push(estado); }
+  if (ubicacion && UBICACIONES.includes(ubicacion)) { sql += ' AND x.ubicacion = ?'; params.push(ubicacion); }
+  if (operadora === '__sin__') sql += " AND (x.operadora IS NULL OR x.operadora = '')";
+  else if (operadora) { sql += ' AND x.operadora = ?'; params.push(operadora); }
+  if (area) { sql += ' AND x.area = ?'; params.push(area); }
+  if (sede) { sql += ' AND x.sede = ?'; params.push(sede); }
+  if (costo === 'con') sql += ' AND x.costo_plan IS NOT NULL';
+  if (costo === 'sin') sql += ' AND x.costo_plan IS NULL';
+  sql += ' ORDER BY x.area IS NULL, x.area, x.phone_number';
+  const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
+// Totales de lo que se esta viendo (respetan todos los filtros).
+function summarize(rows) {
+  const money = (n) => Math.round(n * 100) / 100;
+  const s = {
+    total: rows.length, costoTotal: 0, conCosto: 0, sinCosto: 0,
+    porUbicacion: Object.fromEntries(UBICACIONES.map((u) => [u, 0])),
+    porEstado: Object.fromEntries(ESTADOS.map((e) => [e, 0])),
+    porOperadora: {},
+  };
+  for (const r of rows) {
+    const costo = r.costo_plan === null || r.costo_plan === undefined ? null : Number(r.costo_plan);
+    if (costo === null) s.sinCosto += 1; else { s.conCosto += 1; s.costoTotal += costo; }
+    s.porUbicacion[r.ubicacion] = (s.porUbicacion[r.ubicacion] || 0) + 1;
+    s.porEstado[r.estado] = (s.porEstado[r.estado] || 0) + 1;
+    const op = r.operadora || 'Sin operadora';
+    s.porOperadora[op] = s.porOperadora[op] || { cantidad: 0, costo: 0 };
+    s.porOperadora[op].cantidad += 1;
+    s.porOperadora[op].costo = money(s.porOperadora[op].costo + (costo || 0));
+  }
+  s.costoTotal = money(s.costoTotal);
+  return s;
+}
+
+async function getLineDetail(lineId) {
+  const [[line]] = await pool.query(`SELECT * FROM (${BASE_SELECT}) x WHERE x.id = ?`, [lineId]);
+  if (!line) return null;
+  const [history] = await pool.query(
+    `SELECT a.*, e.dni FROM mobile_line_assignments a LEFT JOIN employees e ON e.id = a.employee_id
+     WHERE a.line_id = ? ORDER BY a.id DESC`,
+    [lineId]
+  );
+  return { line, history };
+}
+
+// Chips de un celular (el principal y, si tiene doble SIM, el segundo).
+async function linesOfDevice(deviceId) {
+  const [rows] = await pool.query(`SELECT * FROM (${BASE_SELECT}) x WHERE x.device_id = ? ORDER BY x.es_principal DESC, x.id`, [deviceId]);
+  return rows;
+}
+
+// Chips asignados a una persona sin celular (incluye los de emergencia).
+async function linesOfEmployee(employeeId) {
+  const [rows] = await pool.query(
+    `SELECT l.*, a.uso, a.assigned_date FROM mobile_line_assignments a JOIN mobile_lines l ON l.id = a.line_id
+     WHERE a.employee_id = ? AND a.returned_date IS NULL ORDER BY l.phone_number`,
+    [employeeId]
+  );
+  return rows;
+}
+
+module.exports = {
+  ESTADOS, USOS, UBICACIONES,
+  validateLineData, numberTaken, deviceChipConflict, syncDeviceChip,
+  placeInDevice, removeFromDevice, assignLine, closeAssignment, saveLine, deleteLine, getLine,
+  listLines, summarize, getLineDetail, linesOfDevice, linesOfEmployee,
+};

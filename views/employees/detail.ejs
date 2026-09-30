@@ -59,14 +59,14 @@
                 <td><%= inc.fecha %></td>
                 <td><a href="/celulares/<%= inc.device_id %>"><%= inc.imei %></a></td>
                 <td>
-                  <span class="badge <%= inc.tipo === 'reparacion' ? 'bg-warning text-dark' : inc.tipo === 'baja' ? 'bg-danger' : 'bg-secondary' %>">
-                    <%= inc.tipo %>
+                  <span class="badge <%= mobileLabels.incidentTipo(inc.tipo).badge %>">
+                    <%= mobileLabels.incidentTipo(inc.tipo).label %>
                   </span>
                 </td>
                 <td><%= inc.descripcion || '—' %></td>
                 <td><%= inc.costo != null ? inc.costo : '—' %></td>
                 <td>
-                  <% if (inc.tipo !== 'reparacion') { %>—<% } else if (inc.fecha_resolucion) { %>Sí (<%= inc.fecha_resolucion %>)<% } else { %>No<% } %>
+                  <% if (inc.tipo !== 'reparacion' && inc.tipo !== 'decomiso') { %>—<% } else if (inc.fecha_resolucion) { %>Sí (<%= inc.fecha_resolucion %>)<% } else { %>No<% } %>
                 </td>
               </tr>
             <% }); %>
@@ -77,6 +77,20 @@
   </div>
 
   <div class="col-md-5">
+    <% if (currentLines.length) { %>
+    <div class="card p-3 mb-3">
+      <h5>Chips sin celular / de emergencia</h5>
+      <ul class="list-group list-group-flush mb-0">
+        <% currentLines.forEach(function(l) { %>
+          <li class="list-group-item px-0">
+            <a href="/celulares/chips/<%= l.id %>"><strong><%= l.phone_number %></strong></a>
+            <span class="badge <%= mobileLabels.lineUbicacion(l.uso).badge %>"><%= mobileLabels.lineUbicacion(l.uso).label %></span><br>
+            <span class="text-muted small"><%= l.operadora || 'Sin operadora' %> · desde <%= l.assigned_date || '—' %></span>
+          </li>
+        <% }); %>
+      </ul>
+    </div>
+    <% } %>
     <div class="card p-3 mb-3">
       <h5>Celular(es) asignado(s) actualmente</h5>
       <% if (currentDevices.length === 0) { %>
@@ -104,12 +118,24 @@
               <input type="hidden" name="returnTo" value="/empleados/<%= employee.id %>">
               <div class="mb-2">
                 <label class="form-label small">Tipo *</label>
-                <select name="tipo" class="form-select form-select-sm" required>
+                <select name="tipo" class="form-select form-select-sm" required onchange="var m=this.form.querySelector('.motivo-decomiso'); m.hidden=this.value!=='decomiso'; m.querySelector('select').required=this.value==='decomiso';">
                   <option value="reparacion">Reparación</option>
                   <option value="accidente">Accidente (registro informativo)</option>
-                  <option value="baja">Baja por daño</option>
+                  <option value="decomiso">Decomiso (denuncia, investigación u observado)</option>
+                  <option value="baja">Baja por daño o pérdida</option>
                 </select>
               </div>
+            <div class="mb-2 motivo-decomiso" hidden>
+              <label class="form-label small">Motivo del decomiso *</label>
+              <select name="motivo" class="form-select form-select-sm">
+                <option value="">— Seleccionar —</option>
+                <% Object.keys(mobileLabels.DECOMISO_MOTIVO).forEach(function(k) { %>
+                  <option value="<%= k %>"><%= mobileLabels.DECOMISO_MOTIVO[k] %></option>
+                <% }); %>
+              </select>
+              <div class="form-text">El equipo queda "En decomiso" y no se puede asignar hasta resolverlo; al resolverlo vuelve a stock.</div>
+            </div>
+
               <div class="mb-2">
                 <label class="form-label small">Fecha *</label>
                 <input type="date" name="fecha" class="form-control form-control-sm" required value="<%= new Date().toISOString().slice(0,10) %>">

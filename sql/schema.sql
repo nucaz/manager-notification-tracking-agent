@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   condicion ENUM('nuevo','usado'),              -- estado del equipo al ingresar al inventario
   area VARCHAR(100) NOT NULL,                   -- area/departamento (texto libre)
   sede VARCHAR(100),                            -- sede fisica (texto libre)
-  status ENUM('en_stock','asignado','en_reparacion','de_baja') NOT NULL DEFAULT 'en_stock',
+  status ENUM('en_stock','asignado','en_reparacion','en_decomiso','de_baja') NOT NULL DEFAULT 'en_stock',
   notes VARCHAR(250),
   created_by INT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -295,15 +295,19 @@ CREATE TABLE IF NOT EXISTS mobile_device_area_audits (
 -- ocurre y el reporte mensual de inventario simplemente filtra por
 -- fecha). 'reparacion' es el unico tipo "cerrable" (fecha_resolucion);
 -- 'accidente' queda como registro informativo del hecho; 'baja' es
--- terminal y refleja mobile_devices.status = 'de_baja'.
+-- terminal y refleja mobile_devices.status = 'de_baja'. 'decomiso'
+-- (motivo: denuncia, investigacion u observado) deja el equipo
+-- 'en_decomiso' y tambien se cierra con fecha_resolucion: al resolverlo el
+-- equipo vuelve a stock.
 CREATE TABLE IF NOT EXISTS mobile_device_incidents (
   id INT AUTO_INCREMENT PRIMARY KEY,
   device_id INT NOT NULL,
-  tipo ENUM('reparacion','accidente','baja') NOT NULL,
+  tipo ENUM('reparacion','accidente','baja','decomiso') NOT NULL,
+  motivo VARCHAR(20) NULL,                      -- solo 'decomiso': denuncia | investigacion | observado
   fecha DATE NOT NULL,
   descripcion TEXT,
   costo DECIMAL(10,2) NULL,
-  fecha_resolucion DATE NULL,                   -- solo 'reparacion': cuando volvio a servicio
+  fecha_resolucion DATE NULL,                   -- 'reparacion' y 'decomiso': cuando volvio a servicio / a stock
   created_by INT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_mobile_incident_device FOREIGN KEY (device_id) REFERENCES mobile_devices(id) ON DELETE CASCADE,
@@ -311,6 +315,52 @@ CREATE TABLE IF NOT EXISTS mobile_device_incidents (
   INDEX idx_mobile_incident_device (device_id),
   INDEX idx_mobile_incident_fecha (fecha),
   INDEX idx_mobile_incident_tipo (tipo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Chips (lineas). Un chip es siempre un numero de linea; puede estar
+-- puesto en un celular (device_id), asignado a una persona sin celular
+-- (mobile_line_assignments: 'personal' = lo usa en su propio equipo,
+-- 'emergencia' = numero de respaldo aunque ya tenga celular con chip) o en
+-- stock. mobile_devices.phone_number/has_chip se mantienen como el chip
+-- principal del equipo y los sincroniza src/services/mobileLineService.js.
+CREATE TABLE IF NOT EXISTS mobile_lines (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  phone_country_code_id INT NULL,
+  phone_number VARCHAR(30) NOT NULL,
+  iccid VARCHAR(22) NULL,
+  operadora VARCHAR(50) NULL,
+  plan VARCHAR(60) NULL,
+  costo_plan DECIMAL(10,2) NULL,
+  estado ENUM('activo','suspendido','de_baja') NOT NULL DEFAULT 'activo',
+  device_id INT NULL,
+  notes VARCHAR(250) NULL,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mobile_line_device FOREIGN KEY (device_id) REFERENCES mobile_devices(id) ON DELETE SET NULL,
+  CONSTRAINT fk_mobile_line_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY uniq_mobile_line_number (phone_number),
+  INDEX idx_mobile_line_device (device_id),
+  INDEX idx_mobile_line_estado (estado),
+  INDEX idx_mobile_line_operadora (operadora)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mobile_line_assignments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  line_id INT NOT NULL,
+  employee_id INT NULL,
+  holder_name VARCHAR(150) NOT NULL,
+  uso ENUM('personal','emergencia') NOT NULL DEFAULT 'personal',
+  assigned_date DATE NULL,
+  returned_date DATE NULL,
+  observacion VARCHAR(250) NULL,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mobile_line_asg_line FOREIGN KEY (line_id) REFERENCES mobile_lines(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mobile_line_asg_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
+  CONSTRAINT fk_mobile_line_asg_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_mobile_line_asg_line (line_id),
+  INDEX idx_mobile_line_asg_employee (employee_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------

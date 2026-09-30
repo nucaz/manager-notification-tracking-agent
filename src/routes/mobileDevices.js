@@ -11,12 +11,16 @@ const catalogService = require('../services/catalogService');
 const employeeService = require('../services/employeeService');
 const settingsService = require('../services/settingsService');
 const mobileDeviceService = require('../services/mobileDeviceService');
+const mobileLineService = require('../services/mobileLineService');
+const { DECOMISO_MOTIVO } = require('../config/mobileLabels');
 
 const auditService = require('../services/auditService');
 
 const { validateDeviceData, imeiTaken, touchDevice, describeDeviceChanges } = mobileDeviceService;
 
-const INCIDENT_TIPOS = ['reparacion', 'accidente', 'baja'];
+const INCIDENT_TIPOS = ['reparacion', 'accidente', 'decomiso', 'baja'];
+// Estados en los que el equipo no se puede asignar: primero se resuelve.
+const NO_ASIGNABLE = { en_decomiso: 'está en decomiso (resuélvalo primero)', de_baja: 'está dado de baja' };
 
 // 'YYYY-MM' -> { desde: 'YYYY-MM-01', hasta: 'YYYY-MM-<ultimo dia>' }.
 // Sin mes (o invalido) cae al mes actual - el reporte de inventario nunca
@@ -246,6 +250,11 @@ router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
     if (data.imei && (await imeiTaken(data.imei))) {
       errors.push('Ya existe un celular registrado con ese IMEI.');
     }
+    if (data.status === 'en_decomiso') {
+      errors.push('El decomiso se registra desde el detalle del celular (con fecha y motivo).');
+    }
+    const chipConflict = data.has_chip ? await mobileLineService.deviceChipConflict(data.phone_number, null) : null;
+    if (chipConflict) errors.push(chipConflict);
     if (errors.length > 0) {
       errors.forEach((e) => req.flash('error', e));
       return res.redirect('/celulares/nuevo');
@@ -253,10 +262,11 @@ router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
     const cols = Object.keys(data);
     const values = Object.values(data);
     const placeholders = cols.map(() => '?').join(', ');
-    await pool.query(
+    const [ins] = await pool.query(
       `INSERT INTO mobile_devices (${cols.join(', ')}, created_by) VALUES (${placeholders}, ?)`,
       [...values, req.session.user.id]
     );
+    await mobileLineService.syncDeviceChip(ins.insertId, null, req.session.user.id);
     await auditService.log(req, {
       user: req.session.user,
       action: 'celular_creado',
@@ -296,6 +306,13 @@ router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => 
     if (data.imei && (await imeiTaken(data.imei, oldRow.id))) {
       errors.push('Otro celular ya usa ese IMEI.');
     }
+    if (data.status === 'en_decomiso' && oldRow.status !== 'en_decomiso') {
+      errors.push('El decomiso se registra desde el detalle del celular (con fecha y motivo).');
+    } else if (oldRow.status === 'en_decomiso' && data.status !== 'en_decomiso') {
+      errors.push('El equipo está en decomiso: use "Resolver decomiso" en su detalle para devolverlo a stock.');
+    }
+    const chipConflict = data.has_chip ? await mobileLineService.deviceChipConflict(data.phone_number, oldRow.id) : null;
+    if (chipConflict) errors.push(chipConflict);
     if (errors.length > 0) {
       errors.forEach((e) => req.flash('error', e));
       return res.redirect(`/celulares/${req.params.id}/editar`);
@@ -305,6 +322,7 @@ router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => 
     const values = Object.values(data);
     const setClause = cols.map((c) => `${c} = ?`).join(', ');
     await pool.query(`UPDATE mobile_devices SET ${setClause} WHERE id = ?`, [...values, req.params.id]);
+    await mobileLineService.syncDeviceChip(oldRow.id, oldRow.has_chip ? oldRow.phone_number : null, req.session.user.id);
     if (changes) {
       await auditService.log(req, {
         user: req.session.user,
@@ -384,10 +402,14 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
       req.flash('error', 'El DNI debe tener exactamente 8 dígitos numéricos.');
       return res.redirect(`/celulares/${req.params.id}`);
     }
-    const [[deviceBefore]] = await pool.query('SELECT imei FROM mobile_devices WHERE id = ?', [req.params.id]);
+    const [[deviceBefore]] = await pool.query('SELECT imei, status FROM mobile_devices WHERE id = ?', [req.params.id]);
     if (!deviceBefore) {
       req.flash('error', 'Celular no encontrado.');
       return res.redirect('/celulares');
+    }
+    if (NO_ASIGNABLE[deviceBefore.status]) {
+      req.flash('error', `No se puede asignar: el celular ${NO_ASIGNABLE[deviceBefore.status]}.`);
+      return res.redirect(`/celulares/${req.params.id}`);
     }
     const employeeId = await employeeService.upsert(
       { dni, first_name, last_name, area, sede, cargo },
@@ -695,21 +717,39 @@ function safeReturnTo(value, fallback) {
 router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const { tipo, fecha, descripcion, costo } = req.body;
+    const motivo = tipo === 'decomiso' ? req.body.motivo : null;
     const redirectTo = safeReturnTo(req.body.returnTo, `/celulares/${req.params.id}`);
     if (!INCIDENT_TIPOS.includes(tipo) || !fecha) {
       req.flash('error', 'El tipo y la fecha del incidente son obligatorios.');
       return res.redirect(redirectTo);
     }
-    const [[device]] = await pool.query('SELECT imei FROM mobile_devices WHERE id = ?', [req.params.id]);
+    if (tipo === 'decomiso' && !DECOMISO_MOTIVO[motivo]) {
+      req.flash('error', `Indique el motivo del decomiso (${Object.values(DECOMISO_MOTIVO).join(', ')}).`);
+      return res.redirect(redirectTo);
+    }
+    const [[device]] = await pool.query('SELECT imei, status FROM mobile_devices WHERE id = ?', [req.params.id]);
     if (!device) {
       req.flash('error', 'Celular no encontrado.');
       return res.redirect('/celulares');
     }
+    if (tipo === 'decomiso' && ['en_decomiso', 'de_baja'].includes(device.status)) {
+      req.flash('error', device.status === 'de_baja' ? 'El celular está dado de baja.' : 'El celular ya está en decomiso.');
+      return res.redirect(redirectTo);
+    }
     await pool.query(
-      `INSERT INTO mobile_device_incidents (device_id, tipo, fecha, descripcion, costo, created_by)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [req.params.id, tipo, fecha, descripcion || null, costo || null, req.session.user.id]
+      `INSERT INTO mobile_device_incidents (device_id, tipo, motivo, fecha, descripcion, costo, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [req.params.id, tipo, motivo, fecha, descripcion || null, costo || null, req.session.user.id]
     );
+    if (tipo === 'decomiso') {
+      await pool.query('UPDATE mobile_devices SET status = "en_decomiso" WHERE id = ?', [req.params.id]);
+    } else if (tipo === 'baja') {
+      // Una baja cierra el decomiso que estuviera abierto: el equipo no vuelve.
+      await pool.query(
+        "UPDATE mobile_device_incidents SET fecha_resolucion = ? WHERE device_id = ? AND tipo = 'decomiso' AND fecha_resolucion IS NULL",
+        [fecha, req.params.id]
+      );
+    }
     if (tipo === 'reparacion') {
       await pool.query('UPDATE mobile_devices SET status = "en_reparacion" WHERE id = ?', [req.params.id]);
     } else if (tipo === 'baja') {
@@ -720,7 +760,7 @@ router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next)
       user: req.session.user,
       action: 'celular_incidente_registrado',
       target: `Celular ${device.imei}`,
-      detail: `Tipo ${tipo}, fecha ${fecha}${costo ? `, costo ${costo}` : ''}${descripcion ? `: ${descripcion}` : ''}`,
+      detail: `Tipo ${tipo}${motivo ? ` (motivo: ${DECOMISO_MOTIVO[motivo]})` : ''}, fecha ${fecha}${costo ? `, costo ${costo}` : ''}${descripcion ? `: ${descripcion}` : ''}`,
     });
     req.flash('success', 'Incidente registrado correctamente.');
     res.redirect(redirectTo);
@@ -734,30 +774,49 @@ router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next)
 // "en_stock" - mismo criterio que /devolver.
 router.post('/:id/incidentes/:incidentId/resolver', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
-    const [result] = await pool.query(
-      `UPDATE mobile_device_incidents SET fecha_resolucion = CURDATE()
-       WHERE id = ? AND device_id = ? AND tipo = 'reparacion' AND fecha_resolucion IS NULL`,
+    const [[incident]] = await pool.query(
+      `SELECT id, tipo, motivo FROM mobile_device_incidents
+       WHERE id = ? AND device_id = ? AND tipo IN ('reparacion', 'decomiso') AND fecha_resolucion IS NULL`,
       [req.params.incidentId, req.params.id]
     );
-    if (result.affectedRows === 0) {
-      req.flash('error', 'No se encontró una reparación pendiente con ese id.');
+    if (!incident) {
+      req.flash('error', 'No se encontró una reparación o decomiso pendiente con ese id.');
       return res.redirect(`/celulares/${req.params.id}`);
     }
+    await pool.query('UPDATE mobile_device_incidents SET fecha_resolucion = CURDATE() WHERE id = ?', [incident.id]);
     const [[device]] = await pool.query('SELECT imei FROM mobile_devices WHERE id = ?', [req.params.id]);
     const [[activeAssignment]] = await pool.query(
-      'SELECT id FROM mobile_device_assignments WHERE device_id = ? AND returned_date IS NULL',
+      'SELECT id, holder_name FROM mobile_device_assignments WHERE device_id = ? AND returned_date IS NULL',
       [req.params.id]
     );
-    const nuevoEstado = activeAssignment ? 'asignado' : 'en_stock';
+    let nuevoEstado;
+    let extra = '';
+    if (incident.tipo === 'decomiso') {
+      // Al terminar un decomiso el equipo vuelve a stock (no a quien lo
+      // tenia): su asignacion se cierra con fecha de hoy.
+      nuevoEstado = 'en_stock';
+      if (activeAssignment) {
+        await pool.query(
+          `UPDATE mobile_device_assignments SET returned_date = CURDATE(),
+             observacion = TRIM(BOTH ' - ' FROM CONCAT_WS(' - ', observacion, 'Cerrada al resolver el decomiso'))
+           WHERE id = ?`,
+          [activeAssignment.id]
+        );
+        extra = `; se cerró la asignación de ${activeAssignment.holder_name}`;
+      }
+    } else {
+      nuevoEstado = activeAssignment ? 'asignado' : 'en_stock';
+    }
     await pool.query('UPDATE mobile_devices SET status = ? WHERE id = ?', [nuevoEstado, req.params.id]);
     await touchDevice(req.params.id);
+    const nombre = incident.tipo === 'decomiso' ? `Decomiso (${DECOMISO_MOTIVO[incident.motivo] || 'sin motivo'})` : 'Reparación';
     await auditService.log(req, {
       user: req.session.user,
       action: 'celular_incidente_resuelto',
       target: `Celular ${device ? device.imei : req.params.id}`,
-      detail: `Reparación #${req.params.incidentId} resuelta, equipo vuelve a "${nuevoEstado}"`,
+      detail: `${nombre} #${incident.id} resuelto, equipo vuelve a "${nuevoEstado}"${extra}`,
     });
-    req.flash('success', 'Reparación marcada como resuelta.');
+    req.flash('success', incident.tipo === 'decomiso' ? `Decomiso resuelto: el celular volvió a stock${extra}.` : 'Reparación marcada como resuelta.');
     res.redirect(`/celulares/${req.params.id}`);
   } catch (err) {
     next(err);
@@ -790,6 +849,7 @@ router.get('/inventario', async (req, res, next) => {
       asignados: items.filter((i) => i.status === 'asignado').length,
       enStock: items.filter((i) => i.status === 'en_stock').length,
       enReparacion: items.filter((i) => i.status === 'en_reparacion').length,
+      enDecomiso: items.filter((i) => i.status === 'en_decomiso').length,
       deBaja: items.filter((i) => i.status === 'de_baja').length,
     };
     res.render('mobileDevices/inventario', {
@@ -925,6 +985,7 @@ router.get('/:id', async (req, res, next) => {
       [req.params.id]
     );
     const catalogs = await loadCatalogOptions();
+    const lines = await mobileLineService.linesOfDevice(rows[0].id);
 
     // Busqueda de empleado por DNI (recarga de pagina con ?dni=), para
     // precargar el formulario de asignar/reasignar sin retipear.
@@ -944,6 +1005,7 @@ router.get('/:id', async (req, res, next) => {
       history,
       attachments,
       incidents,
+      lines,
       areas: catalogs.areas,
       sedes: catalogs.sedes,
       dniQuery,

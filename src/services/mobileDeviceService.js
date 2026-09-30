@@ -1,6 +1,7 @@
 // Reglas de negocio del modulo Celulares compartidas entre el formulario
 // (src/routes/mobileDevices.js) y la importacion masiva (mas abajo).
 const pool = require('../db/pool');
+const mobileLineService = require('./mobileLineService');
 
 // IMEI: estandar GSMA (TS 23.003) - 15 digitos numericos (TAC 8 + serie 6
 // + digito de control 1). El "8 alfanumerico" que se sugirio corresponde
@@ -11,7 +12,10 @@ const IMEI_REGEX = /^\d{15}$/;
 // o "Redmi 9" no son puramente alfanumericos sin espacio).
 const MODEL_REGEX = /^[A-Za-zÀ-ÿ0-9\s-]{1,20}$/;
 
-const STATUSES = ['en_stock', 'asignado', 'en_reparacion', 'de_baja'];
+const STATUSES = ['en_stock', 'asignado', 'en_reparacion', 'en_decomiso', 'de_baja'];
+// La importacion no acepta 'en_decomiso': un decomiso necesita motivo y
+// queda como incidente, se registra desde el detalle del celular.
+const IMPORT_STATUSES = STATUSES.filter((s) => s !== 'en_decomiso');
 const CONDICIONES = ['nuevo', 'usado'];
 
 // Validaciones de negocio que no se pueden expresar solo con atributos
@@ -153,7 +157,9 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
     const problems = await validateDeviceData(data);
     if (assignedDate === undefined) problems.push('La fecha de entrega no se entiende (usa AAAA-MM-DD o DD/MM/AAAA).');
     if (purchaseDate === undefined) problems.push('La fecha de compra no se entiende (usa AAAA-MM-DD o DD/MM/AAAA).');
-    if (estadoRaw && !STATUSES.includes(estadoRaw)) problems.push(`Estado inválido "${estadoRaw}" (usa ${STATUSES.join(', ')}).`);
+    if (estadoRaw && !IMPORT_STATUSES.includes(estadoRaw)) problems.push(`Estado inválido "${estadoRaw}" (usa ${IMPORT_STATUSES.join(', ')}; el decomiso se registra desde el detalle del celular).`);
+    const chipConflict = phone ? await mobileLineService.deviceChipConflict(phone, null) : null;
+    if (chipConflict) problems.push(chipConflict);
     if (holder.length > 150) problems.push('El usuario asignado supera los 150 caracteres.');
     if (cargo.length > 150) problems.push('El cargo supera los 150 caracteres.');
     if (turno.length > 50) problems.push('El turno supera los 50 caracteres.');
@@ -188,6 +194,7 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
         ]
       );
       const deviceId = result.insertId;
+      await mobileLineService.syncDeviceChip(deviceId, null, userId, conn);
       if (withAssignment) {
         await conn.query(
           `INSERT INTO mobile_device_assignments

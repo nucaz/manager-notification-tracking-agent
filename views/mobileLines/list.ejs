@@ -1,0 +1,186 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  // URL del listado con los filtros actuales + un cambio: asi las tarjetas
+  // y los totales se "encadenan" (agregan un filtro sin perder los demas).
+  function withFilter(key, value) {
+    const p = new URLSearchParams();
+    Object.keys(filters).forEach(function (k) { if (filters[k]) p.set(k, filters[k]); });
+    if (value) p.set(key, value); else p.delete(key);
+    const s = p.toString();
+    return '/celulares/chips' + (s ? '?' + s : '');
+  }
+  function soles(n) { return 'S/ ' + Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  const U = mobileLabels.LINE_UBICACION;
+%>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="/celulares" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Celulares</a>
+    <h2 class="mb-0">Chips <span class="text-muted fs-6">(<%= items.length %><%= activeFilters ? ' con filtros' : '' %>)</span></h2>
+  </div>
+  <div class="d-flex flex-wrap gap-1">
+    <a href="/celulares/chips/exportar.xlsx<%= filterQuery %>" class="btn btn-outline-success" title="Exporta los chips filtrados, con la fila de totales">
+      <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+    </a>
+    <% if (currentUser.role !== 'lector') { %>
+      <a href="/celulares/chips/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo chip</a>
+    <% } %>
+  </div>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-12 col-md-3">
+    <input type="text" name="q" value="<%= filters.q %>" class="form-control" placeholder="Número, ICCID, usuario, IMEI, código o plan...">
+  </div>
+  <div class="col-6 col-md-2">
+    <select name="ubicacion" class="form-select" aria-label="Ubicación">
+      <option value="">Toda ubicación</option>
+      <% Object.keys(U).forEach(function(k) { %>
+        <option value="<%= k %>" <%= filters.ubicacion === k ? 'selected' : '' %>><%= U[k].label %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-6 col-md-2">
+    <select name="estado" class="form-select" aria-label="Estado">
+      <option value="">Todo estado</option>
+      <% Object.keys(mobileLabels.LINE_ESTADO).forEach(function(k) { %>
+        <option value="<%= k %>" <%= filters.estado === k ? 'selected' : '' %>><%= mobileLabels.LINE_ESTADO[k].label %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-6 col-md-2">
+    <select name="operadora" class="form-select" aria-label="Operadora">
+      <option value="">Toda operadora</option>
+      <% operadoras.forEach(function(o) { %>
+        <option value="<%= o %>" <%= filters.operadora === o ? 'selected' : '' %>><%= o %></option>
+      <% }); %>
+      <option value="__sin__" <%= filters.operadora === '__sin__' ? 'selected' : '' %>>Sin operadora</option>
+    </select>
+  </div>
+  <div class="col-6 col-md-3">
+    <select name="costo" class="form-select" aria-label="Costo del plan">
+      <option value="">Con y sin costo registrado</option>
+      <option value="con" <%= filters.costo === 'con' ? 'selected' : '' %>>Solo con costo registrado</option>
+      <option value="sin" <%= filters.costo === 'sin' ? 'selected' : '' %>>Solo sin costo (por completar)</option>
+    </select>
+  </div>
+  <div class="col-6 col-md-3">
+    <select name="area" class="form-select" aria-label="Área">
+      <option value="">Todas las áreas</option>
+      <% areas.forEach(function(a) { %>
+        <option value="<%= a %>" <%= filters.area === a ? 'selected' : '' %>><%= a %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-6 col-md-3">
+    <select name="sede" class="form-select" aria-label="Sede">
+      <option value="">Todas las sedes</option>
+      <% sedes.forEach(function(s) { %>
+        <option value="<%= s %>" <%= filters.sede === s ? 'selected' : '' %>><%= s %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-funnel"></i> Filtrar</button>
+    <% if (activeFilters) { %><a href="/celulares/chips" class="btn btn-link">Quitar filtros</a><% } %>
+  </div>
+</form>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="card p-3 h-100">
+      <div class="text-muted small">Chips<%= activeFilters ? ' (filtrados)' : '' %></div>
+      <div class="fs-3 fw-semibold" style="font-variant-numeric: tabular-nums;"><%= summary.total %></div>
+      <div class="small text-muted"><%= summary.porEstado.activo %> activos · <%= summary.porEstado.suspendido %> suspendidos · <%= summary.porEstado.de_baja %> de baja</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card p-3 h-100">
+      <div class="text-muted small">Costo mensual de los planes</div>
+      <div class="fs-3 fw-semibold" style="font-variant-numeric: tabular-nums;"><%= soles(summary.costoTotal) %></div>
+      <div class="small">
+        <%= summary.conCosto %> con costo ·
+        <% if (summary.sinCosto) { %><a href="<%= withFilter('costo', 'sin') %>"><%= summary.sinCosto %> sin costo registrado</a><% } else { %>0 sin costo<% } %>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="card p-3 h-100">
+      <div class="text-muted small mb-1">Dónde están (clic para agregar el filtro)</div>
+      <div class="d-flex flex-wrap gap-2">
+        <% Object.keys(U).forEach(function(k) { %>
+          <a class="btn btn-sm <%= filters.ubicacion === k ? 'btn-dark' : 'btn-outline-secondary' %>" href="<%= withFilter('ubicacion', filters.ubicacion === k ? '' : k) %>">
+            <%= U[k].label %> <span class="badge <%= U[k].badge %> ms-1"><%= summary.porUbicacion[k] || 0 %></span>
+          </a>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% const ops = Object.keys(summary.porOperadora).sort(); %>
+<% if (ops.length) { %>
+<div class="card p-3 mb-3">
+  <div class="text-muted small mb-1">Por operadora</div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0" style="max-width: 36rem; font-variant-numeric: tabular-nums;">
+      <thead><tr><th>Operadora</th><th class="text-end">Chips</th><th class="text-end">Costo mensual</th></tr></thead>
+      <tbody>
+        <% ops.forEach(function(o) { %>
+          <tr>
+            <td><a href="<%= withFilter('operadora', o === 'Sin operadora' ? '__sin__' : o) %>"><%= o %></a></td>
+            <td class="text-end"><%= summary.porOperadora[o].cantidad %></td>
+            <td class="text-end"><%= soles(summary.porOperadora[o].costo) %></td>
+          </tr>
+        <% }); %>
+      </tbody>
+      <tfoot><tr class="fw-semibold"><td>Total</td><td class="text-end"><%= summary.total %></td><td class="text-end"><%= soles(summary.costoTotal) %></td></tr></tfoot>
+    </table>
+  </div>
+</div>
+<% } %>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Número</th><th>Operadora</th><th>Plan</th><th class="text-end">Costo</th><th>Estado</th><th>Ubicación</th>
+          <th>Usuario</th><th>Área</th><th>Sede</th><th>Celular</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.forEach(function(it) { %>
+          <tr>
+            <td class="text-nowrap"><a href="/celulares/chips/<%= it.id %>"><%= it.calling_code ? '+' + it.calling_code + ' ' : '' %><%= it.phone_number %></a>
+              <% if (it.iccid) { %><div class="small text-muted font-monospace">ICCID <%= it.iccid %></div><% } %></td>
+            <td><%= it.operadora || '—' %></td>
+            <td><%= it.plan || '—' %></td>
+            <td class="text-end text-nowrap" style="font-variant-numeric: tabular-nums;"><%= it.costo_plan === null ? '—' : soles(it.costo_plan) %></td>
+            <td><span class="badge <%= mobileLabels.lineEstado(it.estado).badge %>"><%= mobileLabels.lineEstado(it.estado).label %></span></td>
+            <td><span class="badge <%= mobileLabels.lineUbicacion(it.ubicacion).badge %>"><%= mobileLabels.lineUbicacion(it.ubicacion).label %></span></td>
+            <td><%= it.holder || '—' %></td>
+            <td><%= it.area || '—' %></td>
+            <td><%= it.sede || '—' %></td>
+            <td class="text-nowrap"><% if (it.device_id) { %><a href="/celulares/<%= it.device_id %>"><%= it.asset_code || it.imei %></a><% if (!it.es_principal) { %> <span class="small text-muted">(2.º chip)</span><% } %><% } else { %>—<% } %></td>
+            <td class="text-end"><a href="/celulares/chips/<%= it.id %>" class="btn btn-sm btn-outline-secondary">Ver</a></td>
+          </tr>
+        <% }); %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="11" class="text-center text-muted py-4"><%= activeFilters ? 'Ningún chip cumple estos filtros.' : 'No hay chips registrados.' %></td></tr>
+        <% } %>
+      </tbody>
+      <% if (items.length) { %>
+        <tfoot>
+          <tr class="fw-semibold" style="font-variant-numeric: tabular-nums;">
+            <td colspan="3"><%= summary.total %> chip(s)</td>
+            <td class="text-end text-nowrap"><%= soles(summary.costoTotal) %></td>
+            <td colspan="7"></td>
+          </tr>
+        </tfoot>
+      <% } %>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

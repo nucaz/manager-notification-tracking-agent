@@ -26,6 +26,7 @@
     { label: 'Asignados', valor: summary.asignados, color: 'text-success', url: '/celulares?status=asignado' },
     { label: 'En stock', valor: summary.enStock, color: 'text-secondary', url: '/celulares?status=en_stock' },
     { label: 'En reparación', valor: summary.enReparacion, color: 'text-warning', url: '/celulares?status=en_reparacion' },
+    { label: 'En decomiso', valor: summary.enDecomiso, color: 'text-body', url: '/celulares?status=en_decomiso' },
     { label: 'De baja', valor: summary.deBaja, color: 'text-danger', url: '/celulares?status=de_baja' },
   ];
 %>
@@ -62,7 +63,7 @@
             <td><%= [it.brand, it.model].filter(Boolean).join(' / ') || '—' %></td>
             <td><%= it.holder_name || '—' %></td>
             <td>
-              <span class="badge <%= it.status === 'asignado' ? 'bg-success' : it.status === 'en_stock' ? 'bg-secondary' : it.status === 'en_reparacion' ? 'bg-warning text-dark' : 'bg-danger' %>">
+              <span class="badge <%= mobileLabels.deviceStatus(it.status).badge %>">
                 <%= it.status %>
               </span>
             </td>
@@ -91,8 +92,8 @@
           <tr>
             <td><%= inc.fecha %></td>
             <td>
-              <span class="badge <%= inc.tipo === 'reparacion' ? 'bg-warning text-dark' : inc.tipo === 'baja' ? 'bg-danger' : 'bg-secondary' %>">
-                <%= inc.tipo %>
+              <span class="badge <%= mobileLabels.incidentTipo(inc.tipo).badge %>">
+                <%= mobileLabels.incidentTipo(inc.tipo).label %>
               </span>
             </td>
             <td><%= inc.sede || '—' %></td>
@@ -101,7 +102,7 @@
             <td><%= inc.descripcion || '—' %></td>
             <td><%= inc.costo != null ? inc.costo : '—' %></td>
             <td>
-              <% if (inc.tipo !== 'reparacion') { %>—<% } else if (inc.fecha_resolucion) { %>Sí (<%= inc.fecha_resolucion %>)<% } else { %>No<% } %>
+              <% if (inc.tipo !== 'reparacion' && inc.tipo !== 'decomiso') { %>—<% } else if (inc.fecha_resolucion) { %>Sí (<%= inc.fecha_resolucion %>)<% } else { %>No<% } %>
             </td>
           </tr>
         <% }); %>

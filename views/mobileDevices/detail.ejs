@@ -3,8 +3,8 @@
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h2 class="mb-0"><%= item.imei %></h2>
-    <span class="badge <%= item.status === 'asignado' ? 'bg-success' : item.status === 'en_stock' ? 'bg-secondary' : item.status === 'en_reparacion' ? 'bg-warning text-dark' : 'bg-danger' %>">
-      <%= item.status %>
+    <span class="badge <%= mobileLabels.deviceStatus(item.status).badge %>">
+      <%= mobileLabels.deviceStatus(item.status).label %>
     </span>
   </div>
   <div>
@@ -28,7 +28,7 @@
         <tr><th style="width:220px;">Código de activo</th><td><%= item.asset_code || '—' %></td></tr>
         <tr><th>Marca</th><td><%= item.brand || '—' %></td></tr>
         <tr><th>Modelo</th><td><%= item.model || '—' %></td></tr>
-        <tr><th>Tiene chip</th><td><%= item.has_chip ? 'Sí' : 'No' %></td></tr>
+        <tr><th>Tiene chip</th><td><%= item.has_chip ? 'Sí' : 'No' %><%= lines.length > 1 ? ' (' + lines.length + ' chips, doble SIM)' : '' %></td></tr>
         <tr><th>Número de línea</th><td><%= item.phone_number ? ('+' + item.calling_code + ' ' + item.phone_number + (item.country_name ? ' (' + item.country_name + ')' : '')) : '—' %></td></tr>
         <tr><th>Operadora</th><td><%= item.operadora || '—' %></td></tr>
         <tr><th>Fecha de compra</th><td><%= item.purchase_date || '—' %></td></tr>
@@ -39,6 +39,31 @@
         <tr><th>Registrado</th><td><%= item.created_at || '—' %></td></tr>
         <tr><th>Última actualización</th><td><%= item.updated_at || '—' %></td></tr>
       </table>
+    </div>
+
+    <div class="card p-3 mb-3">
+      <div class="d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Chips en este celular</h5>
+        <a href="/celulares/chips" class="small">Ver todos los chips</a>
+      </div>
+      <% if (!lines.length) { %>
+        <p class="text-muted mb-0 mt-2">Sin chip. Para ponerle uno que está en stock, ábralo desde <a href="/celulares/chips?ubicacion=en_stock">Chips en stock</a> y use "Poner en un celular".</p>
+      <% } else { %>
+        <table class="table table-sm mb-0 mt-2">
+          <thead><tr><th>Número</th><th>Operadora</th><th>Plan</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            <% lines.forEach(function(l) { %>
+              <tr>
+                <td><%= l.calling_code ? '+' + l.calling_code + ' ' : '' %><%= l.phone_number %> <span class="small text-muted"><%= l.es_principal ? '(principal)' : '(2.º chip)' %></span></td>
+                <td><%= l.operadora || '—' %></td>
+                <td><%= l.plan || '—' %><%= l.costo_plan !== null ? ' · S/ ' + Number(l.costo_plan).toFixed(2) : '' %></td>
+                <td><span class="badge <%= mobileLabels.lineEstado(l.estado).badge %>"><%= mobileLabels.lineEstado(l.estado).label %></span></td>
+                <td class="text-end"><a href="/celulares/chips/<%= l.id %>" class="btn btn-sm btn-outline-secondary">Ver chip</a></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
     </div>
 
     <div class="card p-3 mb-3">
@@ -66,7 +91,7 @@
     </div>
 
     <div class="card p-3">
-      <h5>Reparaciones, accidentes y bajas</h5>
+      <h5>Reparaciones, accidentes, decomisos y bajas</h5>
       <% if (incidents.length === 0) { %>
         <p class="text-muted mb-0">Sin incidentes registrados.</p>
       <% } else { %>
@@ -77,14 +102,15 @@
               <tr>
                 <td><%= inc.fecha %></td>
                 <td>
-                  <span class="badge <%= inc.tipo === 'reparacion' ? 'bg-warning text-dark' : inc.tipo === 'baja' ? 'bg-danger' : 'bg-secondary' %>">
-                    <%= inc.tipo %>
+                  <span class="badge <%= mobileLabels.incidentTipo(inc.tipo).badge %>">
+                    <%= mobileLabels.incidentTipo(inc.tipo).label %>
                   </span>
+                  <% if (inc.motivo) { %><div class="small text-muted"><%= mobileLabels.DECOMISO_MOTIVO[inc.motivo] || inc.motivo %></div><% } %>
                 </td>
                 <td><%= inc.descripcion || '—' %></td>
                 <td><%= inc.costo != null ? inc.costo : '—' %></td>
                 <td>
-                  <% if (inc.tipo !== 'reparacion') { %>
+                  <% if (inc.tipo !== 'reparacion' && inc.tipo !== 'decomiso') { %>
                     —
                   <% } else if (inc.fecha_resolucion) { %>
                     Sí (<%= inc.fecha_resolucion %>)
@@ -98,6 +124,12 @@
                           onsubmit="return confirm('¿Marcar esta reparación como resuelta? El equipo vuelve a servicio.');">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                       <button class="btn btn-sm btn-outline-success" type="submit">Marcar resuelta</button>
+                    </form>
+                  <% } else if (currentUser.role !== 'lector' && inc.tipo === 'decomiso' && !inc.fecha_resolucion) { %>
+                    <form action="/celulares/<%= item.id %>/incidentes/<%= inc.id %>/resolver" method="post"
+                          onsubmit="return confirm('¿Resolver el decomiso? El celular vuelve a stock<%= currentAssignment ? ' y se cierra su asignación actual' : '' %>. Si no va a volver, registre una baja en su lugar.');">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-sm btn-outline-success" type="submit">Resolver decomiso</button>
                     </form>
                   <% } %>
                 </td>
@@ -116,12 +148,26 @@
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <div class="mb-2">
               <label class="form-label small">Tipo *</label>
-              <select name="tipo" class="form-select form-select-sm" required>
+              <select name="tipo" class="form-select form-select-sm" required onchange="var m=this.form.querySelector('.motivo-decomiso'); m.hidden=this.value!=='decomiso'; m.querySelector('select').required=this.value==='decomiso';">
                 <option value="reparacion">Reparación</option>
                 <option value="accidente">Accidente (registro informativo)</option>
-                <option value="baja">Baja por daño</option>
+                <% if (item.status !== 'en_decomiso' && item.status !== 'de_baja') { %>
+                  <option value="decomiso">Decomiso (denuncia, investigación u observado)</option>
+                <% } %>
+                <option value="baja">Baja por daño o pérdida</option>
               </select>
             </div>
+            <div class="mb-2 motivo-decomiso" hidden>
+              <label class="form-label small">Motivo del decomiso *</label>
+              <select name="motivo" class="form-select form-select-sm">
+                <option value="">— Seleccionar —</option>
+                <% Object.keys(mobileLabels.DECOMISO_MOTIVO).forEach(function(k) { %>
+                  <option value="<%= k %>"><%= mobileLabels.DECOMISO_MOTIVO[k] %></option>
+                <% }); %>
+              </select>
+              <div class="form-text">El equipo queda "En decomiso" y no se puede asignar hasta resolverlo; al resolverlo vuelve a stock.</div>
+            </div>
+
             <div class="mb-2">
               <label class="form-label small">Fecha *</label>
               <input type="date" name="fecha" class="form-control form-control-sm" required value="<%= new Date().toISOString().slice(0,10) %>">
@@ -217,6 +263,11 @@
             </div>
           </div>
         <% } %>
+        <% if (item.status === 'en_decomiso' || item.status === 'de_baja') { %>
+          <div class="alert alert-light border small mb-0">
+            <%= item.status === 'en_decomiso' ? 'El celular está en decomiso: no se puede asignar hasta resolverlo (ver incidentes).' : 'El celular está dado de baja: no se puede asignar.' %>
+          </div>
+        <% } else { %>
         <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#formAsignar">
           <%= currentAssignment ? 'Reasignar' : 'Asignar' %>
         </button>
@@ -299,6 +350,7 @@
             <button type="submit" class="btn btn-sm btn-primary"><%= currentAssignment ? 'Confirmar reasignación' : 'Confirmar asignación' %></button>
           </form>
         </div>
+        <% } %>
       <% } %>
     </div>
 

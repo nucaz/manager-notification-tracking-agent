@@ -1,0 +1,172 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  const est = mobileLabels.lineEstado(item.estado);
+  const ubi = mobileLabels.lineUbicacion(item.ubicacion);
+  const canEdit = currentUser.role !== 'lector';
+  const soles = function (n) { return 'S/ ' + Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+%>
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <a href="/celulares/chips" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Chips</a>
+    <h2 class="mb-1"><%= item.calling_code ? '+' + item.calling_code + ' ' : '' %><%= item.phone_number %></h2>
+    <span class="badge <%= est.badge %>"><%= est.label %></span>
+    <span class="badge <%= ubi.badge %>"><%= ubi.label %></span>
+  </div>
+  <% if (canEdit) { %>
+    <div>
+      <a href="/celulares/chips/<%= item.id %>/editar" class="btn btn-outline-primary">Editar</a>
+      <form action="/celulares/chips/<%= item.id %>/eliminar" method="post" class="d-inline"
+            onsubmit="return confirm('¿Eliminar el chip <%= item.phone_number %>?<%= item.device_id ? ' Es un chip puesto en un celular: el celular quedará sin ese número.' : '' %> Esta acción no se puede deshacer.');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-outline-danger" type="submit">Eliminar</button>
+      </form>
+    </div>
+  <% } %>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card p-3 mb-3">
+      <h5>Datos del chip</h5>
+      <table class="table table-sm mb-0">
+        <tr><th style="width: 180px;">Número</th><td><%= item.calling_code ? '+' + item.calling_code + ' ' : '' %><%= item.phone_number %><%= item.country_name ? ' (' + item.country_name + ')' : '' %></td></tr>
+        <tr><th>ICCID</th><td class="font-monospace"><%= item.iccid || '—' %></td></tr>
+        <tr><th>Operadora</th><td><%= item.operadora || '—' %></td></tr>
+        <tr><th>Plan</th><td><%= item.plan || '—' %></td></tr>
+        <tr><th>Costo mensual</th><td><%= item.costo_plan === null ? '— (sin registrar)' : soles(item.costo_plan) %></td></tr>
+        <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
+        <tr><th>Registrado</th><td><%= item.created_at || '—' %></td></tr>
+        <tr><th>Última actualización</th><td><%= item.updated_at || '—' %></td></tr>
+      </table>
+    </div>
+
+    <div class="card p-3">
+      <h5>Historial de asignaciones sin celular</h5>
+      <% if (!history.length) { %>
+        <p class="text-muted mb-0">Nunca se asignó a una persona sin celular. Cuando está en un equipo, se asigna junto con el equipo (ver el historial del celular).</p>
+      <% } else { %>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Usuario</th><th>DNI</th><th>Uso</th><th>Desde</th><th>Hasta</th><th>Observación</th></tr></thead>
+            <tbody>
+              <% history.forEach(function(h) { %>
+                <tr>
+                  <td><%= h.holder_name %></td>
+                  <td><%= h.dni || '—' %></td>
+                  <td><%= h.uso === 'emergencia' ? 'Emergencia' : 'Sin celular' %></td>
+                  <td><%= h.assigned_date || '—' %></td>
+                  <td><%= h.returned_date || 'actual' %></td>
+                  <td><%= h.observacion || '—' %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card p-3 mb-3">
+      <h5>Dónde está</h5>
+      <% if (item.device_id) { %>
+        <p class="mb-2">
+          En el celular <a href="/celulares/<%= item.device_id %>"><%= item.asset_code ? item.asset_code + ' · ' : '' %>IMEI <%= item.imei %></a>
+          <%= item.es_principal ? '(número principal del equipo)' : '(segundo chip del equipo)' %>.<br>
+          <span class="text-muted small">Usuario del equipo: <%= item.holder || 'sin asignar (equipo en stock)' %><%= item.area ? ' · ' + item.area : '' %><%= item.sede ? ' · ' + item.sede : '' %></span>
+        </p>
+        <% if (canEdit) { %>
+          <form action="/celulares/chips/<%= item.id %>/retirar" method="post" class="mb-2"
+                onsubmit="return confirm('¿Retirar el chip del celular <%= item.imei %>? El chip queda en stock<%= item.es_principal ? ' y el celular queda sin ese número' : '' %>.');">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Retirar del celular</button>
+          </form>
+        <% } %>
+      <% } else if (item.line_holder) { %>
+        <p class="mb-2">
+          Asignado a <strong><%= item.line_holder %></strong>
+          como <strong><%= item.uso === 'emergencia' ? 'número de emergencia' : 'chip sin celular (lo usa en su propio equipo)' %></strong>
+          <%= item.line_assigned_date ? 'desde el ' + item.line_assigned_date : '' %>.
+          <span class="text-muted small d-block"><%= item.area || '' %><%= item.sede ? ' · ' + item.sede : '' %></span>
+        </p>
+        <% if (canEdit) { %>
+          <form action="/celulares/chips/<%= item.id %>/devolver" method="post" class="mb-2"
+                onsubmit="return confirm('¿Devolver el chip a stock? Se cierra su asignación actual.');">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Devolver a stock</button>
+          </form>
+        <% } %>
+      <% } else { %>
+        <p class="text-muted mb-2">En stock: no está en ningún celular ni asignado a una persona.</p>
+      <% } %>
+
+      <% if (canEdit && item.estado !== 'de_baja') { %>
+        <hr>
+        <h6>Poner en un celular</h6>
+        <form action="/celulares/chips/<%= item.id %>/poner" method="post" class="d-flex gap-2 mb-1"
+              onsubmit="return confirm('¿Poner este chip en ese celular?<%= item.line_holder ? ' Se cerrará su asignación actual a una persona.' : '' %>');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="text" name="device" class="form-control form-control-sm" required placeholder="IMEI o código de activo (ej. A-00868)" aria-label="IMEI o código de activo">
+          <button class="btn btn-sm btn-primary text-nowrap" type="submit">Poner</button>
+        </form>
+        <div class="form-text mb-2">Si el celular no tiene número, este chip pasa a ser su número principal; si ya tiene uno, queda como segundo chip (doble SIM).</div>
+
+        <% if (!item.device_id) { %>
+          <hr>
+          <h6><%= item.line_holder ? 'Reasignar a otra persona' : 'Asignar a una persona' %></h6>
+          <form method="get" action="/celulares/chips/<%= item.id %>" class="d-flex gap-2 mb-2">
+            <input type="text" name="dni" class="form-control form-control-sm" placeholder="Buscar empleado por DNI..." value="<%= dniQuery %>" aria-label="DNI">
+            <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">Buscar</button>
+          </form>
+          <form action="/celulares/chips/<%= item.id %>/asignar" method="post"
+                onsubmit="return confirm('¿Confirmar la asignación del chip?<%= item.line_holder ? ' Se cerrará la asignación actual.' : '' %>');">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="mb-2">
+              <label class="form-label small d-block">Uso *</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="uso" id="uso_personal" value="personal" checked>
+                <label class="form-check-label" for="uso_personal">Sin celular (lo usa en su propio equipo)</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="uso" id="uso_emergencia" value="emergencia">
+                <label class="form-check-label" for="uso_emergencia">Número de emergencia</label>
+              </div>
+              <div class="form-text">Emergencia: número de respaldo por si se bloquea el principal; la persona puede tener además un celular con chip.</div>
+            </div>
+            <div class="row g-2">
+              <div class="col-sm-4"><label class="form-label small" for="a_dni">DNI *</label>
+                <input type="text" name="dni" id="a_dni" class="form-control form-control-sm" required inputmode="numeric" pattern="\d{8}" maxlength="8"
+                  value="<%= foundEmployee ? foundEmployee.dni : dniQuery %>"></div>
+              <div class="col-sm-4"><label class="form-label small" for="a_first">Nombres *</label>
+                <input type="text" name="first_name" id="a_first" class="form-control form-control-sm" required maxlength="100" value="<%= foundEmployee ? foundEmployee.first_name : '' %>"></div>
+              <div class="col-sm-4"><label class="form-label small" for="a_last">Apellidos *</label>
+                <input type="text" name="last_name" id="a_last" class="form-control form-control-sm" required maxlength="100" value="<%= foundEmployee ? foundEmployee.last_name : '' %>"></div>
+              <div class="col-sm-6"><label class="form-label small" for="a_area">Área</label>
+                <select name="area" id="a_area" class="form-select form-select-sm">
+                  <option value="">— Seleccionar —</option>
+                  <% areas.forEach(function(a) { %><option value="<%= a %>" <%= foundEmployee && foundEmployee.area === a ? 'selected' : '' %>><%= a %></option><% }); %>
+                </select></div>
+              <div class="col-sm-6"><label class="form-label small" for="a_sede">Sede</label>
+                <select name="sede" id="a_sede" class="form-select form-select-sm">
+                  <option value="">— Seleccionar —</option>
+                  <% sedes.forEach(function(s) { %><option value="<%= s %>" <%= foundEmployee && foundEmployee.sede === s ? 'selected' : '' %>><%= s %></option><% }); %>
+                </select></div>
+              <div class="col-sm-6"><label class="form-label small" for="a_cargo">Cargo</label>
+                <input type="text" name="cargo" id="a_cargo" class="form-control form-control-sm" maxlength="150" value="<%= foundEmployee ? (foundEmployee.cargo || '') : '' %>"></div>
+              <div class="col-sm-6"><label class="form-label small" for="a_fecha">Fecha de entrega</label>
+                <input type="date" name="assigned_date" id="a_fecha" class="form-control form-control-sm"></div>
+              <div class="col-12"><label class="form-label small" for="a_obs">Observación</label>
+                <input type="text" name="observacion" id="a_obs" class="form-control form-control-sm" maxlength="250"></div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary mt-2">Confirmar asignación</button>
+          </form>
+        <% } %>
+      <% } else if (item.estado === 'de_baja') { %>
+        <div class="alert alert-light border small mb-0">El chip está de baja. Para volver a usarlo, cámbielo a Activo con Editar.</div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

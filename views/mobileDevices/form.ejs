@@ -88,6 +88,7 @@
         <input type="checkbox" class="form-check-input" name="has_chip" id="has_chip" <%= item.has_chip ? 'checked' : '' %>>
         <label class="form-check-label" for="has_chip">Tiene chip</label>
       </div>
+      <div class="form-text ms-2">Queda registrado en <a href="/celulares/chips">Chips</a>.</div>
     </div>
     <div class="col-md-2">
       <label class="form-label">País</label>
@@ -115,9 +116,12 @@
         <option value="asignado" <%= item.status === 'asignado' ? 'selected' : '' %>>Asignado</option>
         <option value="en_reparacion" <%= item.status === 'en_reparacion' ? 'selected' : '' %>>En reparación</option>
         <option value="de_baja" <%= item.status === 'de_baja' ? 'selected' : '' %>>De baja</option>
+        <% if (item.status === 'en_decomiso') { %>
+          <option value="en_decomiso" selected>En decomiso (se resuelve desde el detalle)</option>
+        <% } %>
       </select>
       <div class="form-text">
-        La asignación/reasignación a una persona, y el registro de reparaciones/accidentes/bajas,
+        La asignación/reasignación a una persona, y el registro de reparaciones/accidentes/decomisos/bajas,
         se hacen desde el detalle del celular (después de guardarlo aquí), no en este formulario.
       </div>
     </div>

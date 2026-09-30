@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const flash = require('connect-flash');
 const env = require('./config/env');
 const { ensureCsrfToken } = require('./middleware/csrf');
+const mobileLabels = require('./config/mobileLabels');
 
 const authRoutes = require('./routes/auth');
 const twoFactorRoutes = require('./routes/twoFactor');
@@ -15,6 +16,7 @@ const ispRoutes = require('./routes/isp');
 const serverRoutes = require('./routes/servers');
 const certificateRoutes = require('./routes/certificates');
 const mobileDeviceRoutes = require('./routes/mobileDevices');
+const mobileLineRoutes = require('./routes/mobileLines');
 const employeeRoutes = require('./routes/employees');
 const attachmentRoutes = require('./routes/attachments');
 const networkRoutes = require('./routes/network');
@@ -73,6 +75,7 @@ app.use(async (req, res, next) => {
   res.locals.errorMessages = req.flash('error');
   res.locals.currentPath = req.path;
   res.locals.currentHost = req.hostname;
+  res.locals.mobileLabels = mobileLabels;
   try {
     const settingsService = require('./services/settingsService');
     res.locals.appName = (await settingsService.get('app_name')) || 'Gestion de Licencias';
@@ -113,6 +116,9 @@ app.use('/dominios', domainRoutes);
 app.use('/isp', ispRoutes);
 app.use('/servidores', serverRoutes);
 app.use('/certificados', certificateRoutes);
+// /celulares/chips va antes que /celulares: si no, el router de celulares
+// tomaria "chips" como el id de un equipo.
+app.use('/celulares/chips', mobileLineRoutes);
 app.use('/celulares', mobileDeviceRoutes);
 app.use('/empleados', employeeRoutes);
 app.use('/adjuntos', attachmentRoutes);
