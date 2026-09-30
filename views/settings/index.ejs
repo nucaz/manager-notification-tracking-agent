@@ -17,37 +17,88 @@
 
       <div class="card p-3 mb-3">
         <h5>Integración con GLPI</h5>
+        <% const glpiV2 = settings.glpi_api_version === 'v2'; %>
         <div class="mb-2">
-          <label class="form-label">URL base de la API REST</label>
-          <input type="text" name="glpi_base_url" class="form-control" value="<%= settings.glpi_base_url %>" placeholder="https://svrmonitor-dp.ad.depilzone.com.pe/apirest.php">
+          <label class="form-label d-block">API de GLPI</label>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="glpi_api_version" id="glpi_api_legacy" value="legacy" <%= glpiV2 ? '' : 'checked' %>
+              onchange="document.getElementById('glpi_legacy_fields').hidden = false; document.getElementById('glpi_v2_fields').hidden = true;">
+            <label class="form-check-label" for="glpi_api_legacy">API clásica (App-Token + User-Token)</label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="glpi_api_version" id="glpi_api_v2" value="v2" <%= glpiV2 ? 'checked' : '' %>
+              onchange="document.getElementById('glpi_legacy_fields').hidden = true; document.getElementById('glpi_v2_fields').hidden = false;">
+            <label class="form-check-label" for="glpi_api_v2">API v2 de GLPI 11 (OAuth)</label>
+          </div>
+          <div class="form-text">GLPI 11 trae las dos. La API v2 es la nueva y la recomendada por GLPI; la clásica ("Legacy API") sirve también para GLPI 9 y 10.</div>
         </div>
         <div class="mb-2">
-          <label class="form-label">App-Token</label>
-          <input type="password" name="glpi_app_token" class="form-control"
-            placeholder="<%= settings.glpi_app_token ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
+          <label class="form-label" for="glpi_base_url">URL de la API</label>
+          <input type="text" name="glpi_base_url" id="glpi_base_url" class="form-control" value="<%= settings.glpi_base_url %>" placeholder="http://svrmonitor-dp:8081/api.php/v2.3">
+          <div class="form-text">Pegue la que muestra GLPI en Configuración → General → API; la app la ajusta a la API elegida.</div>
         </div>
-        <div class="mb-2">
-          <label class="form-label">User-Token</label>
-          <input type="password" name="glpi_user_token" class="form-control"
-            placeholder="<%= settings.glpi_user_token ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
+
+        <div id="glpi_legacy_fields" <%= glpiV2 ? 'hidden' : '' %>>
+          <div class="mb-2">
+            <label class="form-label" for="glpi_app_token">App-Token</label>
+            <input type="password" name="glpi_app_token" id="glpi_app_token" class="form-control" autocomplete="new-password"
+              placeholder="<%= settings.glpi_app_token ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="glpi_user_token">User-Token</label>
+            <input type="password" name="glpi_user_token" id="glpi_user_token" class="form-control" autocomplete="new-password"
+              placeholder="<%= settings.glpi_user_token ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
+          </div>
+          <details class="form-text mb-2">
+            <summary>¿Dónde obtengo estos datos en GLPI? (API clásica)</summary>
+            <ol class="mt-2 mb-1 ps-3">
+              <li><strong>URL:</strong> <em>Configuración → General → API</em>. En GLPI 11, la de la sección <em>Legacy API</em>
+                (<code>/api.php/v1</code>); en GLPI 9/10 termina en <code>/apirest.php</code>.</li>
+              <li>En esa pestaña: <em>Enable Legacy REST API</em> (o <em>Habilitar API Rest</em>) = Sí y <em>Habilita ingresos con token externo</em> = Sí.</li>
+              <li><strong>App-Token:</strong> <em>Agregar cliente de API</em>: Activo = Sí, en el rango IPv4 la IP de este servidor
+                (o vacío), marcar <em>Regenerar</em> y guardar; copiar el <em>Token de aplicación (app_token)</em>.</li>
+              <li><strong>User-Token:</strong> con un usuario de servicio de solo lectura (perfil "Observer"): su nombre (arriba a la derecha)
+                → <em>Mis preferencias</em> → <em>Claves de acceso remoto</em> → <em>Regenerar</em> el <em>Token de API</em> → Guardar.</li>
+            </ol>
+          </details>
         </div>
-        <details class="form-text mb-2">
-          <summary>¿Dónde obtengo estos datos en GLPI?</summary>
-          <ol class="mt-2 mb-1 ps-3">
-            <li><strong>URL:</strong> en GLPI, <em>Configuración → General → API</em>. En <strong>GLPI 11</strong> use la de la sección
-              <em>Legacy API</em> (termina en <code>/api.php/v1</code>), no la de arriba (<code>/api.php/v2.x</code>, que es otra API).
-              En GLPI 9/10 termina en <code>/apirest.php</code>. Si pega la de la v2 o solo la dirección de GLPI, se corrige sola.</li>
-            <li>En esa misma pestaña: <em>Enable Legacy REST API</em> (o <em>Habilitar API Rest</em>) = Sí y
-              <em>Habilita ingresos con token externo</em> = Sí. Guardar.</li>
-            <li><strong>App-Token:</strong> más abajo, <em>Agregar cliente de API</em>: nombre (ej. "App licencias"), Activo = Sí,
-              rango IPv4 vacío o la IP de este servidor, marcar <em>Regenerar</em> el token de aplicación y guardar. Abra el cliente y copie
-              el <em>Token de aplicación (app_token)</em>.</li>
-            <li><strong>User-Token:</strong> conviene un usuario de servicio solo de lectura (perfil "Observer" con acceso a las entidades del
-              inventario). Con ese usuario: clic en su nombre (arriba a la derecha) → <em>Mis preferencias</em> → <em>Claves de acceso
-              remoto</em> → marcar <em>Regenerar</em> junto a <em>Token de API</em> → Guardar, y copiar el token.</li>
-          </ol>
-          Después use "Probar conexión con GLPI": dice cuántas computadoras, monitores e impresoras ve el usuario.
-        </details>
+
+        <div id="glpi_v2_fields" <%= glpiV2 ? '' : 'hidden' %>>
+          <div class="row g-2">
+            <div class="col-md-6 mb-2">
+              <label class="form-label" for="glpi_oauth_client_id">ID del cliente OAuth</label>
+              <input type="text" name="glpi_oauth_client_id" id="glpi_oauth_client_id" class="form-control" value="<%= settings.glpi_oauth_client_id %>" autocomplete="off">
+            </div>
+            <div class="col-md-6 mb-2">
+              <label class="form-label" for="glpi_oauth_client_secret">Secreto del cliente OAuth</label>
+              <input type="password" name="glpi_oauth_client_secret" id="glpi_oauth_client_secret" class="form-control" autocomplete="new-password"
+                placeholder="<%= settings.glpi_oauth_client_secret ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
+            </div>
+            <div class="col-md-6 mb-2">
+              <label class="form-label" for="glpi_oauth_username">Usuario de servicio de GLPI</label>
+              <input type="text" name="glpi_oauth_username" id="glpi_oauth_username" class="form-control" value="<%= settings.glpi_oauth_username %>" autocomplete="off">
+            </div>
+            <div class="col-md-6 mb-2">
+              <label class="form-label" for="glpi_oauth_password">Contraseña del usuario de servicio</label>
+              <input type="password" name="glpi_oauth_password" id="glpi_oauth_password" class="form-control" autocomplete="new-password"
+                placeholder="<%= settings.glpi_oauth_password ? '•••••••• (configurado — deja en blanco para no cambiar)' : '' %>">
+            </div>
+          </div>
+          <details class="form-text mb-2">
+            <summary>¿Dónde obtengo estos datos en GLPI? (API v2)</summary>
+            <ol class="mt-2 mb-1 ps-3">
+              <li><strong>URL:</strong> <em>Configuración → General → API</em>, la de arriba (<em>Enable API</em> = Sí), ej.
+                <code>http://svrmonitor-dp:8081/api.php/v2.3</code>.</li>
+              <li><strong>Cliente OAuth:</strong> <em>Configuración → Clientes OAuth</em> → Agregar: un nombre (ej. "App licencias"),
+                tipo de acceso <strong>Password</strong>, alcance <strong>api</strong>, activo. Al guardar, GLPI muestra el
+                <em>ID de cliente</em> y el <em>secreto</em>: cópielos aquí.</li>
+              <li><strong>Usuario de servicio:</strong> cree en GLPI un usuario solo para la app, con perfil de solo lectura
+                (ej. "Observer") y acceso a las entidades del inventario. No use una cuenta personal ni de administrador.</li>
+            </ol>
+            La app pide un token de acceso (dura 1 hora) con esos datos y lo renueva sola. La contraseña y el secreto se guardan cifrados.
+          </details>
+        </div>
+        <div class="form-text">Después de guardar, use "Probar conexión con GLPI": indica qué API usó y cuántas computadoras, monitores e impresoras ve el usuario.</div>
       </div>
     </div>
 

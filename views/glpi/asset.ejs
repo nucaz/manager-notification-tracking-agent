@@ -49,6 +49,7 @@
     <div class="col-md-7">
       <div class="card p-3">
         <h5>Software instalado <span class="badge bg-primary"><%= software.total %></span></h5>
+        <% if (software.note) { %><p class="text-muted small"><%= software.note %></p><% } %>
         <% if (software.truncated) { %>
           <p class="text-muted small">Mostrando los primeros <%= software.items.length %> de <%= software.total %>.</p>
         <% } %>

@@ -12,6 +12,12 @@ const DEFAULTS = {
   glpi_base_url: env.glpi.baseUrl,
   glpi_app_token: env.glpi.appToken,
   glpi_user_token: env.glpi.userToken,
+  // 'legacy' = API clasica (App-Token + User-Token); 'v2' = API v2 de GLPI 11 (OAuth).
+  glpi_api_version: 'legacy',
+  glpi_oauth_client_id: '',
+  glpi_oauth_client_secret: '',
+  glpi_oauth_username: '',
+  glpi_oauth_password: '',
   smtp_host: env.smtp.host,
   smtp_port: String(env.smtp.port),
   smtp_secure: String(env.smtp.secure),

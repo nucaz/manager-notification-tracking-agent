@@ -45,7 +45,8 @@ router.post('/', isAdmin, verifyCsrfToken, async (req, res, next) => {
   try {
     const keys = [
       'app_name',
-      'glpi_base_url', 'glpi_app_token', 'glpi_user_token',
+      'glpi_base_url', 'glpi_app_token', 'glpi_user_token', 'glpi_api_version',
+      'glpi_oauth_client_id', 'glpi_oauth_client_secret', 'glpi_oauth_username', 'glpi_oauth_password',
       'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from',
       'reminder_thresholds_days', 'reminder_recipients', 'reminder_send_hour',
       'ai_provider', 'gemini_api_key', 'gemini_model',
@@ -60,6 +61,7 @@ router.post('/', isAdmin, verifyCsrfToken, async (req, res, next) => {
       if (SECRET_KEYS.has(key) && req.body[key] === '') continue; // en blanco = no cambiar
       pairs[key] = req.body[key];
     }
+    if (pairs.glpi_api_version && !['legacy', 'v2'].includes(pairs.glpi_api_version)) delete pairs.glpi_api_version;
     pairs.smtp_secure = req.body.smtp_secure ? 'true' : 'false';
     pairs.telegram_polling_enabled = req.body.telegram_polling_enabled ? 'true' : 'false';
     await settingsService.setMany(pairs);

@@ -486,21 +486,50 @@ async function getConnections(typeKey, id) {
   });
 }
 
+// ---------------------------------------------------------------------
+// API clasica o API v2 (GLPI 11): se elige en Configuracion
+// (glpi_api_version). Las rutas llaman siempre a estas funciones y no
+// necesitan saber cual esta en uso.
+// ---------------------------------------------------------------------
+const v2 = require('./glpiV2Client');
+
+async function v2Config() {
+  const s = await settingsService.getAll();
+  if (s.glpi_api_version !== 'v2') return null;
+  return {
+    root: v2.apiRoot(s.glpi_base_url),
+    clientId: s.glpi_oauth_client_id || '',
+    clientSecret: s.glpi_oauth_client_secret || '',
+    username: s.glpi_oauth_username || '',
+    password: s.glpi_oauth_password || '',
+  };
+}
+
+function dual(legacyFn, v2Fn) {
+  return async (...args) => {
+    const cfg = await v2Config();
+    return cfg ? v2Fn(cfg, ...args) : legacyFn(...args);
+  };
+}
+
 module.exports = {
   ASSET_TYPES,
   normalizeBaseUrl,
   explainGlpiError,
-  listItems,
-  listAllItems,
-  getItemDetail,
-  getConnections,
   getConfig,
-  testConnection,
-  searchComputers,
+  apiVersion: async () => ((await v2Config()) ? 'v2' : 'legacy'),
+  listItems: dual(listItems, v2.listItems),
+  listAllItems: dual(listAllItems, v2.listAllItems),
+  getItemDetail: dual(getItemDetail, v2.getItemDetail),
+  getConnections: dual(getConnections, v2.getConnections),
+  testConnection: dual(testConnection, v2.testConnection),
+  searchComputers: dual(searchComputers, v2.searchComputers),
   listComputers,
   getComputerDetail,
-  getComputerSoftware,
-  listEntities,
-  createContract,
-  createSoftwareLicense,
+  getComputerSoftware: dual(getComputerSoftware, v2.getComputerSoftware),
+  listEntities: dual(listEntities, v2.listEntities),
+  createContract: dual(createContract, v2.createContract),
+  createSoftwareLicense: dual(createSoftwareLicense, async () => {
+    throw new Error('Crear licencias en GLPI todavía no está disponible con la API v2; use la API clásica para esa acción.');
+  }),
 };

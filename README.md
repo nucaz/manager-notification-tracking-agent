@@ -48,9 +48,15 @@ Aplicación web para el seguimiento de:
 - **Integración con GLPI vía API REST**: prueba de conexión, búsqueda de
   equipos/entidades para vincular registros, sincronización de licencias,
   dominios, contratos ISP, servidores/activos y certificados como objetos
-  "Contract" en GLPI, e **Inventario GLPI** (solo lectura): listado/
-  búsqueda de computadoras registradas en GLPI y el software instalado en
-  cada una (nombre, versión y cantidad) — ver nota en la sección 8
+  "Contract" en GLPI, e **Inventario GLPI** (solo lectura): computadoras,
+  monitores e impresoras (estado, tipo, fabricante, modelo, serie, N.º de
+  inventario, ubicación, usuario), búsqueda, exportación a Excel, equipos
+  conectados y software instalado — ver nota en la sección 8. Funciona con
+  la **API clásica** (App-Token + User-Token; GLPI 9/10 y la "Legacy API"
+  de GLPI 11) o con la **API v2 de GLPI 11** (OAuth: cliente OAuth con
+  acceso "Password" + usuario de servicio), a elegir en Configuración.
+  Pruebas: `node tests/glpi_inventario.e2e.js` y `node tests/glpi_v2.e2e.js`
+  (contra un GLPI simulado)
 - **Tipo de cambio USD → PEN**: se muestra en el panel principal y junto a
   cada monto en dólares, usando la API pública y gratuita del BCRP (Banco
   Central de Reserva del Perú) — sin API key

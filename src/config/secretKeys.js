@@ -5,7 +5,7 @@
 // al guardar mantiene el valor existente en vez de borrarlo.
 // Unica fuente de verdad: antes vivia duplicada solo en routes/settings.js.
 const SECRET_KEYS = new Set([
-  'glpi_app_token', 'glpi_user_token',
+  'glpi_app_token', 'glpi_user_token', 'glpi_oauth_client_secret', 'glpi_oauth_password',
   'smtp_pass',
   'gemini_api_key',
   'whatsapp_access_token', 'whatsapp_app_secret',

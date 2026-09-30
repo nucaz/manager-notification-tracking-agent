@@ -15,7 +15,8 @@ router.post('/probar-conexion', canWrite, async (req, res) => {
     const result = await glpiClient.testConnection();
     const partes = Object.entries(result.counts || {})
       .map(([k, n]) => `${n === null ? 'sin permiso para ver' : n} ${glpiClient.ASSET_TYPES[k].label.toLowerCase()}`);
-    req.flash('success', `Conexión con GLPI exitosa. El usuario de servicio ve: ${partes.join(', ')}.`);
+    const api = (await glpiClient.apiVersion()) === 'v2' ? 'API v2' : 'API clásica';
+    req.flash('success', `Conexión con GLPI exitosa (${api}${result.user ? `, usuario ${result.user}` : ''}). Ve: ${partes.join(', ')}.`);
   } catch (err) {
     req.flash('error', `No se pudo conectar con GLPI: ${err.message}`);
   }
