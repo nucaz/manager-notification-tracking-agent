@@ -8,12 +8,21 @@
 const axios = require('axios');
 const settingsService = require('./settingsService');
 
-// La API REST vive en .../apirest.php. Es comun pegar solo la direccion de
-// GLPI (https://glpi.empresa.com): en ese caso se completa sola.
+// Esta app usa la API REST "clasica" de GLPI (App-Token + User-Token):
+// - GLPI 9/10: .../apirest.php
+// - GLPI 11: la misma API se llama "Legacy API", en .../api.php/v1 (sigue
+//   respondiendo tambien en .../apirest.php).
+// GLPI 11 muestra primero la URL de su API nueva (.../api.php/v2.x), que usa
+// OAuth y no sirve con estos tokens: si se pega esa, se pasa a la clasica.
+// Si se pega solo la direccion de GLPI, se completa con /apirest.php.
 function normalizeBaseUrl(url) {
   const clean = (url || '').trim().replace(/\/+$/, '');
   if (!clean) return '';
-  return /\/apirest\.php$/i.test(clean) ? clean : `${clean}/apirest.php`;
+  if (/\/apirest\.php$/i.test(clean) || /\/api\.php\/v1$/i.test(clean)) return clean;
+  const v2 = clean.match(/^(.*\/api\.php)\/v2(\.\d+)*$/i);
+  if (v2) return `${v2[1]}/v1`;
+  if (/\/api\.php$/i.test(clean)) return `${clean}/v1`;
+  return `${clean}/apirest.php`;
 }
 
 // GLPI responde los errores como ["CODIGO", "mensaje"]. Se traducen los
@@ -24,7 +33,8 @@ const GLPI_ERRORS = {
   ERROR_GLPI_LOGIN_USER_TOKEN: 'El User-Token no es válido. En GLPI, con el usuario de servicio: Mis preferencias → Claves de acceso remoto → Token de API.',
   ERROR_LOGIN_PARAMETERS_MISSING: 'Falta el User-Token.',
   ERROR_GLPI_LOGIN: 'GLPI rechazó el inicio de sesión (usuario inactivo, sin perfil o token revocado).',
-  ERROR_NOT_ALLOWED_IP: 'GLPI no acepta conexiones desde la IP de este servidor: en el cliente de API, deje vacío el rango IPv4 o agregue la IP del servidor de la app.',
+  ERROR_NOT_ALLOWED_IP: 'GLPI no acepta conexiones desde la IP de este servidor: en Configuración → General → API → cliente de API de la app, ponga en "Rango de direcciones IPv4" la IP del servidor de la app (inicio y fin iguales) o déjelo vacío, y Activo = Sí.',
+  ERROR_UNAUTHENTICATED: 'Esa URL es la API nueva de GLPI 11 (v2), que no usa App-Token/User-Token. Use la URL de la "Legacy API" (termina en /api.php/v1).',
   ERROR_API_DISABLED: 'La API REST está desactivada en GLPI: Configuración → General → API → "Habilitar API Rest" = Sí.',
   ERROR_LOGIN_WITH_TOKEN_DISABLED: 'GLPI no permite iniciar sesión con token: Configuración → General → API → "Habilitar inicio de sesión con token externo" = Sí.',
   ERROR_RIGHT_MISSING: 'El usuario de servicio no tiene permiso para ver ese inventario (revise su perfil y entidades en GLPI).',
@@ -32,8 +42,12 @@ const GLPI_ERRORS = {
 };
 
 function explainGlpiError(status, data) {
-  const code = Array.isArray(data) ? data[0] : data && data.error;
-  if (code && GLPI_ERRORS[code]) return `${GLPI_ERRORS[code]} (${code})`;
+  const code = Array.isArray(data) ? data[0] : data && (data.error || data.status);
+  if (code && GLPI_ERRORS[code]) {
+    // GLPI incluye la IP que ve en el mensaje: sirve para saber cual autorizar.
+    const ip = code === 'ERROR_NOT_ALLOWED_IP' && Array.isArray(data) && /\((\d+\.\d+\.\d+\.\d+)\)/.exec(String(data[1] || ''));
+    return `${GLPI_ERRORS[code]}${ip ? ` GLPI ve la conexión llegando desde ${ip[1]}.` : ''} (${code})`;
+  }
   if (status === 404) return 'No se encontró la API en esa URL: debe terminar en /apirest.php (ej. https://glpi.empresa.com/apirest.php).';
   if (typeof data === 'string' && /<html/i.test(data)) return `La URL no responde como la API de GLPI (HTTP ${status}): revise la URL base.`;
   return `GLPI respondió HTTP ${status}: ${JSON.stringify(data).slice(0, 300)}`;

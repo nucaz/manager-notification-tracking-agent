@@ -113,6 +113,11 @@ async function main() {
 
   try {
     check('URL sin /apirest.php se completa sola', glpiClient.normalizeBaseUrl('https://glpi.empresa.com/') === 'https://glpi.empresa.com/apirest.php');
+    check('GLPI 11: la URL de la API nueva (v2.3) se pasa a la Legacy API (v1)',
+      glpiClient.normalizeBaseUrl('http://svrmonitor-dp:8081/api.php/v2.3') === 'http://svrmonitor-dp:8081/api.php/v1'
+      && glpiClient.normalizeBaseUrl('http://svrmonitor-dp:8081/api.php/v1/') === 'http://svrmonitor-dp:8081/api.php/v1');
+    check('IP no autorizada: dice qué IP autorizar en el cliente de API',
+      glpiClient.explainGlpiError(400, ['ERROR_NOT_ALLOWED_IP', 'No hay un cliente API activo ... (172.16.1.22)']).includes('llegando desde 172.16.1.22'));
     const t = await glpiClient.testConnection();
     check(`Probar conexión informa lo que ve el usuario: ${JSON.stringify(t.counts)}`, t.counts.computadoras === 30 && t.counts.monitores === 1 && t.counts.impresoras === 1);
 

@@ -34,9 +34,11 @@
         <details class="form-text mb-2">
           <summary>¿Dónde obtengo estos datos en GLPI?</summary>
           <ol class="mt-2 mb-1 ps-3">
-            <li><strong>URL:</strong> en GLPI, <em>Configuración → General → pestaña API</em>, campo "URL de la API". Termina en
-              <code>/apirest.php</code>; si pega solo la dirección de GLPI se completa sola.</li>
-            <li>En esa misma pestaña: <em>Habilitar API Rest</em> = Sí y <em>Habilitar inicio de sesión con token externo</em> = Sí. Guardar.</li>
+            <li><strong>URL:</strong> en GLPI, <em>Configuración → General → API</em>. En <strong>GLPI 11</strong> use la de la sección
+              <em>Legacy API</em> (termina en <code>/api.php/v1</code>), no la de arriba (<code>/api.php/v2.x</code>, que es otra API).
+              En GLPI 9/10 termina en <code>/apirest.php</code>. Si pega la de la v2 o solo la dirección de GLPI, se corrige sola.</li>
+            <li>En esa misma pestaña: <em>Enable Legacy REST API</em> (o <em>Habilitar API Rest</em>) = Sí y
+              <em>Habilita ingresos con token externo</em> = Sí. Guardar.</li>
             <li><strong>App-Token:</strong> más abajo, <em>Agregar cliente de API</em>: nombre (ej. "App licencias"), Activo = Sí,
               rango IPv4 vacío o la IP de este servidor, marcar <em>Regenerar</em> el token de aplicación y guardar. Abra el cliente y copie
               el <em>Token de aplicación (app_token)</em>.</li>
