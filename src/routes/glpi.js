@@ -1,4 +1,5 @@
 const express = require('express');
+const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/modules');
@@ -11,8 +12,10 @@ router.use(requireAuth, verifyCsrfToken);
 // Prueba de conexion (usada desde la pantalla de Configuracion)
 router.post('/probar-conexion', canWrite, async (req, res) => {
   try {
-    await glpiClient.testConnection();
-    req.flash('success', 'Conexion con GLPI exitosa.');
+    const result = await glpiClient.testConnection();
+    const partes = Object.entries(result.counts || {})
+      .map(([k, n]) => `${n === null ? 'sin permiso para ver' : n} ${glpiClient.ASSET_TYPES[k].label.toLowerCase()}`);
+    req.flash('success', `Conexión con GLPI exitosa. El usuario de servicio ve: ${partes.join(', ')}.`);
   } catch (err) {
     req.flash('error', `No se pudo conectar con GLPI: ${err.message}`);
   }
@@ -38,63 +41,72 @@ router.get('/api/entidades', async (req, res) => {
   }
 });
 
-// Inventario de GLPI (solo lectura): listado/busqueda de equipos y su
-// software instalado. No requiere canWrite - es de consulta. moduleRequired
-// se aplica solo a estas dos rutas (no a nivel de router), porque el resto
-// del router (sincronizar, autocompletar equipos/entidades) no es "el
-// modulo Inventario GLPI" y no debe quedar gateado por el mismo permiso.
-router.get('/inventario', moduleRequired('glpi_inventario'), async (req, res, next) => {
-  try {
-    const q = req.query.q || '';
-    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const limit = 20;
-    const start = (page - 1) * limit;
+// Inventario de GLPI (solo lectura): computadoras, monitores e impresoras
+// (?tipo=), con busqueda por nombre, serie o n. de inventario, paginacion y
+// exportacion a Excel. No requiere canWrite - es de consulta. moduleRequired
+// se aplica solo a estas rutas (no a nivel de router), porque el resto del
+// router (sincronizar, autocompletar equipos/entidades) no es "el modulo
+// Inventario GLPI" y no debe quedar gateado por el mismo permiso.
+const TIPOS = glpiClient.ASSET_TYPES;
+const tipoOf = (value) => (TIPOS[value] ? value : 'computadoras');
 
-    const { items, total } = await glpiClient.listComputers({ query: q, start, limit });
-    res.render('glpi/inventario', {
-      title: 'Inventario GLPI',
-      items,
-      total,
-      page,
-      limit,
-      totalPages: Math.max(Math.ceil(total / limit), 1),
-      q,
-      connectionError: null,
-    });
+router.get('/inventario', moduleRequired('glpi_inventario'), async (req, res) => {
+  const tipo = tipoOf(req.query.tipo);
+  const q = (req.query.q || '').trim();
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = 25;
+  const base = { title: 'Inventario GLPI', tipo, tipos: TIPOS, type: TIPOS[tipo], q, page, limit };
+  try {
+    const { items, total } = await glpiClient.listItems(tipo, { query: q, start: (page - 1) * limit, limit });
+    res.render('glpi/inventario', { ...base, items, total, totalPages: Math.max(Math.ceil(total / limit), 1), connectionError: null });
   } catch (err) {
-    res.render('glpi/inventario', {
-      title: 'Inventario GLPI',
-      items: [],
-      total: 0,
-      page: 1,
-      limit: 20,
-      totalPages: 1,
-      q: req.query.q || '',
-      connectionError: err.message,
-    });
+    res.render('glpi/inventario', { ...base, items: [], total: 0, totalPages: 1, connectionError: err.message });
   }
 });
 
-router.get('/inventario/:id', moduleRequired('glpi_inventario'), async (req, res, next) => {
+router.get('/inventario/exportar.xlsx', moduleRequired('glpi_inventario'), async (req, res) => {
+  const tipo = tipoOf(req.query.tipo);
+  const type = TIPOS[tipo];
   try {
-    const [computer, software] = await Promise.all([
-      glpiClient.getComputerDetail(req.params.id),
-      glpiClient.getComputerSoftware(req.params.id),
-    ]);
-    res.render('glpi/computer', {
-      title: computer.name || `Equipo #${req.params.id}`,
-      computer,
-      software,
-      connectionError: null,
-    });
+    const rows = await glpiClient.listAllItems(tipo, { query: (req.query.q || '').trim() });
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(type.label);
+    sheet.addRow(['ID GLPI', ...type.columns.map((c) => c.label)]);
+    rows.forEach((r) => sheet.addRow([Number(r.id), ...type.columns.map((c) => r[c.key] || '')]));
+    sheet.getRow(1).font = { bold: true };
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: type.columns.length + 1 } };
+    sheet.columns.forEach((col, i) => { col.width = i === 0 ? 9 : 20; });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fecha = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="glpi_${tipo}_${fecha}.xlsx"`);
+    res.send(buffer);
   } catch (err) {
-    res.render('glpi/computer', {
-      title: 'Equipo GLPI',
-      computer: null,
-      software: null,
-      connectionError: err.message,
-    });
+    req.flash('error', `No se pudo exportar desde GLPI: ${err.message}`);
+    res.redirect(`/glpi/inventario?tipo=${tipo}`);
   }
+});
+
+async function renderAsset(res, tipo, id) {
+  const type = TIPOS[tipo];
+  try {
+    const [detail, connections, software] = await Promise.all([
+      glpiClient.getItemDetail(tipo, id),
+      glpiClient.getConnections(tipo, id),
+      tipo === 'computadoras' ? glpiClient.getComputerSoftware(id) : Promise.resolve(null),
+    ]);
+    res.render('glpi/asset', { title: detail.name, tipo, type, id, detail, connections, software, connectionError: null });
+  } catch (err) {
+    res.render('glpi/asset', { title: type.singular, tipo, type, id, detail: null, connections: [], software: null, connectionError: err.message });
+  }
+}
+
+// Detalle de una computadora (ruta de siempre) o de un monitor/impresora.
+router.get('/inventario/:id(\\d+)', moduleRequired('glpi_inventario'), (req, res) => renderAsset(res, 'computadoras', req.params.id));
+router.get('/inventario/:tipo/:id(\\d+)', moduleRequired('glpi_inventario'), (req, res, next) => {
+  if (!TIPOS[req.params.tipo]) return next();
+  return renderAsset(res, req.params.tipo, req.params.id);
 });
 
 const ENTITY_TABLES = {

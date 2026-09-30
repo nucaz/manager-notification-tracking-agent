@@ -1,57 +1,83 @@
 <%- include('../partials/head', { title: title }) %>
+<%
+  function url(params) {
+    const p = new URLSearchParams(Object.assign({ tipo: tipo, q: q }, params));
+    Array.from(p.keys()).forEach(function (k) { if (!p.get(k)) p.delete(k); });
+    return '/glpi/inventario?' + p.toString();
+  }
+  // En pantalla: las columnas mas utiles; el Excel lleva todas.
+  const visibles = ['name', 'state', 'type', 'manufacturer', 'model', 'serial', 'otherserial', 'location', 'user'];
+  const columnas = type.columns.filter(function (c) { return visibles.includes(c.key); });
+%>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h2 class="mb-0">Inventario GLPI</h2>
+  <% if (!connectionError) { %>
+    <a href="/glpi/inventario/exportar.xlsx?<%= new URLSearchParams(q ? { tipo: tipo, q: q } : { tipo: tipo }).toString() %>" class="btn btn-outline-success">
+      <i class="bi bi-file-earmark-excel"></i> Exportar <%= type.label.toLowerCase() %> a Excel
+    </a>
+  <% } %>
 </div>
+
+<ul class="nav nav-tabs mb-3">
+  <% Object.keys(tipos).forEach(function(k) { %>
+    <li class="nav-item">
+      <a class="nav-link <%= k === tipo ? 'active' : '' %>" href="<%= url({ tipo: k, page: '' }) %>"><i class="bi <%= tipos[k].icon %>"></i> <%= tipos[k].label %></a>
+    </li>
+  <% }); %>
+</ul>
 
 <% if (connectionError) { %>
   <div class="alert alert-danger">
     No se pudo conectar con GLPI: <%= connectionError %>
-    <div class="small mt-1">Revisa la configuración de GLPI en <a href="/configuracion">Configuración</a>.</div>
+    <div class="small mt-1">Revise la configuración de GLPI en <a href="/configuracion">Configuración</a> y use "Probar conexión con GLPI".</div>
   </div>
 <% } else { %>
   <form class="row g-2 mb-3" method="get">
-    <div class="col-auto">
-      <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar equipo por nombre...">
+    <input type="hidden" name="tipo" value="<%= tipo %>">
+    <div class="col-12 col-md-5">
+      <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar <%= type.label.toLowerCase() %> por nombre, serie o N.º de inventario..." aria-label="Buscar">
     </div>
     <div class="col-auto">
       <button class="btn btn-outline-secondary" type="submit">Buscar</button>
+      <% if (q) { %><a class="btn btn-link" href="<%= url({ q: '', page: '' }) %>">Quitar búsqueda</a><% } %>
     </div>
   </form>
 
   <div class="card p-3">
-    <p class="text-muted small">Total de equipos en GLPI: <strong><%= total %></strong></p>
+    <p class="text-muted small mb-2"><%= type.label %> en GLPI<%= q ? ' que coinciden con "' + q + '"' : '' %>: <strong><%= total %></strong></p>
     <div class="table-responsive">
-      <table class="table table-hover align-middle">
-        <thead><tr><th>ID</th><th>Nombre</th><th>Entidad</th><th></th></tr></thead>
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <% columnas.forEach(function(c) { %><th><%= c.label %></th><% }); %>
+            <th></th>
+          </tr>
+        </thead>
         <tbody>
-          <% items.forEach(function(c) { %>
+          <% items.forEach(function(it) { %>
             <tr>
-              <td><%= c['2'] %></td>
-              <td><%= c['1'] %></td>
-              <td><%= c['80'] || '—' %></td>
+              <% columnas.forEach(function(c) { %>
+                <td class="<%= c.key === 'name' ? 'fw-semibold' : '' %>"><%= it[c.key] || '—' %></td>
+              <% }); %>
               <td class="text-end">
-                <a href="/glpi/inventario/<%= c['2'] %>" class="btn btn-sm btn-outline-secondary">Ver software</a>
+                <a href="/glpi/inventario/<%= tipo === 'computadoras' ? '' : tipo + '/' %><%= it.id %>" class="btn btn-sm btn-outline-secondary">Ver</a>
               </td>
             </tr>
           <% }); %>
           <% if (items.length === 0) { %>
-            <tr><td colspan="4" class="text-center text-muted py-4">No se encontraron equipos.</td></tr>
+            <tr><td colspan="<%= columnas.length + 1 %>" class="text-center text-muted py-4">No se encontraron <%= type.label.toLowerCase() %>.</td></tr>
           <% } %>
         </tbody>
       </table>
     </div>
 
     <% if (totalPages > 1) { %>
-      <nav>
+      <nav class="mt-3">
         <ul class="pagination pagination-sm mb-0">
-          <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
-            <a class="page-link" href="?q=<%= encodeURIComponent(q) %>&page=<%= page - 1 %>">Anterior</a>
-          </li>
+          <li class="page-item <%= page <= 1 ? 'disabled' : '' %>"><a class="page-link" href="<%= url({ page: page - 1 }) %>">Anterior</a></li>
           <li class="page-item disabled"><span class="page-link">Página <%= page %> de <%= totalPages %></span></li>
-          <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
-            <a class="page-link" href="?q=<%= encodeURIComponent(q) %>&page=<%= page + 1 %>">Siguiente</a>
-          </li>
+          <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>"><a class="page-link" href="<%= url({ page: page + 1 }) %>">Siguiente</a></li>
         </ul>
       </nav>
     <% } %>
