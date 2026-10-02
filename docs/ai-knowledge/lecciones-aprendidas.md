@@ -292,3 +292,48 @@ cadena y su `manifest.json` (con SHA-256), y el destino se puede explorar
 sin la base. Subir un repo restaurado va con `git push --atomic`: sin
 eso, si `main` era rechazado igual se subian las etiquetas al repositorio
 equivocado.
+
+## 21. "Probar conexión" no es un buen contador
+
+El panel mostraba cuántas computadoras, monitores e impresoras hay en GLPI
+reutilizando "probar conexión". En producción salía vacío: esa prueba
+consulta además el perfil del propio usuario, y un usuario de servicio de
+solo lectura no tiene ese permiso. Para contar se pide un registro de cada
+tipo (el total viene en la respuesta). Regla: una función nueva no debe
+depender de un permiso que la tarea no necesita.
+
+## 22. Un "historial" puede ser estado
+
+Al poner retención de 3 meses a los históricos, `reminder_log` parecía uno
+más. No lo es: guarda "este aviso ya se envió" (clave única por entidad y
+umbral). Borrarlo haría que un recordatorio viejo saliera otra vez. Antes
+de borrar por antigüedad, mirar quién LEE la tabla, no solo cómo se llama.
+
+## 23. Con sesión por cookie aparece el riesgo que HTTP Basic no mostraba
+
+DevOps Sidecar no tenía tokens CSRF porque usaba HTTP Basic. Al pasar a
+sesión por cookie (acceso único), cualquier otra aplicación del mismo
+servidor queda "en el mismo sitio" para el navegador (el puerto no
+cuenta), y `SameSite` no la frena. Por eso el sidecar compara
+`Origin`/`Referer` con su propio `Host` en todo lo que no sea lectura.
+
+## 24. Un pase en la URL queda escrito en más lugares de los que parece
+
+El primer diseño del acceso único mandaba el pase como `?token=`. Queda en
+el historial del navegador y en el log de accesos del servidor. Se cambió
+a un formulario que se envía solo por POST, y el pase es de un solo uso.
+
+## 25. HSTS con un certificado que el navegador aún no reconoce bloquea la entrada
+
+El HTTPS interno usa la autoridad propia de Caddy; hasta instalar su
+certificado raíz, el navegador avisa pero deja continuar. Si además se
+enviara HSTS, el navegador ya no dejaría continuar. No se envía hasta que
+el certificado raíz esté distribuido.
+
+## 26. Lo que prueba un Gemini simulado y lo que no
+
+El asistente se prueba contra un servidor local que imita a Gemini: sirve
+para comprobar qué se le envía y qué se hace con lo que responde. No
+detecta una clave inválida ni el saldo agotado (`HTTP 400`, `HTTP 402`),
+que fue justo lo que falló al probar con la API real. Decirlo así al
+reportar: "probado con simulador; con la API real no respondió por X".

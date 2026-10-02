@@ -59,6 +59,22 @@ Ubuntu) antes de decir que algo quedó arreglado.
    fallback (ej. correr la herramienta dentro de un contenedor
    `python:3.12-slim`, que sí trae venv completo).
 
+6. **En Windows, un script grande no cabe en una variable de entorno**:
+   la receta de base64 de abajo falla con `Argument list too long` cuando
+   el script pasa de unos pocos KB (le pasó a `install-ubuntu.sh`). En ese
+   caso, pasa los archivos por la entrada estándar como un tar — tampoco
+   toca rutas de Windows:
+   ```bash
+   tar -C carpeta_local -c . | docker run --rm -i ubuntu:22.04 bash -c 'tar -C /tmp -x && bash /tmp/prueba.sh'
+   ```
+
+7. **Un heredoc dentro de un comando se come un nivel de barras
+   invertidas**: un `\\n` escrito en un script de parcheo
+   llega como salto de línea real y rompe el archivo de destino (cadenas
+   JS partidas en dos líneas). Para parches con `\n`, `\u0300` u otras
+   secuencias, escribe el script en un archivo aparte o arma la barra con
+   `chr(92)`, y pasa `node --check` / `bash -n` al archivo resultante.
+
 ## Receta de verificación concreta
 
 1. **Inyecta el script vía base64 en una variable de entorno** en vez de

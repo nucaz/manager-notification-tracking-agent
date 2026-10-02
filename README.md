@@ -69,17 +69,28 @@ Aplicación web para el seguimiento de:
   inventario, a elección) y una casilla para marcar, para verificar el
   inventario físico con un lector contra lo que dice la aplicación
 - **Preguntar a la IA** (botón en todas las pantallas; usa la API key de
-  Gemini de Configuración): preguntas en lenguaje natural sobre lo que hay
-  registrado ("stock de celulares por sede", "qué vence en 60 días",
-  "cuánto se paga en chips por operadora"). La IA no escribe SQL ni toca
-  la base: elige una consulta de solo lectura del catálogo de Reportes
-  (más empleados), que ejecuta la aplicación; la tabla que ve el usuario
-  y sus cifras salen de la base, se descargan en Excel y se abren en
-  Reportes. Si se le pide, busca en internet (búsqueda de Google de
-  Gemini) y cita las fuentes. Respeta los permisos por módulo, se
-  habilita por rol en Permisos y queda registrado en Historial de chat
-  (canal web). La pregunta y los datos necesarios para responderla se
-  envían a Google
+  Gemini de Configuración): conversa con libertad, responde sobre lo que
+  hay registrado ("stock de celulares por sede", "qué vence en 60 días",
+  "los 10 planes más caros"), cruza datos y busca en internet (búsqueda de
+  Google de Gemini, con fuentes). Cada consulta produce una tabla que se
+  abre como **reporte temporal** a pantalla completa y se descarga en
+  Excel o PDF (con código de barras en listados de inventario); no se
+  guarda. Puede leer todo lo que el usuario puede abrir (reportes,
+  empleados, asignaciones, incidentes, recibos, catálogos, adjuntos,
+  diagramas y, solo admin, usuarios y auditoría), pero **no puede crear,
+  cambiar ni borrar datos**: no escribe SQL y no tiene ninguna herramienta
+  de escritura. Se habilita por rol en Permisos y queda en Historial de
+  chat (canal web). La pregunta y los datos necesarios para responderla
+  se envían a Google
+- **Un solo usuario para las dos aplicaciones**: a DevOps Sidecar se entra
+  desde el menú DevOps con el mismo usuario (ver 11.1)
+- **Captcha en el inicio de sesión**, propio y sin servicios externos, más
+  un tope de solicitudes por equipo contra scripts (ver 7.6)
+- **Mantenimiento de base de datos** (solo admin): estado de tablas e
+  índices, Analizar / Optimizar, y retención de históricos a 3 meses con
+  borrado a demanda (ver 10.4)
+- **HTTPS** opcional delante de las dos aplicaciones, para que
+  contraseñas y sesión viajen cifradas (ver 2.1)
 - **Panel principal**: además de los vencimientos, cuántos celulares y
   chips hay y cuántas computadoras, monitores e impresoras tiene GLPI
   (el conteo de GLPI se renueva cada 10 minutos)
@@ -196,6 +207,51 @@ ejemplo `licencias.ad.depilzone.com.pe`) que haga proxy_pass hacia
   servidor para GLPI, no habrá conflicto.
 - El puerto de la app (por defecto `8090`) es configurable en
   `docker-compose.yml` si ya está en uso.
+
+### 2.1 HTTPS: contraseñas y sesión cifradas en la red
+
+Por defecto las dos aplicaciones responden por HTTP (puertos 8090 y
+8091): en una red interna, la contraseña y la sesión viajan sin cifrar.
+`docker-compose.https.yml` agrega un proxy (Caddy) que cifra todo y deja
+a las aplicaciones sin publicarse directamente. No necesita dominio
+público: el certificado lo emite la autoridad interna de Caddy para el
+nombre o la IP por los que se entre.
+
+En el `.env` de la raíz:
+
+```
+COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml
+APP_PUBLISH=127.0.0.1:18090
+SIDECAR_PUBLISH=127.0.0.1:18091
+APP_BASE_URL=https://<nombre o IP del servidor>
+SIDECAR_PUBLIC_URL=https://{host}:8443
+```
+
+y luego `docker compose up -d`. Queda así:
+
+| Dirección | Qué es |
+|---|---|
+| `https://<servidor>` | Aplicación principal |
+| `https://<servidor>:8443` | DevOps Sidecar |
+| `http://<servidor>:8090`, `:8091` y puerto 80 | Solo redirigen a las de arriba |
+
+Con `APP_BASE_URL` en `https`, la cookie de sesión se marca `Secure`.
+
+**El aviso del navegador.** El certificado lo firma una autoridad que las
+PC todavía no conocen, así que el navegador avisa "conexión no privada"
+hasta que se instale su certificado raíz. Para sacarlo del servidor:
+
+```bash
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-raiz.crt
+```
+
+e instalarlo en cada PC como "Entidad de certificación raíz de confianza"
+(en un dominio de Windows, una directiva de grupo lo reparte a todas).
+Mientras tanto la conexión **ya va cifrada**; lo que falta es que el
+navegador confíe en quién firma. Esa autoridad vive en el volumen
+`caddy_data`: si se borra, se genera otra y hay que reinstalar el raíz.
+Si la empresa tiene su propia autoridad o un dominio público, se puede
+cambiar `tls internal` en el `Caddyfile` por ese certificado.
 
 ### Actualizar a una versión nueva del código (migraciones)
 
@@ -442,6 +498,22 @@ base de datos, solo existe en pantalla en el momento de generarlo.
 
 Si se te acaban los códigos (o los perdiste junto con el celular),
 recurre a los pasos de arriba (otro admin, o el comando por terminal).
+
+### 7.6 Captcha y límite de solicitudes
+
+El formulario de inicio de sesión pide un **código de verificación**: 5
+caracteres dibujados como trazos deformados, sin texto en la página que un
+script pueda leer. Lo genera la propia aplicación (no depende de internet
+ni de un servicio externo), vale para un solo intento y caduca a los 5
+minutos; "Otro código" muestra uno nuevo. Se comprueba antes que la
+contraseña, así que un script que no lo resuelve no llega a gastar
+intentos de ninguna cuenta.
+
+Además, cada equipo tiene un tope de 300 solicitudes por minuto (sin
+contar imágenes, estilos ni scripts): muy por encima del uso de una
+persona, pero corta a un programa que recorre rutas o descarga pantallas
+en serie. El captcha frena scripts genéricos; no reemplaza al bloqueo de
+cuenta ni al 2FA, que siguen igual.
 
 ## 8. Integración con GLPI — cómo funciona
 
@@ -709,6 +781,26 @@ docker compose restart app
   memoria del proceso, no en la BD): todos los usuarios deberán volver a
   iniciar sesión en el servidor nuevo, aunque su 2FA ya esté configurado.
 
+### 10.4 Mantenimiento de la base de datos y retención de históricos
+
+En **Mantenimiento BD** (solo `admin`):
+
+- **Tablas e índices**: columnas, filas, tamaño de datos e índices,
+  espacio recuperable y la lista de índices de cada tabla. Las tablas con
+  más de 20 columnas se marcan en amarillo y las de más de 30, en rojo
+  (el tope del proyecto es 30).
+- **Analizar** pone al día las estadísticas con las que el motor elige
+  índices (rápido). **Optimizar** reconstruye la tabla y sus índices y
+  recupera espacio; mientras dura, esa tabla no acepta cambios, así que
+  conviene hacerlo fuera de horario. Por tabla o todas a la vez.
+- **Retención de históricos**: la auditoría y el historial de chat se
+  conservan **3 meses** (configurable; 0 = no borrar solo). Lo más antiguo
+  se borra cada madrugada (01:15). **Borrar ahora** hace lo mismo a
+  demanda, con el plazo que se indique: pide escribir `BORRAR HISTORIAL`
+  y guarda antes una copia de la base en
+  `uploads/pre_restore_backups/`. Los datos de trabajo (celulares, chips,
+  recibos, licencias) no se borran por esta vía.
+
 ## 11. Módulo adicional: DevOps Sidecar
 
 En `devops-sidecar/` vive un **módulo aparte** (Python/FastAPI/SQLite,
@@ -734,6 +826,37 @@ docker compose up -d --build devops-sidecar
 Detalle completo (qué está verificado y qué no, cómo configurar el
 webhook de Coolify, decisiones de seguridad, estructura interna) en
 [`devops-sidecar/README.md`](devops-sidecar/README.md).
+
+### 11.1 Un solo usuario para las dos aplicaciones
+
+Con `SSO_SHARED_SECRET` (el **mismo** valor en `.env` y en
+`devops-sidecar/.env`; el instalador lo genera) a DevOps Sidecar se entra
+desde el menú **DevOps** de esta aplicación, con el mismo usuario:
+
+- Esta aplicación es la única que pide contraseña, captcha y 2FA. Al
+  pulsar DevOps emite un pase firmado, de un minuto y un solo uso, y el
+  sidecar abre su sesión con él.
+- Entra un `admin`, o un rol al que se le habilite **DevOps** en Permisos
+  (viene apagado: dentro del sidecar no hay roles, quien entra puede
+  restaurar o borrar).
+- El usuario y la contraseña del dashboard (`DASHBOARD_USER` /
+  `DASHBOARD_PASSWORD`) dejan de abrir el sidecar. Para conservarlos como
+  entrada de emergencia: `DASHBOARD_BASIC_AUTH=on` en `devops-sidecar/.env`.
+- Las consultas de esta aplicación al sidecar (reporte de repositorios,
+  asistente) usan un pase de servicio: ya no hace falta guardar esas
+  credenciales en Configuración.
+
+Para activarlo en una instalación existente:
+
+```bash
+S=$(openssl rand -hex 32)
+echo "SSO_SHARED_SECRET=$S" >> .env
+echo "SSO_SHARED_SECRET=$S" >> devops-sidecar/.env
+docker compose up -d
+```
+
+Sin ese secreto, todo sigue como antes (el sidecar pide su propio usuario
+y contraseña).
 
 ## 12. Estructura del proyecto
 

@@ -25,6 +25,9 @@ os.environ.update({
     "BACKUPS_PATH": str(ROOT / "backups"),
     "REPOS_BASE_PATH": str(ROOT / "repos"),
     "REPORTS_PATH": str(ROOT / "reports"),
+    # Estas pruebas entran con HTTP Basic: sin acceso unico, aunque el
+    # contenedor donde corren lo tenga configurado (ver tests/test_sso.py).
+    "SSO_SHARED_SECRET": "",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

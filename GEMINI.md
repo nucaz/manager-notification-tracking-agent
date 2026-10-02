@@ -47,6 +47,16 @@ READMEs.
   alfanumérico/numérico) en una tabla que ya tiene datos, revisa
   `.claude/skills/endurecer-validacion-de-campos/SKILL.md` — verificar
   los datos reales ANTES de decidir el límite.
+- Si vas a crear o cambiar una tabla, columna o índice, agregar una
+  búsqueda/filtro, o tocar Mantenimiento BD o la retención de históricos,
+  sigue `.claude/skills/mariadb-esquema-e-indices/SKILL.md` (tope de 30
+  columnas por tabla, cuándo un índice sirve, qué es historial y qué es
+  estado).
+- Si vas a tocar el acceso único con DevOps Sidecar, el login o el
+  captcha, sigue `.claude/skills/acceso-unico-entre-servicios/SKILL.md`.
+- Si vas a tocar el asistente "Preguntar a la IA" (datos que consulta,
+  herramientas, instrucciones), sigue
+  `.claude/skills/asistente-ia-solo-lectura/SKILL.md`.
 - Si vas a armar un atributo HTML condicional en una plantilla EJS
   (`views/**/*.ejs`), revisa
   `.claude/skills/ejs-atributos-sin-escapar/SKILL.md` — `<%= %>` escapa
@@ -75,10 +85,26 @@ READMEs.
   romper una instalación ya desplegada.
 - **Contraseñas de usuario**: siempre bcrypt (`bcryptjs`, cost 12), 2FA
   TOTP obligatorio en la app principal.
+- **Un solo usuario para las dos aplicaciones**: la app principal es la
+  única que autentica personas (contraseña, captcha propio, 2FA). A
+  DevOps Sidecar se entra con un pase firmado de un solo uso
+  (`SSO_SHARED_SECRET`, igual en los dos `.env`); las llamadas entre
+  servicios usan un pase de servicio, no una contraseña guardada.
+- **El asistente de IA de la app solo lee**: elige consultas de un
+  catálogo cerrado que ejecuta la aplicación (nunca SQL), respeta los
+  permisos por módulo y no tiene ninguna herramienta de escritura.
 - **CSRF** en toda ruta POST/PUT/DELETE de la app principal
-  (`src/middleware/csrf.js`) — DevOps Sidecar usa HTTP Basic Auth en vez
-  de sesiones, así que no aplica el mismo mecanismo ahí.
-- **Rate limiting** (`express-rate-limit`) en login y verificación 2FA.
+  (`src/middleware/csrf.js`). DevOps Sidecar, con acceso único, usa sesión
+  por cookie y rechaza toda orden cuyo `Origin`/`Referer` no sea el suyo;
+  sin acceso único sigue con HTTP Basic.
+- **Rate limiting** (`express-rate-limit`) en login y verificación 2FA,
+  tope general por IP en toda la app, y límite por usuario en el asistente.
+- **Base de datos**: máximo 30 columnas por tabla, clave primaria e
+  índice en cada clave foránea (lo fija `tests/mantenimiento.e2e.js`);
+  los históricos (auditoría, chat) se conservan 3 meses por defecto.
+- **Cifrado en tránsito**: `docker-compose.https.yml` + `Caddyfile`
+  ponen HTTPS delante de las dos aplicaciones; con eso activo, ninguna se
+  publica directamente a la red.
 - **Catálogos de texto libre** (sede, área, marca, modelo, operadora):
   tabla genérica `catalog_items` (`catalog_type` + `value`), sin FK
   dura desde quien lo usa — administrable desde Configuración >

@@ -19,6 +19,9 @@ const ExcelJS = require('exceljs');
 const ROOT = path.join(__dirname, '..');
 const pool = require(path.join(ROOT, 'src/db/pool'));
 const settingsService = require(path.join(ROOT, 'src/services/settingsService'));
+// El sidecar simulado de esta prueba usa usuario y contraseña (instalación sin
+// acceso único); el camino con pases firmados se prueba en tests/sso.e2e.js.
+require(path.join(ROOT, 'src/config/env')).ssoSharedSecret = '';
 const mobileLabels = require(path.join(ROOT, 'src/config/mobileLabels'));
 const { code128, _symbols } = require(path.join(ROOT, 'src/services/barcode'));
 const { extractLines } = require(path.join(ROOT, 'src/services/mobileBillParsers/pdfText'));
