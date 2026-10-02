@@ -5,6 +5,7 @@ devops-sidecar/**/__pycache__/
 devops-sidecar/*.pyc
 uploads/adjuntos/*
 uploads/red/*
+uploads/recibos/
 !uploads/adjuntos/.gitkeep
 !uploads/red/.gitkeep
 *.log

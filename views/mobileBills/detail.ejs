@@ -1,0 +1,245 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  function soles(n) { return 'S/ ' + Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  const canEdit = currentUser.role !== 'lector';
+  const base = '/celulares/recibos/' + bill.id;
+  function url(v, r) {
+    const p = new URLSearchParams();
+    p.set('vista', v);
+    if (r) p.set('resultado', r);
+    return base + '?' + p.toString();
+  }
+  const R = mobileLabels.BILL_RESULT;
+  const VISTAS = {
+    lineas: { titulo: 'Líneas del recibo', sub: 'Cada número facturado, contra los chips del inventario', icon: 'bi-sim' },
+    equipos: { titulo: 'Equipos con cuota', sub: 'Cada IMEI facturado, contra los celulares del inventario', icon: 'bi-phone' },
+    inventario: { titulo: 'Inventario vs. recibo', sub: 'Lo registrado en el inventario, contra lo que factura la operadora', icon: 'bi-clipboard-check' },
+  };
+  const faltantes = stats.lineas.faltante.cantidad;
+%>
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <a href="/celulares/recibos" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Recibos</a>
+    <h2 class="mb-1">Recibo <%= bill.operadora %> <%= bill.recibo_nro %></h2>
+    <div class="text-muted small">
+      Cuenta <%= bill.cuenta || '—' %> · Emisión <%= bill.fecha_emision || '—' %> · Periodo <%= bill.periodo_inicio || '—' %> al <%= bill.periodo_fin || '—' %>
+      · Vence <%= bill.fecha_vencimiento || '—' %> · Subido desde <%= bill.origen === 'pdf' ? 'PDF' : 'Excel' %><%= bill.uploaded_by_name ? ' por ' + bill.uploaded_by_name : '' %>
+    </div>
+  </div>
+  <div class="d-flex flex-wrap gap-1">
+    <a href="<%= base %>/exportar.xlsx" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Exportar cruce</a>
+    <% if (bill.archivo_guardado) { %>
+      <a href="<%= base %>/archivo" class="btn btn-outline-secondary"><i class="bi bi-download"></i> Archivo original</a>
+    <% } %>
+    <% if (canEdit) { %>
+      <form action="<%= base %>/eliminar" method="post" class="d-inline"
+            onsubmit="return confirm('¿Eliminar este recibo? Se borra solo el recibo cargado; los chips y celulares del inventario no cambian.');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-outline-danger" type="submit">Eliminar</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<% if (bill.diferencia) { %>
+  <div class="alert alert-warning">
+    <strong>El recibo no cuadra por <%= soles(bill.diferencia) %>.</strong>
+    Total a pagar <%= soles(bill.total_pagar) %>; se leyeron <%= soles(bill.total_lineas) %> en líneas, <%= soles(bill.total_cargos) %> en cargos de cuenta
+    y <%= soles(bill.saldo_anterior) %> de saldo anterior. Puede haber un concepto que este formato no lee todavía: revise el archivo original.
+  </div>
+<% } %>
+
+<div class="row g-3 mb-3" style="font-variant-numeric: tabular-nums;">
+  <div class="col-6 col-lg-3">
+    <div class="card p-3 h-100">
+      <div class="text-muted small">Total a pagar</div>
+      <div class="fs-3 fw-semibold"><%= bill.total_pagar === null ? '—' : soles(bill.total_pagar) %></div>
+      <div class="small text-muted">Líneas <%= soles(bill.total_lineas) %> · Equipos y otros <%= soles(bill.total_cargos) %></div>
+    </div>
+  </div>
+  <% Object.keys(VISTAS).forEach(function(v) { const t = stats[v]; %>
+    <div class="col-6 col-lg-3">
+      <div class="card p-3 h-100 <%= vista === v ? 'border-primary' : '' %>">
+        <div class="text-muted small"><i class="bi <%= VISTAS[v].icon %>"></i> <%= VISTAS[v].titulo %></div>
+        <div class="fs-3 fw-semibold"><a href="<%= url(v) %>" class="text-decoration-none"><%= t.total %></a></div>
+        <div class="d-flex flex-wrap gap-1">
+          <% Object.keys(R).forEach(function(r) { %>
+            <a href="<%= url(v, r) %>" class="badge <%= R[r].badge %> text-decoration-none" title="<%= t[r].monto === null ? '' : soles(t[r].monto) %>">
+              <%= t[r].cantidad %> <%= R[r].label.toLowerCase() %>
+            </a>
+          <% }); %>
+        </div>
+      </div>
+    </div>
+  <% }); %>
+</div>
+
+<% if (canEdit) { %>
+<div class="card p-3 mb-3">
+  <h5>Llevar el recibo al inventario</h5>
+  <div class="d-flex flex-wrap gap-2 align-items-start">
+    <form action="<%= base %>/crear-chips" method="post"
+          onsubmit="return confirm('Se registrarán <%= faltantes %> chips en stock (sin celular ni persona), con la operadora, el plan y el costo mensual de este recibo. ¿Continuar?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="todos" value="1">
+      <button class="btn btn-primary" type="submit" <%= faltantes ? '' : 'disabled' %>>
+        <i class="bi bi-plus-lg"></i> Registrar los <%= faltantes %> números faltantes como chips
+      </button>
+    </form>
+    <form action="<%= base %>/actualizar-planes" method="post"
+          onsubmit="return confirm('Se copiará a los chips que figuran en este recibo su plan y su costo mensual (lo que hoy se paga por la línea), y la operadora si estaba vacía. ¿Continuar?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn-outline-primary" type="submit"><i class="bi bi-arrow-repeat"></i> Actualizar plan y costo de los chips</button>
+    </form>
+  </div>
+  <div class="form-text">
+    Los faltantes (<%= soles(stats.lineas.faltante.monto) %> al mes) se facturan pero no existen en el inventario. Quedan en stock para que luego
+    los ponga en un celular o los asigne a una persona. Para registrar solo algunos, márquelos en la tabla de abajo.
+  </div>
+</div>
+<% } %>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-<%= stats.descuentosPorVencer.length || stats.cuotasPorTerminar.length ? '5' : '12' %>">
+    <div class="card p-3 h-100">
+      <div class="text-muted small mb-1">Líneas por plan</div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0" style="font-variant-numeric: tabular-nums;">
+          <thead><tr><th>Plan</th><th class="text-end">Líneas</th><th class="text-end">Monto</th><th class="text-end">Faltantes</th></tr></thead>
+          <tbody>
+            <% stats.porPlan.forEach(function(p) { %>
+              <tr><td><%= p.plan %></td><td class="text-end"><%= p.lineas %></td><td class="text-end text-nowrap"><%= soles(p.monto) %></td>
+                <td class="text-end"><%= p.faltantes %></td></tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <% if (stats.descuentosPorVencer.length || stats.cuotasPorTerminar.length) { %>
+  <div class="col-lg-7">
+    <div class="card p-3 h-100">
+      <div class="text-muted small mb-1">Lo que cambia en los próximos recibos</div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0" style="font-variant-numeric: tabular-nums;">
+          <thead><tr><th>Concepto</th><th class="text-end">Cantidad</th><th class="text-end">Avance</th><th class="text-end">Recibos que faltan</th><th class="text-end">Efecto al mes</th></tr></thead>
+          <tbody>
+            <% stats.descuentosPorVencer.forEach(function(d) { %>
+              <tr><td><%= d.tipo %></td><td class="text-end"><%= d.cantidad %> líneas</td><td class="text-end"><%= d.avance %></td>
+                <td class="text-end"><%= d.restantes %></td><td class="text-end text-nowrap text-danger">+ <%= soles(d.monto) %></td></tr>
+            <% }); %>
+            <% stats.cuotasPorTerminar.forEach(function(c) { %>
+              <tr><td>Cuota de equipo</td><td class="text-end"><%= c.cantidad %> equipos</td><td class="text-end"><%= c.avance %></td>
+                <td class="text-end"><%= c.restantes %></td><td class="text-end text-nowrap text-success">− <%= soles(c.monto) %></td></tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <div class="form-text">Al terminar un descuento, la línea sube ese monto; al terminar las cuotas de un equipo, deja de cobrarse.</div>
+    </div>
+  </div>
+  <% } %>
+</div>
+
+<div class="card p-3">
+  <ul class="nav nav-tabs mb-3">
+    <% Object.keys(VISTAS).forEach(function(v) { %>
+      <li class="nav-item"><a class="nav-link <%= vista === v ? 'active' : '' %>" href="<%= url(v) %>"><%= VISTAS[v].titulo %> <span class="badge bg-secondary"><%= stats[v].total %></span></a></li>
+    <% }); %>
+  </ul>
+  <p class="text-muted small mb-2">
+    <%= VISTAS[vista].sub %>.
+    <% if (vista === 'inventario' && stats.otrasOperadoras) { %>No se comparan <%= stats.otrasOperadoras %> chip(s) registrados con otra operadora.<% } %>
+    <% if (vista === 'equipos' && stats.otrosCargos.cantidad) { %>El recibo trae además <%= stats.otrosCargos.cantidad %> cargo(s) de cuenta sin IMEI por <%= soles(stats.otrosCargos.monto) %> (van en el Excel exportado).<% } %>
+  </p>
+  <form class="row g-2 mb-3" method="get">
+    <input type="hidden" name="vista" value="<%= vista %>">
+    <div class="col-12 col-md-5">
+      <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Número, IMEI, usuario, plan, sede...">
+    </div>
+    <div class="col-auto">
+      <select name="resultado" class="form-select" aria-label="Resultado">
+        <option value="">Todo resultado</option>
+        <% Object.keys(R).forEach(function(r) { %>
+          <option value="<%= r %>" <%= resultado === r ? 'selected' : '' %>><%= R[r].label %> (<%= stats[vista][r].cantidad %>)</option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-funnel"></i> Filtrar</button>
+      <% if (q || resultado) { %><a href="<%= url(vista) %>" class="btn btn-link">Quitar filtros</a><% } %>
+    </div>
+    <div class="col-auto ms-auto align-self-center text-muted small"><%= rows.length %> fila(s)</div>
+  </form>
+
+  <% const marcar = canEdit && vista === 'lineas' && rows.some(function(r) { return r.resultado === 'faltante'; }); %>
+  <% if (marcar) { %>
+    <form action="<%= base %>/crear-chips" method="post" class="mb-2" id="crear_marcados"
+          onsubmit="var n = Array.prototype.map.call(document.querySelectorAll('.chip-falta:checked'), function (c) { return c.value; }); if (!n.length) { alert('Marque al menos un número.'); return false; } this.numbers.value = n.join(','); return confirm('Se registrarán ' + n.length + ' chips en stock. ¿Continuar?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="numbers" value="">
+      <button class="btn btn-sm btn-outline-primary" type="submit">Registrar como chips solo los marcados</button>
+      <button class="btn btn-sm btn-link" type="button"
+              onclick="var c = document.querySelectorAll('.chip-falta'); var on = !c[0].checked; Array.prototype.forEach.call(c, function (x) { x.checked = on; });">Marcar / desmarcar todos</button>
+    </form>
+  <% } %>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-variant-numeric: tabular-nums;">
+      <% if (vista === 'lineas') { %>
+        <thead><tr><% if (marcar) { %><th></th><% } %><th>Número</th><th>Plan</th><th class="text-end">Cargo fijo</th><th class="text-end">Dsctos.</th>
+          <th class="text-end">Monto</th><th>Descuento</th><th>Celular</th><th>Usuario</th><th>Área</th><th>Sede</th><th>Resultado</th></tr></thead>
+        <tbody>
+          <% rows.forEach(function(r) { %>
+            <tr>
+              <% if (marcar) { %><td><% if (r.resultado === 'faltante') { %><input type="checkbox" class="form-check-input chip-falta" value="<%= r.phone_number %>" aria-label="Marcar <%= r.phone_number %>"><% } %></td><% } %>
+              <td class="text-nowrap"><% if (r.chip_id) { %><a href="/celulares/chips/<%= r.chip_id %>"><%= r.phone_number %></a><% } else { %><%= r.phone_number %><% } %></td>
+              <td><%= r.plan || '—' %></td>
+              <td class="text-end"><%= soles(r.cargo_fijo) %></td>
+              <td class="text-end"><%= soles(r.descuento) %></td>
+              <td class="text-end text-nowrap"><%= soles(r.monto_total) %></td>
+              <td class="small"><%= r.descuento_tipo || '—' %><% if (r.descuento_cuotas) { %> <span class="text-muted">(<%= r.descuento_cuota %>/<%= r.descuento_cuotas %>)</span><% } %></td>
+              <td class="text-nowrap"><% if (r.device_id) { %><a href="/celulares/<%= r.device_id %>"><%= r.imei %></a><% } else { %>—<% } %></td>
+              <td><%= r.holder || '—' %></td><td><%= r.area || '—' %></td><td><%= r.sede || '—' %></td>
+              <td><span class="badge <%= R[r.resultado].badge %>"><%= R[r.resultado].label %></span><div class="small text-muted"><%= r.detalle %></div></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      <% } else if (vista === 'equipos') { %>
+        <thead><tr><th>IMEI facturado</th><th>Modelo</th><th>Folio de venta</th><th class="text-end">Cuota</th><th class="text-end">Monto</th>
+          <th>Código</th><th>Número</th><th>Usuario</th><th>Sede</th><th>Resultado</th></tr></thead>
+        <tbody>
+          <% rows.forEach(function(r) { %>
+            <tr>
+              <td class="text-nowrap"><% if (r.device_id) { %><a href="/celulares/<%= r.device_id %>"><%= r.imei %></a><% } else { %><%= r.imei %><% } %></td>
+              <td><%= r.modelo || '—' %></td>
+              <td class="text-nowrap"><%= r.folio || '—' %></td>
+              <td class="text-end"><%= r.cuota_total ? r.cuota_nro + '/' + r.cuota_total : '—' %></td>
+              <td class="text-end text-nowrap"><%= soles(r.monto) %></td>
+              <td><%= r.asset_code || '—' %></td><td><%= r.phone_number || '—' %></td><td><%= r.holder || '—' %></td><td><%= r.sede || '—' %></td>
+              <td><span class="badge <%= R[r.resultado].badge %>"><%= R[r.resultado].label %></span><div class="small text-muted"><%= r.detalle %></div></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      <% } else { %>
+        <thead><tr><th>Número</th><th>Celular</th><th>Operadora</th><th>Usuario</th><th>Área</th><th>Sede</th><th>Resultado</th></tr></thead>
+        <tbody>
+          <% rows.forEach(function(r) { %>
+            <tr>
+              <td class="text-nowrap"><% if (r.chip_id) { %><a href="/celulares/chips/<%= r.chip_id %>"><%= r.phone_number %></a><% } else { %>—<% } %></td>
+              <td class="text-nowrap"><% if (r.device_id) { %><a href="/celulares/<%= r.device_id %>"><%= r.asset_code || r.imei %></a><% } else { %>—<% } %></td>
+              <td><%= r.operadora || '—' %></td><td><%= r.holder || '—' %></td><td><%= r.area || '—' %></td><td><%= r.sede || '—' %></td>
+              <td><span class="badge <%= R[r.resultado].badge %>"><%= R[r.resultado].label %></span><div class="small text-muted"><%= r.detalle %></div></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      <% } %>
+      <% if (rows.length === 0) { %>
+        <tbody><tr><td colspan="12" class="text-center text-muted py-4">Ninguna fila cumple estos filtros.</td></tr></tbody>
+      <% } %>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

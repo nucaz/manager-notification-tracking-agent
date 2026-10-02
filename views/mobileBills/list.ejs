@@ -1,0 +1,78 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  function soles(n) { return 'S/ ' + Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  const canEdit = currentUser.role !== 'lector';
+%>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="/celulares" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Celulares</a>
+    <h2 class="mb-0">Recibos de operadoras <span class="text-muted fs-6">(<%= items.length %>)</span></h2>
+  </div>
+  <a href="/celulares/chips" class="btn btn-outline-primary"><i class="bi bi-sim"></i> Chips</a>
+</div>
+
+<% if (canEdit) { %>
+<div class="card p-3 mb-3">
+  <h5>Subir un recibo</h5>
+  <form action="/celulares/recibos/subir" method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="col-12 col-md-7">
+      <label class="form-label" for="bill_file">Archivo del recibo (PDF o Excel)</label>
+      <input type="file" name="file" id="bill_file" class="form-control" accept=".pdf,.xlsx" required>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary" type="submit"><i class="bi bi-upload"></i> Subir y cruzar con el inventario</button>
+    </div>
+    <div class="col-12 form-text">
+      Hoy se leen los recibos de Entel: el PDF del recibo o el Excel de detalle. El PDF trae además el tipo de descuento y el
+      número de cuota de cada equipo. Subir otra vez el mismo recibo lo reemplaza. Subir un recibo no cambia el inventario.
+    </div>
+  </form>
+</div>
+<% } %>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" style="font-variant-numeric: tabular-nums;">
+      <thead>
+        <tr>
+          <th>Recibo</th><th>Operadora</th><th>Emisión</th><th>Periodo</th><th>Vence</th>
+          <th class="text-end">Líneas</th><th class="text-end">Equipos con cuota</th><th class="text-end">Total a pagar</th>
+          <th class="text-end">Líneas sin inventariar</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.forEach(function(b) { %>
+          <tr>
+            <td class="text-nowrap">
+              <a href="/celulares/recibos/<%= b.id %>"><%= b.recibo_nro %></a>
+              <div class="small text-muted">Cuenta <%= b.cuenta || '—' %> · <%= b.origen === 'pdf' ? 'PDF' : 'Excel' %></div>
+            </td>
+            <td><%= b.operadora %></td>
+            <td class="text-nowrap"><%= b.fecha_emision || '—' %></td>
+            <td class="text-nowrap"><%= b.periodo_inicio || '—' %> al <%= b.periodo_fin || '—' %></td>
+            <td class="text-nowrap"><%= b.fecha_vencimiento || '—' %></td>
+            <td class="text-end"><%= b.lineas %></td>
+            <td class="text-end"><%= b.equipos %></td>
+            <td class="text-end text-nowrap">
+              <%= b.total_pagar === null ? '—' : soles(b.total_pagar) %>
+              <% if (b.diferencia) { %><div class="small text-danger">no cuadra por <%= soles(b.diferencia) %></div><% } %>
+            </td>
+            <td class="text-end">
+              <% if (b.lineas_faltantes) { %>
+                <a href="/celulares/recibos/<%= b.id %>?vista=lineas&resultado=faltante" class="badge bg-danger text-decoration-none"><%= b.lineas_faltantes %></a>
+              <% } else { %>0<% } %>
+            </td>
+            <td class="text-end"><a href="/celulares/recibos/<%= b.id %>" class="btn btn-sm btn-outline-secondary">Ver cruce</a></td>
+          </tr>
+        <% }); %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="10" class="text-center text-muted py-4">Todavía no se ha subido ningún recibo.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

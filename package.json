@@ -32,6 +32,7 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.6",
     "otplib": "^13.5.0",
+    "pdfjs-dist": "^4.10.38",
     "qrcode": "^1.5.4"
   },
   "overrides": {

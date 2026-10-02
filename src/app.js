@@ -17,6 +17,7 @@ const serverRoutes = require('./routes/servers');
 const certificateRoutes = require('./routes/certificates');
 const mobileDeviceRoutes = require('./routes/mobileDevices');
 const mobileLineRoutes = require('./routes/mobileLines');
+const mobileBillRoutes = require('./routes/mobileBills');
 const employeeRoutes = require('./routes/employees');
 const attachmentRoutes = require('./routes/attachments');
 const networkRoutes = require('./routes/network');
@@ -116,9 +117,10 @@ app.use('/dominios', domainRoutes);
 app.use('/isp', ispRoutes);
 app.use('/servidores', serverRoutes);
 app.use('/certificados', certificateRoutes);
-// /celulares/chips va antes que /celulares: si no, el router de celulares
-// tomaria "chips" como el id de un equipo.
+// /celulares/chips y /celulares/recibos van antes que /celulares: si no, el
+// router de celulares tomaria "chips" o "recibos" como el id de un equipo.
 app.use('/celulares/chips', mobileLineRoutes);
+app.use('/celulares/recibos', mobileBillRoutes);
 app.use('/celulares', mobileDeviceRoutes);
 app.use('/empleados', employeeRoutes);
 app.use('/adjuntos', attachmentRoutes);

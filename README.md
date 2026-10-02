@@ -27,6 +27,18 @@ Aplicación web para el seguimiento de:
   Filtros combinables con totales, **suma del costo** de lo filtrado y
   exportación a Excel. El número del celular se mantiene sincronizado con
   su chip principal. Prueba: `E2E_PERMITIR=1 node tests/celulares_chips_decomiso.e2e.js`
+  **Recibos** (`/celulares/recibos`): se sube el recibo de la operadora
+  (hoy Entel: el PDF del recibo o su Excel de detalle; se leen sin IA) y la
+  app lo cruza contra el inventario en tres sentidos — número facturado →
+  chips, IMEI con cuota → celulares, e inventario → recibo — marcando cada
+  fila como coincide, observado (con el motivo) o faltante, con conteos y
+  montos, filtros y exportación a Excel. Desde el cruce se registran en
+  bloque los números faltantes como chips en stock y se copia a los chips
+  su plan y costo mensual. El PDF agrega cuándo vencen los descuentos y las
+  cuotas de equipos. Verifica que lo leído cuadre con el total del recibo.
+  Una operadora nueva se agrega como un lector más en
+  `src/services/mobileBillParsers/`. Prueba:
+  `E2E_PERMITIR=1 node tests/celulares_recibos.e2e.js`
   (escribe datos de prueba marcados en la base configurada y los borra)
 - **Empleados**: directorio reutilizable por DNI (nombres, apellidos,
   área, sede, cargo) — se alimenta automáticamente al asignar un celular,

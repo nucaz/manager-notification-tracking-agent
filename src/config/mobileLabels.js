@@ -37,14 +37,22 @@ const LINE_UBICACION = {
   en_stock: { label: 'En stock', badge: 'bg-secondary' },
 };
 
+// Resultado del cruce de un recibo contra el inventario.
+const BILL_RESULT = {
+  coincide: { label: 'Coincide', badge: 'bg-success' },
+  observado: { label: 'Observado', badge: 'bg-warning text-dark' },
+  faltante: { label: 'Faltante', badge: 'bg-danger' },
+};
+
 function pick(map, key) {
   return map[key] || { label: key || '—', badge: 'bg-light text-dark' };
 }
 
 module.exports = {
-  DEVICE_STATUS, INCIDENT_TIPO, DECOMISO_MOTIVO, LINE_ESTADO, LINE_UBICACION,
+  DEVICE_STATUS, INCIDENT_TIPO, DECOMISO_MOTIVO, LINE_ESTADO, LINE_UBICACION, BILL_RESULT,
   deviceStatus: (k) => pick(DEVICE_STATUS, k),
   incidentTipo: (k) => pick(INCIDENT_TIPO, k),
   lineEstado: (k) => pick(LINE_ESTADO, k),
   lineUbicacion: (k) => pick(LINE_UBICACION, k),
+  billResult: (k) => pick(BILL_RESULT, k),
 };

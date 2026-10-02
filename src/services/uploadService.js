@@ -8,6 +8,7 @@ const UPLOAD_ROOT = path.join(__dirname, '..', '..', 'uploads');
 const DIRS = {
   adjuntos: path.join(UPLOAD_ROOT, 'adjuntos'),
   red: path.join(UPLOAD_ROOT, 'red'),
+  recibos: path.join(UPLOAD_ROOT, 'recibos'),
 };
 
 for (const dir of Object.values(DIRS)) {
@@ -65,6 +66,23 @@ const importUploader = multer({
   limits: { fileSize: env.uploadMaxMb * 1024 * 1024 },
 });
 
+// Recibos de operadoras (modulo Celulares): PDF o Excel, en memoria. Se
+// leen primero y solo si el formato se reconoce se guarda el original en
+// uploads/recibos (lo hace mobileBillService).
+const BILL_ALLOWED_EXT = new Set(['.pdf', '.xlsx']);
+
+const billUploader = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!BILL_ALLOWED_EXT.has(ext)) {
+      return cb(new Error(`Suba el recibo en PDF o en Excel (.xlsx); no se admite ${ext || 'ese archivo'}.`));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: env.uploadMaxMb * 1024 * 1024 },
+});
+
 // Para restaurar un backup de base de datos desde Configuracion: solo
 // .sql, en memoria (se pasa directo a mariadb-dump por stdin, nunca se
 // guarda en disco). Limite generoso (no ligado a UPLOAD_MAX_MB, que esta
@@ -82,4 +100,4 @@ const sqlRestoreUploader = multer({
   limits: { fileSize: 500 * 1024 * 1024 },
 });
 
-module.exports = { uploader, importUploader, sqlRestoreUploader, DIRS, UPLOAD_ROOT };
+module.exports = { uploader, importUploader, billUploader, sqlRestoreUploader, DIRS, UPLOAD_ROOT };
