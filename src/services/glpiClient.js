@@ -699,11 +699,25 @@ async function assetCounts() {
   if (countsCache.url !== url) Object.assign(countsCache, { url, at: 0, value: null });
   if (countsCache.value && Date.now() - countsCache.at < COUNTS_TTL_MS) return countsCache.value;
   if (!countsCache.pending) {
-    countsCache.pending = module.exports.testConnection()
-      .then((r) => { if (countsCache.url === url) Object.assign(countsCache, { at: Date.now(), value: { ...NO_COUNTS, ...r.counts } }); })
-      // GLPI caido: se anota "sin respuesta" por un minuto, para no hacer esperar a cada visita al panel.
-      .catch(() => { if (countsCache.url === url && !countsCache.value) Object.assign(countsCache, { at: Date.now() - COUNTS_TTL_MS + 60000, value: NO_COUNTS }); })
-      .finally(() => { countsCache.pending = null; });
+    // Se cuenta pidiendo un solo registro de cada tipo (el total viene en la
+    // respuesta). No se usa "probar conexion": esa pide ademas el perfil del
+    // usuario, que un usuario de servicio puede no tener permiso de ver.
+    countsCache.pending = Promise.all(Object.keys(ASSET_TYPES).map(async (key) => {
+      try {
+        const v2cfg = await v2Config();
+        const r = v2cfg ? await v2.listItems(v2cfg, key, { start: 0, limit: 1 }) : await listItems(key, { start: 0, limit: 1 });
+        return [key, Number.isFinite(Number(r.total)) ? Number(r.total) : null];
+      } catch (_) {
+        return [key, null];
+      }
+    })).then((pairs) => {
+      if (countsCache.url !== url) return;
+      const value = Object.fromEntries(pairs);
+      // Si GLPI no respondio nada, se anota "sin respuesta" solo por un minuto.
+      const failed = pairs.every((pair) => pair[1] === null);
+      const at = failed ? Date.now() - COUNTS_TTL_MS + 60000 : Date.now();
+      Object.assign(countsCache, { at, value: failed && countsCache.value ? countsCache.value : value }); // con fallo se conserva el ultimo conteo bueno
+    }).finally(() => { countsCache.pending = null; });
   }
   if (countsCache.value) return countsCache.value;
   await Promise.race([countsCache.pending, new Promise((resolve) => { setTimeout(resolve, COUNTS_WAIT_MS).unref(); })]);

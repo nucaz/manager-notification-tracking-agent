@@ -84,7 +84,7 @@ function fakeGlpi() {
     seen.headers = req.headers;
     next();
   });
-  g.get('/api.php/Administration/User/Me', (req, res) => res.json({ id: 7, username: CLIENT.user }));
+  g.get('/api.php/Administration/User/Me', (req, res) => (seen.meForbidden ? res.status(403).json({ status: 'ERROR_RIGHT_MISSING' }) : res.json({ id: 7, username: CLIENT.user })));
   g.get('/api.php/Administration/Entity', (req, res) => res.json([{ id: 0, name: 'Raíz', completename: 'Raíz' }]));
   g.post('/api.php/Management/Contract', (req, res) => { seen.contract = req.body; res.status(201).json({ id: 55, href: '/Management/Contract/55' }); });
   g.get('/api.php/Assets/:itemtype', (req, res) => {
@@ -219,6 +219,15 @@ async function main() {
     check('Excel en v2: todas las columnas pedidas, con datos', wb2.worksheets[0].rowCount === 31 && cell('Sistema operativo') === 'Windows 11 Pro'
       && cell('Versión del SO') === '23H2' && cell('Entidad') === 'Raíz > DEPILZONE' && cell('Fabricante') === 'Lenovo'
       && cell('Procesador') === 'Intel Core i5-12400' && cell('Tipo de memoria') === 'DDR4' && cell('Memoria') === '16 GB' && cell('IP') === '');
+
+    // Conteo para el panel principal: no debe depender de ver el propio perfil
+    // (un usuario de servicio de solo lectura puede no tener ese permiso).
+    seen.meForbidden = true;
+    glpiClient._clearCaches();
+    const conteo = await glpiClient.assetCounts();
+    check(`Conteo para el panel en v2, aun sin permiso para ver el propio usuario: ${JSON.stringify(conteo)}`, conteo && conteo.computadoras === 30
+      && Number.isInteger(conteo.monitores) && Number.isInteger(conteo.impresoras));
+    seen.meForbidden = false;
 
     const ent = await glpiClient.listEntities();
     check('Entidades por la API v2', ent[0] && ent[0].completename === 'Raíz');
