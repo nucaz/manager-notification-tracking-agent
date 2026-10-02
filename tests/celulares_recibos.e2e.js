@@ -47,10 +47,10 @@ async function cleanup() {
 }
 
 // Excel con la misma estructura que entrega Entel (encabezado en 4 filas).
-async function entelExcel({ recibo, total, lines, charges, extraSheetName }) {
+async function entelExcel({ recibo, total, lines, charges, extraSheetName, emision }) {
   const wb = new ExcelJS.Workbook();
   const res = wb.addWorksheet('Resumen');
-  [['Razón Social:', 'EMPRESA DE PRUEBA SAC'], ['Recibo Nº:', recibo], ['Emisión del recibo:', new Date(Date.UTC(2026, 8, 22))],
+  [['Razón Social:', 'EMPRESA DE PRUEBA SAC'], ['Recibo Nº:', recibo], ['Emisión del recibo:', emision || new Date(Date.UTC(2026, 8, 22))],
     ['Cuenta:', '9.99999999'], ['Inicio del Periodo:', 46288], ['Fin del Periodo:', '22/10/2026'], ['RUC:', '20999999999'],
     ['Recibo del Mes:', total], ['ÚLTIMO DIA DE PAGO:', new Date(Date.UTC(2026, 9, 5))]].forEach((r) => res.addRow(r));
   const sh = wb.addWorksheet(extraSheetName || '9.99999999');
@@ -187,6 +187,11 @@ async function main() {
       && pdf.charges[0].cuota_total === 18 && pdf.charges[0].monto === 16.11 && pdf.charges[0].modelo === 'ZTE BLADE A76 256GB BK 5G'
       && pdf.charges[1].imei === IMEI[1] && pdf.charges[1].cuota_nro === 17 && pdf.charges[1].monto === 17.22);
     check('PDF: saldo anterior, y el glosario del final no se cuenta como cargo', pdf.saldo_anterior === 5);
+    const rd = billService.recurringDiscount;
+    check('Descuento mensual: del porcentaje si el recibo lo dice (línea prorrateada), si no del monto, nunca más que el cargo fijo',
+      rd({ cargo_fijo: 31.9, descuento: -28.18, descuento_tipo: 'Descuento 50% Cargo Fijo' }) === 15.95
+      && rd({ cargo_fijo: 31.9, descuento: -15.95, descuento_tipo: null }) === 15.95
+      && rd({ cargo_fijo: 31.9, descuento: -40, descuento_tipo: null }) === 31.9 && rd({ cargo_fijo: 31.9, descuento: 0, descuento_tipo: null }) === 0);
 
     // --- Inventario de partida
     const [d1] = await pool.query(
@@ -270,11 +275,14 @@ async function main() {
     r = await post(`/celulares/recibos/${b.id}/crear-chips`, { numbers: `${N[2]},${N[0]},000` });
     let c3 = await chip(N[2]);
     check('Registrar solo los marcados: crea ese chip y nada más', /^1 chip/.test(r.ok[0] || '') && c3 && !(await chip(N[3])));
-    check('El chip nuevo queda en stock con operadora, plan, costo, país y nota del recibo', c3.operadora === 'Entel'
-      && c3.plan === 'Empresa CORP 2.0 31.9' && Number(c3.costo_plan) === 15.95 && c3.estado === 'activo' && c3.device_id === null
+    check('El chip nuevo guarda los dos montos: costo sin descuento 31.90 y descuento 15.95, con su detalle', Number(c3.costo_plan) === 31.9
+      && Number(c3.descuento_plan) === 15.95 && c3.descuento_nota === `Promociones y descuentos (recibo ${RECIBO[0]})`);
+    check('El chip nuevo queda en stock con operadora, plan, país y nota del recibo', c3.operadora === 'Entel'
+      && c3.plan === 'Empresa CORP 2.0 31.9' && c3.estado === 'activo' && c3.device_id === null
       && c3.phone_country_code_id === peru.id && c3.notes === `Creado desde el recibo Entel N.º ${RECIBO[0]}` && c3.created_by === admin.id);
     r = await post(`/celulares/recibos/${b.id}/crear-chips`, { todos: '1' });
-    check('Registrar todos los faltantes: crea los que quedaban', /^1 chip/.test(r.ok[0] || '') && Number((await chip(N[3])).costo_plan) === 39.95);
+    check('Registrar todos los faltantes: crea los que quedaban', /^1 chip/.test(r.ok[0] || '') && Number((await chip(N[3])).costo_plan) === 79.9
+      && Number((await chip(N[3])).descuento_plan) === 39.95);
     r = await post(`/celulares/recibos/${b.id}/crear-chips`, { todos: '1' });
     check('Repetirlo no duplica chips', /No había números faltantes/.test(r.ok[0] || '')
       && (await q('SELECT COUNT(*) AS n FROM mobile_lines WHERE phone_number IN (?)', [N]))[0].n === 7);
@@ -286,8 +294,13 @@ async function main() {
     r = await post(`/celulares/recibos/${b.id}/actualizar-planes`, {});
     const c1 = await chip(N[0]);
     const dev = (await q('SELECT operadora FROM mobile_devices WHERE imei = ?', [IMEI[0]]))[0];
-    check('Actualizar planes: copia plan, costo y operadora vacía al chip y a su celular', /chip\(s\) actualizados/.test(r.ok[0] || '')
-      && c1.plan === 'Empresa CORP 2.0 42.9' && Number(c1.costo_plan) === 21.45 && c1.operadora === 'Entel' && dev.operadora === 'Entel');
+    check('Actualizar planes: copia plan, costo sin descuento, descuento y operadora vacía al chip y a su celular',
+      /chip\(s\) actualizados/.test(r.ok[0] || '') && c1.plan === 'Empresa CORP 2.0 42.9' && Number(c1.costo_plan) === 42.9
+      && Number(c1.descuento_plan) === 21.45 && c1.operadora === 'Entel' && dev.operadora === 'Entel');
+    const lineSvc = require(path.join(ROOT, 'src/services/mobileLineService'));
+    const tot = lineSvc.summarize(await lineSvc.listLines({ q: '9000009', operadora: 'Entel', costo: 'con' }));
+    check('Listado de chips: suma sin descuento (186.60), descuento (93.30) y lo que se paga (93.30)', tot.costoTotal === 186.6
+      && tot.descuentoTotal === 93.3 && tot.netoTotal === 93.3 && tot.conDescuento === 4);
     check('Actualizar planes no toca el chip dado de baja ni el no facturado', (await chip(N[4])).plan === null && (await chip(N[5])).plan === null);
     r = await post(`/celulares/recibos/${b.id}/actualizar-planes`, {});
     check('Repetirlo informa que no había cambios', /ya tenían/.test(r.ok[0] || ''));
@@ -313,6 +326,25 @@ async function main() {
     r = await req('GET', `/celulares/recibos/${b3.id}`);
     check('Recibo cuyo total no cuadra con lo leído: se carga y lo advierte', r.text.includes('El recibo no cuadra por S/ 10.00'));
 
+    // --- Mes siguiente: que entro y que salio
+    r = await upload(await entelExcel({
+      recibo: RECIBO[1], total: 93.3 + 34.11, emision: new Date(Date.UTC(2026, 9, 22)),
+      lines: [...LINES.slice(0, 4), [N[5], 'Empresa CORP 2.0 31.9', 31.9, -15.95, 15.95]], charges: CHARGES.slice(0, 2),
+    }), 'octubre.xlsx');
+    const b2 = await bill(RECIBO[1]);
+    const ch = (await billService.reconcile(await billService.getBill(b2.id))).stats.cambios;
+    check('Cambios respecto al recibo anterior: 1 línea nueva, 1 que ya no se factura, 1 equipo que dejó de cobrarse', ch
+      && ch.altas.join() === N[5] && ch.bajas.join() === N[4] && ch.equiposTerminados.join() === IMEI[2] && ch.equiposNuevos.length === 0);
+    r = await req('GET', `/celulares/recibos/${b2.id}?vista=lineas&cambio=alta`);
+    check('Pantalla: resumen de cambios y filtro de líneas nuevas', r.text.includes('Respecto al recibo anterior') && r.text.includes('1 fila(s)')
+      && r.text.includes(N[5]) && r.text.includes(`números que ya no se facturan`));
+    const evo = (await billService.monthlyEvolution()).filter((e) => RECIBO.includes(e.recibo_nro));
+    const e2 = evo.find((e) => e.recibo_nro === RECIBO[1]);
+    check('Evolución mensual: líneas, monto sin descuento, cambios y variación del total', e2 && e2.lineas === 5 && Number(e2.cargo_fijo) === 218.5
+      && e2.cambios.altas === 1 && e2.cambios.bajas === 1 && e2.cambios.equiposTerminados === 1 && e2.variacion === -275.97);
+    r = await req('GET', '/celulares/recibos');
+    check('Lista de recibos: tabla de evolución mes a mes', r.status === 200 && r.text.includes('Evolución mes a mes') && r.text.includes('2026-10-22'));
+
     // --- El PDF manda sobre el Excel
     await pool.query("UPDATE mobile_bills SET origen = 'pdf' WHERE id = ?", [b.id]);
     r = await upload(xlsx, 'EXCEL-990000001.xlsx');
@@ -327,6 +359,7 @@ async function main() {
       && !fs.existsSync(path.join(DIRS.recibos, guardado)) && (await chip(N[2])));
     r = await req('GET', `/celulares/recibos/${b.id}`);
     check('Recibo inexistente: vuelve a la lista', r.status === 302 && r.location === '/celulares/recibos');
+    await pool.query('DELETE FROM mobile_bills WHERE recibo_nro = ?', [RECIBO[1]]);
     check('Quedó registrado en la auditoría', (await q("SELECT COUNT(DISTINCT action) AS n FROM audit_log WHERE target LIKE 'Recibo Entel 99000000%'"))[0].n === 5);
   } finally {
     server.close();

@@ -44,7 +44,9 @@ async function loadBill(req, res, next) {
 
 router.get('/', async (req, res, next) => {
   try {
-    res.render('mobileBills/list', { title: 'Recibos de operadoras', items: await billService.listBills() });
+    res.render('mobileBills/list', {
+      title: 'Recibos de operadoras', items: await billService.listBills(), evolucion: await billService.monthlyEvolution(),
+    });
   } catch (err) {
     next(err);
   }
@@ -80,13 +82,15 @@ router.get('/:id(\\d+)', loadBill, async (req, res, next) => {
     const resultado = billService.RESULTS.includes(req.query.resultado) ? req.query.resultado : '';
     const q = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
     let rows = rec[vista];
+    const soloAltas = vista === 'lineas' && req.query.cambio === 'alta';
+    if (soloAltas) rows = rows.filter((r) => r.alta);
     if (resultado) rows = rows.filter((r) => r.resultado === resultado);
     if (q) {
       rows = rows.filter((r) => [r.phone_number, r.imei, r.plan, r.modelo, r.folio, r.holder, r.area, r.sede, r.asset_code, r.detalle]
         .some((v) => v && String(v).toLowerCase().includes(q)));
     }
     res.render('mobileBills/detail', {
-      title: billLabel(req.bill), bill: req.bill, stats: rec.stats, otrosCargos: rec.otrosCargos, rows, vista, resultado, q,
+      title: billLabel(req.bill), bill: req.bill, stats: rec.stats, otrosCargos: rec.otrosCargos, rows, vista, resultado, q, soloAltas,
     });
   } catch (err) {
     next(err);
@@ -128,11 +132,11 @@ router.post('/:id(\\d+)/crear-chips', canWrite, verifyCsrfToken, loadBill, async
     if (created) {
       await auditService.log(req, {
         user: req.session.user, action: 'chips_creados_desde_recibo', target: billLabel(req.bill),
-        detail: `${created} chip(s) registrados en stock con operadora, plan y costo del recibo`,
+        detail: `${created} chip(s) registrados en stock con operadora, plan, costo sin descuento y descuento del recibo`,
       });
     }
     req.flash('success', created
-      ? `${created} chip(s) registrados en stock, con la operadora, el plan y el costo mensual del recibo.`
+      ? `${created} chip(s) registrados en stock, con la operadora, el plan, el costo sin descuento y el descuento del recibo.`
       : 'No había números faltantes que registrar.');
     res.redirect(`/celulares/recibos/${req.bill.id}`);
   } catch (err) {
@@ -146,12 +150,12 @@ router.post('/:id(\\d+)/actualizar-planes', canWrite, verifyCsrfToken, loadBill,
     if (changed) {
       await auditService.log(req, {
         user: req.session.user, action: 'chips_actualizados_desde_recibo', target: billLabel(req.bill),
-        detail: `${changed} chip(s): plan, costo mensual y operadora (si estaba vacía) tomados del recibo`,
+        detail: `${changed} chip(s): plan, costo sin descuento, descuento y operadora (si estaba vacía) tomados del recibo`,
       });
     }
     req.flash('success', changed
-      ? `${changed} chip(s) actualizados con el plan y el costo mensual de este recibo.`
-      : 'Los chips ya tenían el plan y el costo de este recibo.');
+      ? `${changed} chip(s) actualizados con el plan, el costo sin descuento y el descuento de este recibo.`
+      : 'Los chips ya tenían el plan, el costo y el descuento de este recibo.');
     res.redirect(`/celulares/recibos/${req.bill.id}`);
   } catch (err) {
     next(err);

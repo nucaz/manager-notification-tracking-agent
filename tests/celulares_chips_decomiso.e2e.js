@@ -168,6 +168,18 @@ async function main() {
     check('Filtro encadenado + en celular + área', s.total === 2);
     s = lineService.summarize(await lineService.listLines({ q: '9000009', costo: 'sin' }));
     check('Filtro "sin costo registrado"', s.total === 2 && s.costoTotal === 0);
+
+    // --- Dos montos: sin descuento y con descuento
+    r = await post(`/celulares/chips/${l4.id}/editar`, { phone_number: N[3], phone_country_code_id: String(peru.id), operadora: 'Entel',
+      plan: 'Corporativo', costo_plan: '29.90', descuento_plan: '9.90', descuento_nota: 'Fidelización 18 meses', estado: 'activo' });
+    l4 = await line(N[3]);
+    s = lineService.summarize(await lineService.listLines({ q: '9000009' }));
+    check('Chip con descuento: el listado suma sin descuento (40.40), el descuento (9.90) y lo que se paga (30.50)', Number(l4.descuento_plan) === 9.9
+      && l4.descuento_nota === 'Fidelización 18 meses' && s.costoTotal === 40.4 && s.descuentoTotal === 9.9 && s.netoTotal === 30.5 && s.conDescuento === 1);
+    r = await post(`/celulares/chips/${l4.id}/editar`, { phone_number: N[3], phone_country_code_id: String(peru.id), costo_plan: '29.90', descuento_plan: '50', estado: 'activo' });
+    check('Un descuento mayor que el costo del plan se rechaza', r.errors.some((e) => /no puede ser mayor/.test(e)) && Number((await line(N[3])).descuento_plan) === 9.9);
+    r = await req('GET', '/celulares/chips?q=9000009');
+    check('Listado de chips: muestra "Se paga al mes" y el monto sin descuento', r.text.includes('Se paga al mes (con descuento)') && r.text.includes('S/ 30.50') && r.text.includes('S/ 40.40'));
     const x = await req('GET', '/celulares/chips/exportar.xlsx?q=9000009');
     check('Exportar chips filtrados a Excel', x.status === 200);
     check('Página del chip responde', (await req('GET', `/celulares/chips/${l4.id}`)).status === 200);

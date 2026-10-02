@@ -42,6 +42,13 @@ async function validateLineData(data) {
     const n = Number(data.costo_plan);
     if (!Number.isFinite(n) || n < 0 || n > 99999999) errors.push('El costo del plan debe ser un monto válido (0 o más).');
   }
+  if (data.descuento_plan !== null && data.descuento_plan !== undefined && data.descuento_plan !== '') {
+    const d = Number(data.descuento_plan);
+    if (!Number.isFinite(d) || d < 0) errors.push('El descuento debe ser un monto válido (0 o más).');
+    else if (data.costo_plan === null || data.costo_plan === undefined || data.costo_plan === '') errors.push('Para registrar un descuento indique primero el costo mensual del plan.');
+    else if (d > Number(data.costo_plan)) errors.push('El descuento no puede ser mayor que el costo mensual del plan.');
+  }
+  if (data.descuento_nota && data.descuento_nota.length > 150) errors.push('El detalle del descuento no puede superar los 150 caracteres.');
   if (data.estado && !ESTADOS.includes(data.estado)) errors.push('Estado de chip no válido.');
   if (data.notes && data.notes.length > 250) errors.push('Las notas no pueden superar los 250 caracteres.');
   return errors;
@@ -258,19 +265,20 @@ async function saveLine(lineId, data, userId) {
     let id = lineId;
     if (!lineId) {
       const [ins] = await conn.query(
-        `INSERT INTO mobile_lines (phone_country_code_id, phone_number, iccid, operadora, plan, costo_plan, estado, notes, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO mobile_lines (phone_country_code_id, phone_number, iccid, operadora, plan, costo_plan, descuento_plan,
+           descuento_nota, estado, notes, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [data.phone_country_code_id, data.phone_number, data.iccid, data.operadora, data.plan, data.costo_plan,
-          data.estado || 'activo', data.notes, userId]
+          data.descuento_plan || null, data.descuento_nota || null, data.estado || 'activo', data.notes, userId]
       );
       id = ins.insertId;
     } else {
       const [[old]] = await conn.query('SELECT * FROM mobile_lines WHERE id = ?', [lineId]);
       await conn.query(
         `UPDATE mobile_lines SET phone_country_code_id = ?, phone_number = ?, iccid = ?, operadora = ?, plan = ?,
-           costo_plan = ?, estado = ?, notes = ? WHERE id = ?`,
+           costo_plan = ?, descuento_plan = ?, descuento_nota = ?, estado = ?, notes = ? WHERE id = ?`,
         [data.phone_country_code_id, data.phone_number, data.iccid, data.operadora, data.plan, data.costo_plan,
-          data.estado, data.notes, lineId]
+          data.descuento_plan || null, data.descuento_nota || null, data.estado, data.notes, lineId]
       );
       if (old.device_id) {
         await conn.query(
@@ -350,26 +358,39 @@ async function listLines({ q, estado, ubicacion, operadora, area, sede, costo } 
   return rows;
 }
 
-// Totales de lo que se esta viendo (respetan todos los filtros).
+// Lo que se paga por el chip al mes: costo del plan menos su descuento.
+function netCost(line) {
+  if (line.costo_plan === null || line.costo_plan === undefined) return null;
+  return Math.round((Number(line.costo_plan) - (Number(line.descuento_plan) || 0)) * 100) / 100;
+}
+
+// Totales de lo que se esta viendo (respetan todos los filtros). costoTotal
+// es SIN descuento (lo que costarian los planes a precio completo);
+// netoTotal es lo que se paga hoy; descuentoTotal, la diferencia.
 function summarize(rows) {
   const money = (n) => Math.round(n * 100) / 100;
   const s = {
-    total: rows.length, costoTotal: 0, conCosto: 0, sinCosto: 0,
+    total: rows.length, costoTotal: 0, descuentoTotal: 0, netoTotal: 0, conCosto: 0, sinCosto: 0, conDescuento: 0,
     porUbicacion: Object.fromEntries(UBICACIONES.map((u) => [u, 0])),
     porEstado: Object.fromEntries(ESTADOS.map((e) => [e, 0])),
     porOperadora: {},
   };
   for (const r of rows) {
     const costo = r.costo_plan === null || r.costo_plan === undefined ? null : Number(r.costo_plan);
+    const dscto = costo === null ? 0 : Number(r.descuento_plan) || 0;
     if (costo === null) s.sinCosto += 1; else { s.conCosto += 1; s.costoTotal += costo; }
+    if (dscto) { s.conDescuento += 1; s.descuentoTotal += dscto; }
     s.porUbicacion[r.ubicacion] = (s.porUbicacion[r.ubicacion] || 0) + 1;
     s.porEstado[r.estado] = (s.porEstado[r.estado] || 0) + 1;
     const op = r.operadora || 'Sin operadora';
-    s.porOperadora[op] = s.porOperadora[op] || { cantidad: 0, costo: 0 };
+    s.porOperadora[op] = s.porOperadora[op] || { cantidad: 0, costo: 0, neto: 0 };
     s.porOperadora[op].cantidad += 1;
     s.porOperadora[op].costo = money(s.porOperadora[op].costo + (costo || 0));
+    s.porOperadora[op].neto = money(s.porOperadora[op].neto + (costo || 0) - dscto);
   }
   s.costoTotal = money(s.costoTotal);
+  s.descuentoTotal = money(s.descuentoTotal);
+  s.netoTotal = money(s.costoTotal - s.descuentoTotal);
   return s;
 }
 
@@ -404,5 +425,5 @@ module.exports = {
   ESTADOS, USOS, UBICACIONES,
   validateLineData, numberTaken, deviceChipConflict, syncDeviceChip,
   placeInDevice, removeFromDevice, assignLine, closeAssignment, saveLine, deleteLine, getLine,
-  listLines, summarize, getLineDetail, linesOfDevice, linesOfEmployee,
+  listLines, summarize, netCost, getLineDetail, linesOfDevice, linesOfEmployee,
 };

@@ -56,7 +56,7 @@
               <tr>
                 <td><%= l.calling_code ? '+' + l.calling_code + ' ' : '' %><%= l.phone_number %> <span class="small text-muted"><%= l.es_principal ? '(principal)' : '(2.º chip)' %></span></td>
                 <td><%= l.operadora || '—' %></td>
-                <td><%= l.plan || '—' %><%= l.costo_plan !== null ? ' · S/ ' + Number(l.costo_plan).toFixed(2) : '' %></td>
+                <td><%= l.plan || '—' %><%= l.costo_plan !== null ? ' · S/ ' + (Number(l.costo_plan) - (Number(l.descuento_plan) || 0)).toFixed(2) + (Number(l.descuento_plan) ? ' (sin descuento S/ ' + Number(l.costo_plan).toFixed(2) + ')' : '') : '' %></td>
                 <td><span class="badge <%= mobileLabels.lineEstado(l.estado).badge %>"><%= mobileLabels.lineEstado(l.estado).label %></span></td>
                 <td class="text-end"><a href="/celulares/chips/<%= l.id %>" class="btn btn-sm btn-outline-secondary">Ver chip</a></td>
               </tr>

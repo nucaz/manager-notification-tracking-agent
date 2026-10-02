@@ -43,6 +43,8 @@ function readForm(body) {
     operadora: clean(body.operadora),
     plan: clean(body.plan),
     costo_plan: clean(body.costo_plan),
+    descuento_plan: clean(body.descuento_plan),
+    descuento_nota: clean(body.descuento_nota),
     estado: clean(body.estado) || 'activo',
     notes: clean(body.notes),
   };
@@ -102,23 +104,25 @@ router.get('/exportar.xlsx', async (req, res, next) => {
     const summary = lineService.summarize(rows);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Chips');
-    const headers = ['Número', 'Código de país', 'ICCID', 'Operadora', 'Plan', 'Costo mensual (S/)', 'Estado', 'Ubicación',
+    const headers = ['Número', 'Código de país', 'ICCID', 'Operadora', 'Plan', 'Costo sin descuento (S/)', 'Descuento (S/)',
+      'Costo con descuento (S/)', 'Detalle del descuento', 'Estado', 'Ubicación',
       'Usuario', 'Área', 'Sede', 'IMEI del celular', 'Código de activo', 'Notas'];
     sheet.addRow(headers);
     rows.forEach((r) => sheet.addRow([
       String(r.phone_number), r.calling_code ? `+${r.calling_code}` : '', r.iccid ? String(r.iccid) : '', r.operadora || '',
-      r.plan || '', r.costo_plan === null ? '' : Number(r.costo_plan), labels.lineEstado(r.estado).label,
+      r.plan || '', r.costo_plan === null ? '' : Number(r.costo_plan), r.costo_plan === null ? '' : Number(r.descuento_plan) || 0,
+      r.costo_plan === null ? '' : lineService.netCost(r), r.descuento_nota || '', labels.lineEstado(r.estado).label,
       labels.lineUbicacion(r.ubicacion).label, r.holder || '', r.area || '', r.sede || '', r.imei ? String(r.imei) : '',
       r.asset_code || '', r.notes || '',
     ]));
     sheet.addRow([]);
-    const total = sheet.addRow(['TOTAL', '', '', '', `${summary.total} chip(s)`, summary.costoTotal]);
+    const total = sheet.addRow(['TOTAL', '', '', '', `${summary.total} chip(s)`, summary.costoTotal, summary.descuentoTotal, summary.netoTotal]);
     total.font = { bold: true };
     sheet.getRow(1).font = { bold: true };
-    sheet.getColumn(6).numFmt = '#,##0.00';
+    [6, 7, 8].forEach((c) => { sheet.getColumn(c).numFmt = '#,##0.00'; });
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
-    [14, 10, 22, 12, 18, 16, 20, 22, 32, 24, 16, 18, 14, 30].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+    [14, 10, 22, 12, 18, 16, 14, 16, 34, 16, 20, 22, 32, 24, 16, 18, 14, 30].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
     const buffer = await workbook.xlsx.writeBuffer();
     const fecha = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -155,7 +159,7 @@ router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
     const id = await lineService.saveLine(null, data, req.session.user.id);
     await auditService.log(req, {
       user: req.session.user, action: 'chip_creado', target: lineLabel(data),
-      detail: `Operadora ${data.operadora || '—'}, plan ${data.plan || '—'}, costo ${data.costo_plan || '—'}`,
+      detail: `Operadora ${data.operadora || '—'}, plan ${data.plan || '—'}, costo ${data.costo_plan || '—'}, descuento ${data.descuento_plan || '—'}`,
     });
     req.flash('success', 'Chip registrado. Desde aquí puede ponerlo en un celular o asignarlo a una persona.');
     res.redirect(`/celulares/chips/${id}`);
@@ -179,7 +183,7 @@ router.get('/:id/editar', canWrite, async (req, res, next) => {
 
 const FIELD_LABELS = {
   phone_number: 'Número', phone_country_code_id: 'País', iccid: 'ICCID', operadora: 'Operadora', plan: 'Plan',
-  costo_plan: 'Costo mensual', estado: 'Estado', notes: 'Notas',
+  costo_plan: 'Costo mensual', descuento_plan: 'Descuento mensual', descuento_nota: 'Detalle del descuento', estado: 'Estado', notes: 'Notas',
 };
 
 router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => {
@@ -200,7 +204,7 @@ router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => 
     }
     const norm = (v) => (v === null || v === undefined ? '' : String(v));
     const changes = Object.keys(FIELD_LABELS)
-      .filter((k) => (k === 'costo_plan' ? norm(old[k] === null ? '' : Number(old[k])) !== norm(data[k] === null ? '' : Number(data[k])) : norm(old[k]) !== norm(data[k])))
+      .filter((k) => (k === 'costo_plan' || k === 'descuento_plan' ? norm(old[k] === null ? '' : Number(old[k])) !== norm(data[k] === null ? '' : Number(data[k])) : norm(old[k]) !== norm(data[k])))
       .map((k) => `${FIELD_LABELS[k]}: "${norm(old[k]) || '—'}" → "${norm(data[k]) || '—'}"`);
     await lineService.saveLine(old.id, data, req.session.user.id);
     if (changes.length) {

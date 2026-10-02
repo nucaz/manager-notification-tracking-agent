@@ -50,9 +50,18 @@
       <input type="text" name="plan" id="plan" class="form-control" maxlength="60" value="<%= item.plan || '' %>" placeholder="Ej: Corporativo 29.90 ilimitado">
     </div>
     <div class="col-md-4">
-      <label class="form-label" for="costo_plan">Costo mensual del plan (S/)</label>
+      <label class="form-label" for="costo_plan">Costo mensual del plan, sin descuento (S/)</label>
       <input type="number" name="costo_plan" id="costo_plan" class="form-control" step="0.01" min="0" value="<%= item.costo_plan === null || item.costo_plan === undefined ? '' : item.costo_plan %>">
-      <div class="form-text">Se suma en el listado de chips según los filtros.</div>
+      <div class="form-text">El cargo fijo del plan a precio completo.</div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="descuento_plan">Descuento mensual (S/)</label>
+      <input type="number" name="descuento_plan" id="descuento_plan" class="form-control" step="0.01" min="0" value="<%= item.descuento_plan === null || item.descuento_plan === undefined ? '' : item.descuento_plan %>">
+      <div class="form-text">Vacío si no tiene. Se paga el costo menos este descuento; el listado suma los dos montos.</div>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label" for="descuento_nota">Detalle del descuento</label>
+      <input type="text" name="descuento_nota" id="descuento_nota" class="form-control" maxlength="150" value="<%= item.descuento_nota || '' %>" placeholder="Ej: fidelización 50% por 18 meses, va en el mes 11">
     </div>
 
     <div class="col-md-4">

@@ -32,6 +32,43 @@
 </div>
 <% } %>
 
+<% if (evolucion.length > 1) { const maxTotal = Math.max.apply(null, evolucion.map(function (e) { return Number(e.total_pagar) || 0; })); %>
+<div class="card p-3 mb-3">
+  <h5>Evolución mes a mes</h5>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0" style="font-variant-numeric: tabular-nums;">
+      <thead>
+        <tr>
+          <th>Emisión</th><th>Operadora</th><th class="text-end">Líneas</th><th class="text-end">Sin descuento</th><th class="text-end">Descuentos</th>
+          <th class="text-end">Otros en líneas</th><th class="text-end">Equipos</th><th class="text-end">Cuotas y cargos</th>
+          <th class="text-end">Total a pagar</th><th style="width: 9rem;"></th><th class="text-end">Variación</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% evolucion.forEach(function(e) { const c = e.cambios; %>
+          <tr>
+            <td class="text-nowrap"><a href="/celulares/recibos/<%= e.id %>"><%= e.fecha_emision %></a></td>
+            <td><%= e.operadora %></td>
+            <td class="text-end text-nowrap"><%= e.lineas %><% if (c && (c.altas || c.bajas)) { %> <span class="small text-muted">(<%= c.altas ? '+' + c.altas : '' %><%= c.altas && c.bajas ? ' / ' : '' %><%= c.bajas ? '−' + c.bajas : '' %>)</span><% } %></td>
+            <td class="text-end text-nowrap"><%= soles(e.cargo_fijo) %></td>
+            <td class="text-end text-nowrap"><%= soles(e.descuento) %></td>
+            <td class="text-end text-nowrap"><%= soles(e.otros) %></td>
+            <td class="text-end text-nowrap"><%= e.equipos %><% if (c && (c.equiposNuevos || c.equiposTerminados)) { %> <span class="small text-muted">(<%= c.equiposNuevos ? '+' + c.equiposNuevos : '' %><%= c.equiposNuevos && c.equiposTerminados ? ' / ' : '' %><%= c.equiposTerminados ? '−' + c.equiposTerminados : '' %>)</span><% } %></td>
+            <td class="text-end text-nowrap"><%= soles(e.total_cargos) %></td>
+            <td class="text-end text-nowrap fw-semibold"><%= e.total_pagar === null ? '—' : soles(e.total_pagar) %></td>
+            <td><div class="progress" style="height: .5rem;" role="img" aria-label="Total relativo al mes más alto"><div class="progress-bar" style="width: <%= maxTotal ? Math.round((Number(e.total_pagar) || 0) * 100 / maxTotal) : 0 %>%;"></div></div></td>
+            <td class="text-end text-nowrap <%= e.variacion > 0 ? 'text-danger' : e.variacion < 0 ? 'text-success' : 'text-muted' %>">
+              <%= e.variacion === null ? '—' : (e.variacion > 0 ? '+ ' : e.variacion < 0 ? '− ' : '') + soles(Math.abs(e.variacion)) %>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+  <div class="form-text">"Sin descuento" es el cargo fijo de todas las líneas a precio completo. Entre paréntesis: líneas o equipos que entraron (+) o salieron (−) respecto al recibo anterior.</div>
+</div>
+<% } %>
+
 <div class="card p-3">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0" style="font-variant-numeric: tabular-nums;">

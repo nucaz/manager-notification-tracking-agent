@@ -56,6 +56,7 @@
       <div class="text-muted small">Total a pagar</div>
       <div class="fs-3 fw-semibold"><%= bill.total_pagar === null ? '—' : soles(bill.total_pagar) %></div>
       <div class="small text-muted">Líneas <%= soles(bill.total_lineas) %> · Equipos y otros <%= soles(bill.total_cargos) %></div>
+      <div class="small text-muted" title="Cargo fijo de todas las líneas, sin promociones ni descuentos">Líneas sin descuento: <strong><%= soles(stats.montos.cargoFijo) %></strong></div>
     </div>
   </div>
   <% Object.keys(VISTAS).forEach(function(v) { const t = stats[v]; %>
@@ -75,12 +76,30 @@
   <% }); %>
 </div>
 
+<% if (stats.cambios) { const ch = stats.cambios; %>
+<div class="card p-3 mb-3">
+  <div class="text-muted small mb-1">Respecto al recibo anterior (<a href="/celulares/recibos/<%= ch.anterior.id %>"><%= ch.anterior.recibo_nro %></a>, <%= ch.anterior.fecha_emision %>)</div>
+  <div class="d-flex flex-wrap gap-3" style="font-variant-numeric: tabular-nums;">
+    <span><% if (ch.altas.length) { %><a href="<%= base %>?vista=lineas&cambio=alta"><strong><%= ch.altas.length %></strong> líneas nuevas</a><% } else { %><strong>0</strong> líneas nuevas<% } %></span>
+    <span><strong><%= ch.bajas.length %></strong> líneas que ya no se facturan</span>
+    <span><strong><%= ch.equiposNuevos.length %></strong> equipos con cuota nueva</span>
+    <span><strong><%= ch.equiposTerminados.length %></strong> equipos que dejaron de cobrarse</span>
+    <% if (bill.total_pagar !== null && ch.anterior.total_pagar !== null) { const dif = Number(bill.total_pagar) - Number(ch.anterior.total_pagar); %>
+      <span>Total: <strong class="<%= dif > 0 ? 'text-danger' : dif < 0 ? 'text-success' : '' %>"><%= dif > 0 ? '+ ' : dif < 0 ? '− ' : '' %><%= soles(Math.abs(dif)) %></strong></span>
+    <% } %>
+  </div>
+  <% if (ch.bajas.length) { %>
+    <details class="small mt-2"><summary>Ver los <%= ch.bajas.length %> números que ya no se facturan</summary><div class="font-monospace mt-1"><%= ch.bajas.join(', ') %></div></details>
+  <% } %>
+</div>
+<% } %>
+
 <% if (canEdit) { %>
 <div class="card p-3 mb-3">
   <h5>Llevar el recibo al inventario</h5>
   <div class="d-flex flex-wrap gap-2 align-items-start">
     <form action="<%= base %>/crear-chips" method="post"
-          onsubmit="return confirm('Se registrarán <%= faltantes %> chips en stock (sin celular ni persona), con la operadora, el plan y el costo mensual de este recibo. ¿Continuar?');">
+          onsubmit="return confirm('Se registrarán <%= faltantes %> chips en stock (sin celular ni persona), con la operadora, el plan, el costo sin descuento y el descuento de este recibo. ¿Continuar?');">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="todos" value="1">
       <button class="btn btn-primary" type="submit" <%= faltantes ? '' : 'disabled' %>>
@@ -88,7 +107,7 @@
       </button>
     </form>
     <form action="<%= base %>/actualizar-planes" method="post"
-          onsubmit="return confirm('Se copiará a los chips que figuran en este recibo su plan y su costo mensual (lo que hoy se paga por la línea), y la operadora si estaba vacía. ¿Continuar?');">
+          onsubmit="return confirm('Se copiará a los chips que figuran en este recibo su plan, su costo sin descuento y su descuento mensual, y la operadora si estaba vacía. ¿Continuar?');">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <button class="btn btn-outline-primary" type="submit"><i class="bi bi-arrow-repeat"></i> Actualizar plan y costo de los chips</button>
     </form>
@@ -96,6 +115,7 @@
   <div class="form-text">
     Los faltantes (<%= soles(stats.lineas.faltante.monto) %> al mes) se facturan pero no existen en el inventario. Quedan en stock para que luego
     los ponga en un celular o los asigne a una persona. Para registrar solo algunos, márquelos en la tabla de abajo.
+    Cada chip guarda los dos montos (sin descuento y con descuento); el listado de Chips suma ambos.
   </div>
 </div>
 <% } %>
@@ -155,6 +175,7 @@
   </p>
   <form class="row g-2 mb-3" method="get">
     <input type="hidden" name="vista" value="<%= vista %>">
+    <% if (soloAltas) { %><input type="hidden" name="cambio" value="alta"><% } %>
     <div class="col-12 col-md-5">
       <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Número, IMEI, usuario, plan, sede...">
     </div>
@@ -168,9 +189,9 @@
     </div>
     <div class="col-auto">
       <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-funnel"></i> Filtrar</button>
-      <% if (q || resultado) { %><a href="<%= url(vista) %>" class="btn btn-link">Quitar filtros</a><% } %>
+      <% if (q || resultado || soloAltas) { %><a href="<%= url(vista) %>" class="btn btn-link">Quitar filtros</a><% } %>
     </div>
-    <div class="col-auto ms-auto align-self-center text-muted small"><%= rows.length %> fila(s)</div>
+    <div class="col-auto ms-auto align-self-center text-muted small"><%= rows.length %> fila(s)<%= soloAltas ? ' · solo líneas nuevas en este recibo' : '' %></div>
   </form>
 
   <% const marcar = canEdit && vista === 'lineas' && rows.some(function(r) { return r.resultado === 'faltante'; }); %>

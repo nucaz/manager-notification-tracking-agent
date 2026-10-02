@@ -34,7 +34,12 @@
         <tr><th>ICCID</th><td class="font-monospace"><%= item.iccid || '—' %></td></tr>
         <tr><th>Operadora</th><td><%= item.operadora || '—' %></td></tr>
         <tr><th>Plan</th><td><%= item.plan || '—' %></td></tr>
-        <tr><th>Costo mensual</th><td><%= item.costo_plan === null ? '— (sin registrar)' : soles(item.costo_plan) %></td></tr>
+        <tr><th>Costo sin descuento</th><td><%= item.costo_plan === null ? '— (sin registrar)' : soles(item.costo_plan) %></td></tr>
+        <% if (item.costo_plan !== null) { %>
+          <tr><th>Descuento mensual</th><td><%= Number(item.descuento_plan) ? '− ' + soles(item.descuento_plan) : 'Sin descuento' %>
+            <% if (item.descuento_nota) { %><div class="small text-muted"><%= item.descuento_nota %></div><% } %></td></tr>
+          <tr><th>Se paga al mes</th><td class="fw-semibold"><%= soles(Number(item.costo_plan) - (Number(item.descuento_plan) || 0)) %></td></tr>
+        <% } %>
         <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
         <tr><th>Registrado</th><td><%= item.created_at || '—' %></td></tr>
         <tr><th>Última actualización</th><td><%= item.updated_at || '—' %></td></tr>

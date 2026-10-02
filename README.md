@@ -21,7 +21,8 @@ Aplicación web para el seguimiento de:
   historial de incidentes, el equipo no se puede asignar mientras dure y
   "Resolver decomiso" lo devuelve a stock (o se registra la baja).
   **Chips** (`/celulares/chips`): cada chip es un número de línea con
-  operadora, ICCID, plan y costo mensual; puede estar en un celular (doble
+  operadora, ICCID, plan y sus dos montos (costo mensual sin descuento y
+  descuento vigente: se paga la diferencia); puede estar en un celular (doble
   SIM incluido), asignado a una persona sin celular, como **número de
   emergencia** (aunque la persona ya tenga celular con chip) o en stock.
   Filtros combinables con totales, **suma del costo** de lo filtrado y
@@ -34,8 +35,11 @@ Aplicación web para el seguimiento de:
   fila como coincide, observado (con el motivo) o faltante, con conteos y
   montos, filtros y exportación a Excel. Desde el cruce se registran en
   bloque los números faltantes como chips en stock y se copia a los chips
-  su plan y costo mensual. El PDF agrega cuándo vencen los descuentos y las
-  cuotas de equipos. Verifica que lo leído cuadre con el total del recibo.
+  su plan, costo sin descuento y descuento. El PDF agrega cuándo vencen los
+  descuentos y las cuotas de equipos. Con dos o más recibos muestra la
+  **evolución mes a mes** (líneas y equipos que entraron o salieron, monto
+  sin descuento, descuentos, total y variación). Verifica que lo leído
+  cuadre con el total del recibo.
   Una operadora nueva se agrega como un lector más en
   `src/services/mobileBillParsers/`. Prueba:
   `E2E_PERMITIR=1 node tests/celulares_recibos.e2e.js`

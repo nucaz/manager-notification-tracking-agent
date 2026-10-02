@@ -96,9 +96,13 @@
     </div>
   </div>
   <div class="col-6 col-lg-3">
-    <div class="card p-3 h-100">
-      <div class="text-muted small">Costo mensual de los planes</div>
-      <div class="fs-3 fw-semibold" style="font-variant-numeric: tabular-nums;"><%= soles(summary.costoTotal) %></div>
+    <div class="card p-3 h-100" style="font-variant-numeric: tabular-nums;">
+      <div class="text-muted small">Se paga al mes (con descuento)</div>
+      <div class="fs-3 fw-semibold"><%= soles(summary.netoTotal) %></div>
+      <div class="small">
+        Sin descuento: <strong><%= soles(summary.costoTotal) %></strong>
+        <% if (summary.descuentoTotal) { %><span class="text-muted">· ahorro <%= soles(summary.descuentoTotal) %> en <%= summary.conDescuento %> chip(s)</span><% } %>
+      </div>
       <div class="small">
         <%= summary.conCosto %> con costo ·
         <% if (summary.sinCosto) { %><a href="<%= withFilter('costo', 'sin') %>"><%= summary.sinCosto %> sin costo registrado</a><% } else { %>0 sin costo<% } %>
@@ -124,18 +128,19 @@
 <div class="card p-3 mb-3">
   <div class="text-muted small mb-1">Por operadora</div>
   <div class="table-responsive">
-    <table class="table table-sm mb-0" style="max-width: 36rem; font-variant-numeric: tabular-nums;">
-      <thead><tr><th>Operadora</th><th class="text-end">Chips</th><th class="text-end">Costo mensual</th></tr></thead>
+    <table class="table table-sm mb-0" style="max-width: 46rem; font-variant-numeric: tabular-nums;">
+      <thead><tr><th>Operadora</th><th class="text-end">Chips</th><th class="text-end">Sin descuento</th><th class="text-end">Con descuento</th></tr></thead>
       <tbody>
         <% ops.forEach(function(o) { %>
           <tr>
             <td><a href="<%= withFilter('operadora', o === 'Sin operadora' ? '__sin__' : o) %>"><%= o %></a></td>
             <td class="text-end"><%= summary.porOperadora[o].cantidad %></td>
             <td class="text-end"><%= soles(summary.porOperadora[o].costo) %></td>
+            <td class="text-end"><%= soles(summary.porOperadora[o].neto) %></td>
           </tr>
         <% }); %>
       </tbody>
-      <tfoot><tr class="fw-semibold"><td>Total</td><td class="text-end"><%= summary.total %></td><td class="text-end"><%= soles(summary.costoTotal) %></td></tr></tfoot>
+      <tfoot><tr class="fw-semibold"><td>Total</td><td class="text-end"><%= summary.total %></td><td class="text-end"><%= soles(summary.costoTotal) %></td><td class="text-end"><%= soles(summary.netoTotal) %></td></tr></tfoot>
     </table>
   </div>
 </div>
@@ -146,7 +151,7 @@
     <table class="table table-hover align-middle mb-0">
       <thead>
         <tr>
-          <th>Número</th><th>Operadora</th><th>Plan</th><th class="text-end">Costo</th><th>Estado</th><th>Ubicación</th>
+          <th>Número</th><th>Operadora</th><th>Plan</th><th class="text-end">Sin descuento</th><th class="text-end">Con descuento</th><th>Estado</th><th>Ubicación</th>
           <th>Usuario</th><th>Área</th><th>Sede</th><th>Celular</th><th></th>
         </tr>
       </thead>
@@ -158,6 +163,7 @@
             <td><%= it.operadora || '—' %></td>
             <td><%= it.plan || '—' %></td>
             <td class="text-end text-nowrap" style="font-variant-numeric: tabular-nums;"><%= it.costo_plan === null ? '—' : soles(it.costo_plan) %></td>
+            <td class="text-end text-nowrap" style="font-variant-numeric: tabular-nums;" title="<%= it.descuento_nota || '' %>"><%= it.costo_plan === null ? '—' : soles(Number(it.costo_plan) - (Number(it.descuento_plan) || 0)) %></td>
             <td><span class="badge <%= mobileLabels.lineEstado(it.estado).badge %>"><%= mobileLabels.lineEstado(it.estado).label %></span></td>
             <td><span class="badge <%= mobileLabels.lineUbicacion(it.ubicacion).badge %>"><%= mobileLabels.lineUbicacion(it.ubicacion).label %></span></td>
             <td><%= it.holder || '—' %></td>
@@ -168,7 +174,7 @@
           </tr>
         <% }); %>
         <% if (items.length === 0) { %>
-          <tr><td colspan="11" class="text-center text-muted py-4"><%= activeFilters ? 'Ningún chip cumple estos filtros.' : 'No hay chips registrados.' %></td></tr>
+          <tr><td colspan="12" class="text-center text-muted py-4"><%= activeFilters ? 'Ningún chip cumple estos filtros.' : 'No hay chips registrados.' %></td></tr>
         <% } %>
       </tbody>
       <% if (items.length) { %>
@@ -176,6 +182,7 @@
           <tr class="fw-semibold" style="font-variant-numeric: tabular-nums;">
             <td colspan="3"><%= summary.total %> chip(s)</td>
             <td class="text-end text-nowrap"><%= soles(summary.costoTotal) %></td>
+            <td class="text-end text-nowrap"><%= soles(summary.netoTotal) %></td>
             <td colspan="7"></td>
           </tr>
         </tfoot>

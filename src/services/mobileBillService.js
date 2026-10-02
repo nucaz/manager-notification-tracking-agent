@@ -204,13 +204,16 @@ async function reconcile(bill) {
      LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL`
   );
   const chipByNumber = new Map(chips.map((c) => [c.phone_number, c]));
+  const prev = await previousBill(bill);
+  const cambios = prev ? { anterior: prev, ...(await billChanges(bill, prev)) } : null;
+  const altas = new Set(cambios ? cambios.altas : []);
   const deviceByImei = new Map(devices.map((d) => [d.imei, d]));
 
   const lineas = billLines.map((l) => {
     const chip = chipByNumber.get(l.phone_number) || null;
     const [resultado, detalle] = classifyLine(chip);
     return {
-      ...l, resultado, detalle, chip_id: chip ? chip.id : null, device_id: chip ? chip.device_id : null,
+      ...l, resultado, detalle, alta: altas.has(l.phone_number), chip_id: chip ? chip.id : null, device_id: chip ? chip.device_id : null,
       imei: chip ? chip.imei : null, holder: chip ? chip.holder : null, area: chip ? chip.area : null, sede: chip ? chip.sede : null,
     };
   });
@@ -300,7 +303,11 @@ async function reconcile(bill) {
       lineas: tally(lineas, (l) => l.monto_total),
       equipos: tally(equipos, (e) => e.monto),
       inventario: tally(inventario, null),
-      otrasOperadoras, porPlan, descuentosPorVencer, cuotasPorTerminar,
+      otrasOperadoras, porPlan, descuentosPorVencer, cuotasPorTerminar, cambios,
+      montos: {
+        cargoFijo: sum(lineas, (l) => l.cargo_fijo), descuento: sum(lineas, (l) => l.descuento), otros: sum(lineas, (l) => l.otros),
+        descuentoRecurrente: sum(lineas, recurringDiscount),
+      },
       otrosCargos: { cantidad: otrosCargos.length, monto: sum(otrosCargos, (c) => c.monto) },
     },
   };
@@ -309,12 +316,29 @@ async function reconcile(bill) {
 // ---------------------------------------------------------------------
 // Acciones sobre el inventario
 // ---------------------------------------------------------------------
+// Descuento mensual que se repite. Si el recibo dice el porcentaje (PDF) se
+// calcula sobre el cargo fijo: el mes del alta la linea viene prorrateada y
+// su descuento de ese recibo no es el de los meses siguientes.
+function recurringDiscount(l) {
+  const cargo = Number(l.cargo_fijo) || 0;
+  const pct = l.descuento_tipo && l.descuento_tipo.match(/(\d+(?:\.\d+)?)\s*%/);
+  const d = pct ? (cargo * Number(pct[1])) / 100 : Math.abs(Number(l.descuento) || 0);
+  return round2(Math.min(d, cargo));
+}
+
+function discountNote(bill, l) {
+  if (!recurringDiscount(l)) return null;
+  const avance = l.descuento_cuotas ? `, mes ${l.descuento_cuota} de ${l.descuento_cuotas}` : '';
+  return `${l.descuento_tipo || 'Promociones y descuentos'}${avance} (recibo ${bill.recibo_nro})`.slice(0, 150);
+}
+
 // Registra como chips los numeros facturados que no estan en el inventario.
 // `numbers` = lista a crear, o null para todos los faltantes. Quedan en
 // stock (sin celular ni persona), salvo que un celular ya use ese numero.
+// Cada chip guarda los dos montos: cargo fijo sin descuento y descuento.
 async function createMissingLines(bill, numbers, userId) {
   const [missing] = await pool.query(
-    `SELECT b.phone_number, b.plan, b.monto_total FROM mobile_bill_lines b
+    `SELECT b.* FROM mobile_bill_lines b
      LEFT JOIN mobile_lines m ON m.phone_number = b.phone_number
      WHERE b.bill_id = ? AND m.id IS NULL ORDER BY b.id`,
     [bill.id]
@@ -335,11 +359,13 @@ async function createMissingLines(bill, numbers, userId) {
     let created = 0;
     const values = rows.map((r) => [
       peru && r.phone_number.length === peru.mobile_length ? peru.id : null, r.phone_number, bill.operadora,
-      r.plan ? r.plan.slice(0, 60) : null, r.monto_total, 'activo', deviceOf.get(r.phone_number) || null, note, userId || null,
+      r.plan ? r.plan.slice(0, 60) : null, r.cargo_fijo, recurringDiscount(r) || null, discountNote(bill, r), 'activo',
+      deviceOf.get(r.phone_number) || null, note, userId || null,
     ]);
     for (let i = 0; i < values.length; i += 500) {
       const [res] = await conn.query(
-        `INSERT IGNORE INTO mobile_lines (phone_country_code_id, phone_number, operadora, plan, costo_plan, estado, device_id, notes, created_by)
+        `INSERT IGNORE INTO mobile_lines (phone_country_code_id, phone_number, operadora, plan, costo_plan, descuento_plan,
+           descuento_nota, estado, device_id, notes, created_by)
          VALUES ?`,
         [values.slice(i, i + 500)]
       );
@@ -355,24 +381,98 @@ async function createMissingLines(bill, numbers, userId) {
   }
 }
 
-// Copia a los chips que SI estan en el recibo su plan y lo que se paga por
-// mes (monto neto de la linea); la operadora solo si estaba vacia.
+// Copia a los chips que SI estan en el recibo su plan, el cargo fijo sin
+// descuento y el descuento mensual; la operadora solo si estaba vacia.
 async function syncPlans(bill) {
-  const [res] = await pool.query(
-    `UPDATE mobile_lines l JOIN mobile_bill_lines b ON b.phone_number = l.phone_number AND b.bill_id = ?
-     SET l.plan = LEFT(b.plan, 60), l.costo_plan = b.monto_total,
-         l.operadora = IF(l.operadora IS NULL OR l.operadora = '', ?, l.operadora)
-     WHERE l.estado <> 'de_baja'`,
-    [bill.id, bill.operadora]
-  );
-  await pool.query(
-    `UPDATE mobile_devices d
-     JOIN mobile_lines l ON l.device_id = d.id AND l.phone_number = d.phone_number
+  const [rows] = await pool.query(
+    `SELECT l.id AS line_id, b.* FROM mobile_lines l
      JOIN mobile_bill_lines b ON b.phone_number = l.phone_number AND b.bill_id = ?
-     SET d.operadora = ? WHERE d.operadora IS NULL OR d.operadora = ''`,
-    [bill.id, bill.operadora]
+     WHERE l.estado <> 'de_baja'`,
+    [bill.id]
   );
-  return res.changedRows;
+  const conn = await pool.getConnection();
+  let changed = 0;
+  try {
+    await conn.beginTransaction();
+    for (const r of rows) {
+      const [res] = await conn.query(
+        `UPDATE mobile_lines SET plan = ?, costo_plan = ?, descuento_plan = ?, descuento_nota = ?,
+           operadora = IF(operadora IS NULL OR operadora = '', ?, operadora) WHERE id = ?`,
+        [r.plan ? r.plan.slice(0, 60) : null, r.cargo_fijo, recurringDiscount(r) || null, discountNote(bill, r), bill.operadora, r.line_id]
+      );
+      changed += res.changedRows;
+    }
+    await conn.query(
+      `UPDATE mobile_devices d
+       JOIN mobile_lines l ON l.device_id = d.id AND l.phone_number = d.phone_number
+       JOIN mobile_bill_lines b ON b.phone_number = l.phone_number AND b.bill_id = ?
+       SET d.operadora = ? WHERE d.operadora IS NULL OR d.operadora = ''`,
+      [bill.id, bill.operadora]
+    );
+    await conn.commit();
+    return changed;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// ---------------------------------------------------------------------
+// Evolucion mes a mes
+// ---------------------------------------------------------------------
+async function previousBill(bill) {
+  if (!bill.fecha_emision) return null;
+  const [[prev]] = await pool.query(
+    `SELECT id, recibo_nro, fecha_emision, total_pagar FROM mobile_bills
+     WHERE operadora = ? AND cuenta <=> ? AND fecha_emision < ? ORDER BY fecha_emision DESC, id DESC LIMIT 1`,
+    [bill.operadora, bill.cuenta, bill.fecha_emision]
+  );
+  return prev || null;
+}
+
+// Que entro y que salio entre dos recibos (numeros e IMEI con cuota).
+async function billChanges(bill, prev) {
+  const only = async (table, col, a, b) => (await pool.query(
+    `SELECT x.${col} AS v FROM ${table} x WHERE x.bill_id = ? AND x.${col} IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM ${table} y WHERE y.bill_id = ? AND y.${col} = x.${col}) ORDER BY x.id`,
+    [a, b]
+  ))[0].map((r) => r.v);
+  return {
+    altas: await only('mobile_bill_lines', 'phone_number', bill.id, prev.id),
+    bajas: await only('mobile_bill_lines', 'phone_number', prev.id, bill.id),
+    equiposNuevos: await only('mobile_bill_charges', 'imei', bill.id, prev.id),
+    equiposTerminados: await only('mobile_bill_charges', 'imei', prev.id, bill.id),
+  };
+}
+
+// Una fila por recibo, del mas antiguo al mas reciente, con lo que cambio
+// respecto al recibo anterior de la misma operadora y cuenta.
+async function monthlyEvolution() {
+  const [rows] = await pool.query(
+    `SELECT b.id, b.operadora, b.cuenta, b.recibo_nro, b.fecha_emision, b.total_pagar, b.total_lineas, b.total_cargos,
+            COALESCE(l.lineas, 0) AS lineas, COALESCE(l.cargo_fijo, 0) AS cargo_fijo, COALESCE(l.descuento, 0) AS descuento,
+            COALESCE(l.otros, 0) AS otros, COALESCE(c.equipos, 0) AS equipos
+     FROM mobile_bills b
+     LEFT JOIN (SELECT bill_id, COUNT(*) AS lineas, SUM(cargo_fijo) AS cargo_fijo, SUM(descuento) AS descuento, SUM(otros) AS otros
+                FROM mobile_bill_lines GROUP BY bill_id) l ON l.bill_id = b.id
+     LEFT JOIN (SELECT bill_id, COUNT(*) AS equipos FROM mobile_bill_charges WHERE imei IS NOT NULL GROUP BY bill_id) c ON c.bill_id = b.id
+     WHERE b.fecha_emision IS NOT NULL
+     ORDER BY b.operadora, b.cuenta, b.fecha_emision, b.id`
+  );
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const prev = i > 0 && rows[i - 1].operadora === r.operadora && rows[i - 1].cuenta === r.cuenta ? rows[i - 1] : null;
+    r.cambios = null;
+    r.variacion = null;
+    if (prev) {
+      const ch = await billChanges(r, prev);
+      r.cambios = { altas: ch.altas.length, bajas: ch.bajas.length, equiposNuevos: ch.equiposNuevos.length, equiposTerminados: ch.equiposTerminados.length };
+      r.variacion = r.total_pagar === null || prev.total_pagar === null ? null : round2(Number(r.total_pagar) - Number(prev.total_pagar));
+    }
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------
@@ -464,6 +564,6 @@ async function buildWorkbook(bill, rec) {
 }
 
 module.exports = {
-  RESULTS, BillFormatError,
-  importBill, listBills, getBill, deleteBill, storedPath, reconcile, createMissingLines, syncPlans, buildWorkbook,
+  RESULTS, BillFormatError, recurringDiscount,
+  importBill, listBills, getBill, deleteBill, storedPath, reconcile, createMissingLines, syncPlans, monthlyEvolution, buildWorkbook,
 };
