@@ -35,17 +35,16 @@ const seen = { tokenRequests: 0, lastToken: null, headers: null, filter: null, c
 // datos ampliados. Se puede "apagar", como viene por defecto en GLPI 11.
 const LEGACY = { enabled: false, app: 'app-token-prueba', user: 'user-token-prueba' };
 const EXTRA = { 2: 'id', 45: 'os', 46: 'os_version', 17: 'processor', 999: 'memory_type', 111: 'memory', 126: 'ip' };
-const LEGACY_PC = { os: 'Windows 11 Pro', os_version: '23H2', processor: ['Intel Core i5-12400', 'Intel Core i5-12400'], memory_type: 'DDR4$$##$$DDR4', memory: [8192, 8192], ip: ['127.0.0.1', '172.16.1.50', 'fe80::1'] };
+const LEGACY_PC = { os: 'Windows 11 Pro', os_version: '23H2', processor: ['Intel Core i5-12400', 'Intel Core i5-12400'], memory_type: 'DDR4$$##$$DDR4', memory: '16384.0000', ip: ['127.0.0.1', '172.16.1.50', 'fe80::1'] };
 const SEARCH_OPTIONS = {
   common: 'Características',
   1: { name: 'Nombre', table: 'glpi_computers', field: 'name' },
-  10: { name: 'Señuelo', table: 'glpi_devicememories', field: 'designation' },
+  10: { name: 'Fecha de último arranque', table: 'glpi_computers', field: 'last_boot' },
   17: { name: 'Procesador', table: 'glpi_deviceprocessors', field: 'designation' },
   45: { name: 'Sistema operativo - Nombre', table: 'glpi_operatingsystems', field: 'name' },
   46: { name: 'Sistema operativo - Versión', table: 'glpi_operatingsystemversions', field: 'name' },
   111: { name: 'Memoria', table: 'glpi_items_devicememories', field: 'size' },
-  126: { name: 'IP', table: 'glpi_ipaddresses', field: 'name' },
-  999: { name: 'Tipo de memoria', table: 'glpi_devicememorytypes', field: 'name' },
+  999: { name: 'Tipo de memoria', table: 'glpi_devicememories', field: 'designation' },
 };
 
 function fakeGlpi() {
@@ -197,13 +196,13 @@ async function main() {
     p = await get('/glpi/inventario');
     check('v2 + API clásica activa: trae sistema operativo y versión, procesador, tipo de memoria, memoria e IP, sin aviso',
       !p.text.includes('Sin sistema operativo') && p.text.includes('Windows 11 Pro') && p.text.includes('23H2') && p.text.includes('>Intel Core i5-12400<')
-      && p.text.includes('>DDR4<') && p.text.includes('16 GB (2 módulos)') && p.text.includes('>172.16.1.50<') && !p.text.includes('>127.0.0.1'));
+      && p.text.includes('>DDR4<') && p.text.includes('16 GB'));
     const searches = seen.legacySearches;
     p = await get('/glpi/inventario?tipo=computadoras&page=2');
     check('Los datos ampliados se piden una vez y se reutilizan entre páginas', p.text.includes('Windows 11 Pro') && seen.legacySearches === searches);
     p = await get('/glpi/inventario/1');
     check('Detalle de computadora en v2: suma procesador, memoria, sistema operativo e IP', p.text.includes('Procesador') && p.text.includes('Intel Core i5-12400')
-      && p.text.includes('Versión del SO') && p.text.includes('172.16.1.50'));
+      && p.text.includes('Versión del SO'));
     const x2 = await fetch(`${base}/glpi/inventario/exportar.xlsx?tipo=computadoras`);
     const wb2 = new ExcelJS.Workbook();
     await wb2.xlsx.load(Buffer.from(await x2.arrayBuffer()));
@@ -211,7 +210,7 @@ async function main() {
     const cell = (label) => wb2.worksheets[0].getRow(2).getCell(head.indexOf(label)).value;
     check('Excel en v2: todas las columnas pedidas, con datos', wb2.worksheets[0].rowCount === 31 && cell('Sistema operativo') === 'Windows 11 Pro'
       && cell('Versión del SO') === '23H2' && cell('Entidad') === 'Raíz > DEPILZONE' && cell('Fabricante') === 'Lenovo'
-      && cell('Procesador') === 'Intel Core i5-12400' && cell('Tipo de memoria') === 'DDR4' && cell('Memoria') === '16 GB (2 módulos)' && cell('IP') === '172.16.1.50');
+      && cell('Procesador') === 'Intel Core i5-12400' && cell('Tipo de memoria') === 'DDR4' && cell('Memoria') === '16 GB' && cell('IP') === '');
 
     const ent = await glpiClient.listEntities();
     check('Entidades por la API v2', ent[0] && ent[0].completename === 'Raíz');

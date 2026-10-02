@@ -23,7 +23,7 @@ const DATA = {
   Computer: Array.from({ length: 30 }, (_, i) => ({ id: i + 1, name: `PC-${String(i + 1).padStart(3, '0')}`, serial: `SN${i + 1}`,
     otherserial: `INV-${i + 1}`, state: 'En uso', type: 'Laptop', manufacturer: 'Lenovo', model: 'ThinkPad', location: 'Sede Surco &#62; Piso 2',
     user: 'jperez', entity: 'Entidad raíz &#62; DEPILZONE', os: 'Windows 11',
-    os_version: '23H2', processor: ['Intel Core i5-12400', 'Intel Core i5-12400'], memory_type: 'DDR4$$##$$DDR4', memory: [8192, 8192], ip: ['127.0.0.1', '172.16.1.50', 'fe80::1'] })),
+    os_version: '23H2', processor: ['Intel Core i5-12400', 'Intel Core i5-12400'], memory_type: 'DDR4$$##$$DDR4', memory: '16384.0000', ip: ['127.0.0.1', '172.16.1.50', 'fe80::1'] })),
   Monitor: [{ id: 101, name: 'MON-001', serial: 'MSN1', otherserial: 'INV-M1', state: 'En uso', type: 'LED', manufacturer: 'LG',
     model: '24MK430', location: 'Sede Surco', user: 'jperez', entity: 'DEPILZONE' }],
   Printer: [{ id: 201, name: 'IMP-RECEPCION', serial: 'PSN1', otherserial: 'INV-P1', state: 'En uso', type: 'Láser', manufacturer: 'HP',
@@ -33,13 +33,12 @@ const OPT = { 1: 'name', 2: 'id', 3: 'location', 4: 'type', 5: 'serial', 6: 'oth
 const SEARCH_OPTIONS = {
   common: 'Características',
   1: { name: 'Nombre', table: 'glpi_computers', field: 'name' },
-  10: { name: 'Señuelo', table: 'glpi_devicememories', field: 'designation' },
+  10: { name: 'Fecha de último arranque', table: 'glpi_computers', field: 'last_boot' },
   17: { name: 'Procesador', table: 'glpi_deviceprocessors', field: 'designation' },
   45: { name: 'Sistema operativo - Nombre', table: 'glpi_operatingsystems', field: 'name' },
   46: { name: 'Sistema operativo - Versión', table: 'glpi_operatingsystemversions', field: 'name' },
   111: { name: 'Memoria', table: 'glpi_items_devicememories', field: 'size' },
-  126: { name: 'IP', table: 'glpi_ipaddresses', field: 'name' },
-  999: { name: 'Tipo de memoria', table: 'glpi_devicememorytypes', field: 'name' },
+  999: { name: 'Tipo de memoria', table: 'glpi_devicememories', field: 'designation' },
 };
 const seen = { forcedisplay: null, criteria: null, options: 0 };
 
@@ -144,10 +143,15 @@ async function main() {
       ['Sistema operativo', 'Versión del SO', 'Procesador', 'Tipo de memoria', 'Memoria', '>IP<', 'Entidad', 'Fabricante'].every((h) => p.text.includes(h))
       && p.text.includes('Windows 11') && p.text.includes('23H2'));
     check('Valores repetidos (2 procesadores iguales, 2 módulos DDR4) se muestran una vez; la memoria se suma', p.text.includes('>Intel Core i5-12400<')
-      && p.text.includes('>DDR4<') && p.text.includes('16 GB (2 módulos)'));
-    check('IP: sin la de loopback ni la local de enlace', p.text.includes('>172.16.1.50<') && !p.text.includes('>127.0.0.1') && !p.text.includes('fe80'));
-    check('El número de cada opción se toma del propio GLPI (tipo de memoria = 999 aquí, no el habitual 10)',
-      Object.values(seen.forcedisplay).includes('999') && !Object.values(seen.forcedisplay).includes('10') && Object.values(seen.forcedisplay).includes('126'));
+      && p.text.includes('>DDR4<') && p.text.includes('16 GB'));
+    check('El número de cada opción se toma del propio GLPI (tipo de memoria = 999 aquí)',
+      Object.values(seen.forcedisplay).includes('999') && !Object.values(seen.forcedisplay).includes('110'));
+    check('Una columna que este GLPI no ofrece (IP) queda vacía: no se pide un número "habitual" que traería otro dato',
+      !Object.values(seen.forcedisplay).includes('126') && !p.text.includes('>172.16.1.50<') && p.text.includes('>IP<'));
+    const fmt = glpiClient._formats;
+    check('IP: sin la de loopback ni la local de enlace, IPv4 primero', fmt.ipList(['127.0.0.1', 'fe80::1', '2001:db8::5', '172.16.1.50', '172.16.1.50']) === '172.16.1.50, 2001:db8::5');
+    check('Memoria: MiB a GB; si llegan los módulos por separado, se suman', fmt.memoryTotal('32768.0000') === '32 GB' && fmt.memoryTotal([8192, 8192]) === '16 GB (2 módulos)'
+      && fmt.memoryTotal('512') === '512 MB' && fmt.memoryTotal(null) === '');
     p = await get('/glpi/inventario?tipo=computadoras&page=2');
     check('Las opciones de búsqueda se consultan una vez, no en cada página', seen.options === 1);
     check('Página 2 muestra PC-026..PC-030', p.text.includes('PC-026') && p.text.includes('PC-030'));
@@ -160,7 +164,7 @@ async function main() {
 
     p = await get('/glpi/inventario/1');
     check('Detalle de computadora: incluye procesador, memoria, sistema operativo e IP', p.text.includes('Procesador') && p.text.includes('Intel Core i5-12400')
-      && p.text.includes('16 GB (2 módulos)') && p.text.includes('Versión del SO') && p.text.includes('172.16.1.50'));
+      && p.text.includes('16 GB') && p.text.includes('Versión del SO'));
     check('Detalle de computadora (ruta de siempre) con monitores e impresoras conectados',
       p.status === 200 && p.text.includes('MON-001') && p.text.includes('IMP-RECEPCION') && p.text.includes('/glpi/inventario/monitores/101'));
     p = await get('/glpi/inventario/monitores/101');
@@ -178,7 +182,7 @@ async function main() {
     const cell = (label) => sheet.getRow(2).getCell(head.indexOf(label)).value;
     check('Excel: sistema operativo y versión, entidad, fabricante, procesador, tipo de memoria, memoria e IP', cell('Versión del SO') === '23H2'
       && cell('Entidad') === 'Entidad raíz > DEPILZONE' && cell('Fabricante') === 'Lenovo' && cell('Procesador') === 'Intel Core i5-12400'
-      && cell('Tipo de memoria') === 'DDR4' && cell('Memoria') === '16 GB (2 módulos)' && cell('IP') === '172.16.1.50');
+      && cell('Tipo de memoria') === 'DDR4' && cell('Memoria') === '16 GB' && cell('IP') === '');
     check('API clásica apagada en GLPI 11 (["ERROR","API deshabilitada"]): mensaje claro', glpiClient.explainGlpiError(400, ['ERROR', 'API deshabilitada'])
       .includes('Enable Legacy REST API'));
 

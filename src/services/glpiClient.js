@@ -362,12 +362,12 @@ function ipList(raw) {
 // Columnas de computadoras que solo entrega la busqueda de la API clasica
 // (sistema operativo, componentes y red). El numero de cada opcion de
 // busqueda se averigua en el propio GLPI por su tabla y campo (ver
-// resolveColumns); `id` es el habitual, por si esa consulta fallara.
+// resolveColumns); `id` es el de GLPI 11, por si esa consulta fallara.
 const EXTRA_COLUMNS = [
   { id: 45, key: 'os', label: 'Sistema operativo', table: 'glpi_operatingsystems', field: 'name', format: unique },
   { id: 46, key: 'os_version', label: 'Versión del SO', table: 'glpi_operatingsystemversions', field: 'name', format: unique },
   { id: 17, key: 'processor', label: 'Procesador', table: 'glpi_deviceprocessors', field: 'designation', format: unique },
-  { id: 10, key: 'memory_type', label: 'Tipo de memoria', table: 'glpi_devicememorytypes', field: 'name', format: unique },
+  { id: 110, key: 'memory_type', label: 'Tipo de memoria', table: 'glpi_devicememories', field: 'designation', format: unique },
   { id: 111, key: 'memory', label: 'Memoria', table: 'glpi_items_devicememories', field: 'size', format: memoryTotal },
   { id: 126, key: 'ip', label: 'IP', table: 'glpi_ipaddresses', field: 'name', format: ipList },
 ].map((c) => ({ ...c, extra: true }));
@@ -442,6 +442,12 @@ function mapRow(columns, raw) {
   return row;
 }
 
+// Una columna que este GLPI no ofrece no viene en la fila: se deja vacia.
+function fillMissing(type, row) {
+  for (const c of type.columns) if (row[c.key] === undefined) row[c.key] = '';
+  return row;
+}
+
 // Columnas del tipo con el numero de opcion de busqueda de ESTE GLPI. Las
 // comunes no cambian; las "extra" se buscan en listSearchOptions por tabla
 // y campo, porque su numero puede variar entre versiones y plugins.
@@ -458,13 +464,18 @@ async function resolveColumns(type, http, headers, cfg) {
   } catch (_) {
     // sin la lista se usan los numeros habituales
   }
+  const loaded = Object.keys(options).length > 0;
   const columns = type.columns.map((c) => {
     if (!c.extra) return c;
     const match = (id) => options[id] && options[id].table === c.table && options[id].field === c.field;
     const id = match(c.id) ? c.id : Object.keys(options).find((k) => /^\d+$/.test(k) && match(k));
-    return id ? { ...c, id: Number(id) } : c;
-  });
-  if (Object.keys(options).length) optionsCache.set(key, { at: Date.now(), columns });
+    if (id) return { ...c, id: Number(id) };
+    // GLPI respondio sus opciones y esta no existe: la columna queda vacia.
+    // Pedir el numero habitual traeria OTRO dato (en un GLPI el 10 era la
+    // fecha de ultimo arranque, no el tipo de memoria).
+    return loaded ? null : c;
+  }).filter(Boolean);
+  if (loaded) optionsCache.set(key, { at: Date.now(), columns });
   return columns;
 }
 
@@ -482,7 +493,7 @@ async function listItems(typeKey, { query, start = 0, limit = 20 } = {}) {
     const total = parseInt(String(res.headers['content-range'] || '').split('/')[1], 10);
     const rows = (res.data && res.data.data) || [];
     return {
-      items: rows.map((r) => mapRow(columns, r)),
+      items: rows.map((r) => fillMissing(type, mapRow(columns, r))),
       total: Number.isNaN(total) ? (res.data.totalcount || rows.length) : total,
     };
   });
@@ -506,7 +517,7 @@ async function listAllItems(typeKey, { query, max = 20000 } = {}) {
       const t = parseInt(String(res.headers['content-range'] || '').split('/')[1], 10);
       total = Number.isNaN(t) ? (res.data.totalcount || 0) : t;
       const rows = (res.data && res.data.data) || [];
-      all.push(...rows.map((r) => mapRow(columns, r)));
+      all.push(...rows.map((r) => fillMissing(type, mapRow(columns, r))));
       if (rows.length < 200) break;
     }
     return all;
@@ -629,7 +640,7 @@ async function addExtras(typeKey, items) {
     const map = await computerExtras();
     items.forEach((it) => {
       const extra = map.get(String(it.id));
-      if (extra) EXTRA_COLUMNS.forEach((c) => { it[c.key] = extra[c.key]; });
+      if (extra) EXTRA_COLUMNS.forEach((c) => { it[c.key] = extra[c.key] || ''; });
     });
     return { ok: true };
   } catch (err) {
@@ -678,6 +689,7 @@ module.exports = {
   listAllItems: listAllItemsAny,
   getItemDetail: getItemDetailAny,
   _clearCaches: () => { optionsCache.clear(); extrasCache.clear(); },
+  _formats: { ipList, memoryTotal },
   getConnections: dual(getConnections, v2.getConnections),
   testConnection: dual(testConnection, v2.testConnection),
   searchComputers: dual(searchComputers, v2.searchComputers),
