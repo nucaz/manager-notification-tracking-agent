@@ -28,6 +28,11 @@ Aplicación web para el seguimiento de:
   Filtros combinables con totales, **suma del costo** de lo filtrado y
   exportación a Excel. El número del celular se mantiene sincronizado con
   su chip principal. Prueba: `E2E_PERMITIR=1 node tests/celulares_chips_decomiso.e2e.js`
+  **Carga por lote**: ingreso por **escaneo** de códigos de barras (lee el
+  ICCID y el número de cada chip, arma la lista y aplica a todos los datos
+  del lote), **importación desde Excel** con plantilla, y **operadora
+  masiva** (marcar uno, varios o todos los chips del listado y asignarla).
+  Prueba: `E2E_PERMITIR=1 node tests/celulares_chips_lote.e2e.js`
   **Recibos** (`/celulares/recibos`): se sube el recibo de la operadora
   (hoy Entel: el PDF del recibo o su Excel de detalle; se leen sin IA) y la
   app lo cruza contra el inventario en tres sentidos — número facturado →

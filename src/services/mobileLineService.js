@@ -321,6 +321,79 @@ async function deleteLine(lineId) {
 }
 
 // ---------------------------------------------------------------------
+// Carga por lote (escaneo de codigos de barras o Excel) y cambios masivos
+// ---------------------------------------------------------------------
+// El lector de codigos de barras y Excel entregan el ICCID con adornos: una
+// "F" de relleno al final, espacios o guiones. Se dejan solo los digitos.
+function digits(value) {
+  return String(value === null || value === undefined ? '' : value).replace(/\D/g, '');
+}
+
+// Registra varios chips nuevos, en stock. `rows` = [{ row, phone_number,
+// iccid, operadora, plan, costo_plan, descuento_plan, descuento_nota,
+// notes }]; `row` es como se nombra la fila en los errores. Cada fila se
+// valida igual que el formulario de un chip; las que fallan no impiden
+// registrar las demas. Devuelve { imported, errors: [{ row, message }] }.
+async function createLinesBulk(rows, userId) {
+  const errors = [];
+  let imported = 0;
+  const [[peru]] = await pool.query("SELECT id FROM phone_country_codes WHERE calling_code = '51' LIMIT 1");
+  const seenNumber = new Set();
+  const seenIccid = new Set();
+  const text = (v, max) => {
+    const s = v === null || v === undefined ? '' : String(v).trim();
+    return s === '' ? null : s.slice(0, max);
+  };
+  const amount = (v) => (v === null || v === undefined || String(v).trim() === '' ? null : String(v).trim().replace(',', '.'));
+  for (const r of rows) {
+    const fail = (message) => errors.push({ row: r.row, message });
+    const data = {
+      phone_country_code_id: peru ? peru.id : null,
+      phone_number: digits(r.phone_number) || null,
+      iccid: digits(r.iccid) || null,
+      operadora: text(r.operadora, 50),
+      plan: text(r.plan, 60),
+      costo_plan: amount(r.costo_plan),
+      descuento_plan: amount(r.descuento_plan),
+      descuento_nota: text(r.descuento_nota, 150),
+      estado: 'activo',
+      notes: text(r.notes, 250),
+    };
+    if (!data.phone_number) { fail('Falta el número: un chip siempre va atado a un número de línea.'); continue; }
+    const tag = `Número ${data.phone_number}`;
+    const invalid = await validateLineData(data);
+    if (invalid.length) { fail(`${tag}: ${invalid.join(' ')}`); continue; }
+    if (seenNumber.has(data.phone_number)) { fail(`${tag}: está repetido en este mismo lote.`); continue; }
+    if (data.iccid && seenIccid.has(data.iccid)) { fail(`${tag}: el ICCID ${data.iccid} está repetido en este mismo lote.`); continue; }
+    if (await numberTaken(data.phone_number)) { fail(`${tag}: ya existe un chip con ese número.`); continue; }
+    const conflict = await deviceChipConflict(data.phone_number, null);
+    if (conflict) { fail(conflict); continue; }
+    if (data.iccid) {
+      const [[dup]] = await pool.query('SELECT phone_number FROM mobile_lines WHERE iccid = ? LIMIT 1', [data.iccid]);
+      if (dup) { fail(`${tag}: el ICCID ${data.iccid} ya está registrado en el chip ${dup.phone_number}.`); continue; }
+    }
+    seenNumber.add(data.phone_number);
+    if (data.iccid) seenIccid.add(data.iccid);
+    await saveLine(null, data, userId);
+    imported += 1;
+  }
+  return { imported, errors };
+}
+
+// Pone la misma operadora a varios chips (y a sus celulares, si el chip es
+// el numero principal del equipo). Devuelve cuantos chips cambiaron.
+async function setOperadora(ids, operadora) {
+  if (!ids.length) return 0;
+  const [res] = await pool.query('UPDATE mobile_lines SET operadora = ? WHERE id IN (?)', [operadora, ids]);
+  await pool.query(
+    `UPDATE mobile_devices d JOIN mobile_lines l ON l.device_id = d.id AND l.phone_number = d.phone_number
+     SET d.operadora = ? WHERE l.id IN (?)`,
+    [operadora, ids]
+  );
+  return res.changedRows;
+}
+
+// ---------------------------------------------------------------------
 // Listado con filtros combinables y totales
 // ---------------------------------------------------------------------
 const BASE_SELECT = `
@@ -426,4 +499,5 @@ module.exports = {
   validateLineData, numberTaken, deviceChipConflict, syncDeviceChip,
   placeInDevice, removeFromDevice, assignLine, closeAssignment, saveLine, deleteLine, getLine,
   listLines, summarize, netCost, getLineDetail, linesOfDevice, linesOfEmployee,
+  createLinesBulk, setOperadora, digits,
 };

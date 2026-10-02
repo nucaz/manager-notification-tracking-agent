@@ -1,0 +1,236 @@
+// Prueba de extremo a extremo de la carga de chips por lote: ingreso por
+// escaneo, importación desde Excel con la plantilla y operadora masiva.
+//
+// Monta las rutas REALES en una mini-app con una sesion de administrador
+// simulada y trabaja contra la base configurada, con datos de prueba
+// marcados que se borran al final (numeros 9000009[2-3]x, IMEI
+// 990000000000021, ICCID 89510000000000000xx). Por seguridad no corre salvo
+// que se pase E2E_PERMITIR=1 a proposito.
+//
+// La logica que corre en el navegador al escanear (armar la lista) se
+// prueba aparte, ejecutando el script de la pantalla sobre un DOM minimo.
+//
+// Uso (dentro del contenedor): E2E_PERMITIR=1 node tests/celulares_chips_lote.e2e.js
+const path = require('path');
+const vm = require('vm');
+const express = require('express');
+const session = require('express-session');
+const flash = require('connect-flash');
+const ExcelJS = require('exceljs');
+
+const ROOT = path.join(__dirname, '..');
+const pool = require(path.join(ROOT, 'src/db/pool'));
+const mobileLabels = require(path.join(ROOT, 'src/config/mobileLabels'));
+
+if (process.env.E2E_PERMITIR !== '1') {
+  console.error('Esta prueba escribe (y luego borra) datos marcados en la base configurada. Ejecútela con E2E_PERMITIR=1.');
+  process.exit(2);
+}
+
+const N = Array.from({ length: 12 }, (_, i) => String(900000921 + i));
+const ICC = Array.from({ length: 6 }, (_, i) => `895100000000000000${String(i + 1).padStart(2, '0')}`);
+const IMEI = '990000000000021';
+const results = [];
+const check = (name, cond) => results.push([!!cond, name]);
+let auditStart = null; // la auditoria que genere la prueba se borra al final
+
+async function cleanup() {
+  await pool.query('DELETE FROM mobile_lines WHERE phone_number IN (?)', [N]);
+  await pool.query('DELETE FROM mobile_devices WHERE imei = ?', [IMEI]);
+  if (auditStart !== null) {
+    await pool.query("DELETE FROM audit_log WHERE id > ? AND action IN ('chips_importados', 'chips_ingresados_por_escaneo', 'chips_operadora_masiva')", [auditStart]);
+  }
+}
+
+// DOM minimo para ejecutar el script de la pantalla de escaneo.
+function scanPage(html) {
+  const start = html.lastIndexOf('(function () {');
+  const script = html.slice(start, html.indexOf('</script>', start));
+  const els = {};
+  const el = (id) => {
+    if (!els[id]) {
+      els[id] = {
+        id, value: '', textContent: '', className: '', hidden: false, disabled: false, checked: false, children: [], listeners: {},
+        addEventListener(type, fn) { this.listeners[type] = fn; }, appendChild(c) { this.children.push(c); }, setAttribute() {}, focus() {},
+      };
+      Object.defineProperty(els[id], 'textContent', { get() { return this._t || ''; }, set(v) { this._t = String(v); if (v === '') this.children = []; } });
+    }
+    return els[id];
+  };
+  const confirms = [];
+  const sandbox = { document: { getElementById: el, createElement: () => el(`tmp${Math.random()}`) }, confirm: (m) => { confirms.push(m); return true; } };
+  vm.runInNewContext(script, sandbox);
+  const scan = (text) => { el('scan_input').value = text; el('scan_form').listeners.keydown({ key: 'Enter', target: el('scan_input'), preventDefault() {} }); };
+  const submit = () => { el('scan_form').listeners.submit({ preventDefault() {} }); return el('chips_field').value; };
+  return { el, scan, submit, confirms };
+}
+
+async function main() {
+  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [[peru]] = await pool.query("SELECT id FROM phone_country_codes WHERE calling_code = '51' LIMIT 1");
+  await cleanup(); // restos de una corrida anterior interrumpida
+  auditStart = (await pool.query('SELECT COALESCE(MAX(id), 0) AS id FROM audit_log'))[0][0].id;
+
+  const app = express();
+  app.set('view engine', 'ejs');
+  app.set('views', path.join(ROOT, 'views'));
+  app.use(express.urlencoded({ extended: true }));
+  app.use(session({ secret: 'prueba-e2e', resave: false, saveUninitialized: true }));
+  app.use(flash());
+  const CSRF = 'token-de-prueba-e2e-0123456789abcdef0123456789abcdef';
+  app.use((req, res, next) => {
+    req.session.user = admin;
+    req.session.csrfToken = CSRF;
+    Object.assign(res.locals, {
+      currentUser: admin, csrfToken: CSRF, successMessages: [], errorMessages: [], currentPath: req.path, currentHost: req.hostname,
+      appName: 'Prueba', enabledModules: new Proxy({}, { get: () => true }), mobileLabels,
+    });
+    next();
+  });
+  app.get('/__flash', (req, res) => res.json({ error: req.flash('error'), success: req.flash('success') }));
+  app.use('/celulares/chips', require(path.join(ROOT, 'src/routes/mobileLines')));
+  const server = app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  let cookie = '';
+
+  async function req(method, url, body) {
+    const opts = { method, redirect: 'manual', headers: { cookie } };
+    if (body instanceof FormData) opts.body = body;
+    else if (body) {
+      opts.body = new URLSearchParams({ _csrf: CSRF, ...body }).toString();
+      opts.headers['content-type'] = 'application/x-www-form-urlencoded';
+    }
+    const r = await fetch(base + url, opts);
+    const set = r.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    const buffer = Buffer.from(await r.arrayBuffer());
+    return { status: r.status, location: r.headers.get('location'), text: buffer.toString('utf8'), buffer };
+  }
+  const post = async (url, body) => {
+    const r = await req('POST', url, body);
+    const f = JSON.parse((await req('GET', '/__flash')).text);
+    return { ...r, errors: f.error, ok: f.success };
+  };
+  const q = async (sql, params) => (await pool.query(sql, params))[0];
+  const chip = async (num) => (await q('SELECT * FROM mobile_lines WHERE phone_number = ?', [num]))[0];
+
+  try {
+    // --- Pantalla de escaneo: logica del navegador
+    let r = await req('GET', '/celulares/chips/escanear');
+    check('Pantalla de ingreso por escaneo', r.status === 200 && r.text.includes('Datos del lote') && r.text.includes('scan_input'));
+    let page = scanPage(r.text);
+    page.scan(`${ICC[0]}F`);
+    check('Escaneo: un ICCID solo queda a la espera de su número (la "F" final del código se descarta)', page.el('scan_count').textContent === '0'
+      && /Ahora lea o escriba el número/.test(page.el('scan_status').textContent) && page.el('scan_status').textContent.includes(ICC[0]));
+    page.scan(N[0]);
+    check('Escaneo: al leer ICCID y número el chip pasa a la lista', page.el('scan_count').textContent === '1' && page.el('scan_submit').disabled === false);
+    page.scan(N[1]); page.scan(ICC[1]);
+    check('Escaneo: también en el orden número → ICCID', page.el('scan_count').textContent === '2');
+    page.scan(N[0]); page.scan(ICC[2]);
+    check('Escaneo: un número que ya está en la lista no se agrega dos veces', page.el('scan_count').textContent === '2'
+      && /ya está en la lista/.test(page.el('scan_status').textContent));
+    page.scan('12345');
+    check('Escaneo: un código que no es ni número ni ICCID se rechaza con explicación', /No se reconoce/.test(page.el('scan_status').textContent)
+      && page.el('scan_count').textContent === '2');
+    page.el('solo_numero').checked = true;
+    page.scan(N[2]);
+    check('Escaneo "solo el número": entra directo, sin ICCID', page.el('scan_count').textContent === '3');
+    const armado = page.submit();
+    check('Escaneo: la lista se envía como un chip por renglón (número;ICCID)', armado === `${N[0]};${ICC[0]}\n${N[1]};${ICC[1]}\n${N[2]};`);
+
+    // --- Registrar lo escaneado
+    const lote = { operadora: 'Entel', plan: 'Plan E2E', costo_plan: '31.90', descuento_plan: '15.95', notes: 'lote_e2e sellado' };
+    r = await post('/celulares/chips/escanear', { ...lote, chips: armado });
+    let c0 = await chip(N[0]);
+    check('Registrar el lote escaneado: los 3 chips quedan en stock y vuelve al listado', /^3 chip\(s\) registrados/.test(r.ok[0] || '')
+      && r.location === '/celulares/chips?ubicacion=en_stock' && c0 && (await chip(N[1])) && (await chip(N[2])));
+    check('Cada chip recibe los datos del lote: operadora, plan, los dos montos, nota y país', c0.operadora === 'Entel' && c0.plan === 'Plan E2E'
+      && Number(c0.costo_plan) === 31.9 && Number(c0.descuento_plan) === 15.95 && c0.notes === 'lote_e2e sellado' && c0.iccid === ICC[0]
+      && c0.phone_country_code_id === peru.id && c0.device_id === null && c0.estado === 'activo' && (await chip(N[2])).iccid === null);
+    r = await post('/celulares/chips/escanear', { chips: '' });
+    check('Registrar sin chips en la lista: avisa', /No hay chips en la lista/.test(r.errors[0] || ''));
+
+    // --- Lote con errores: se registra lo valido y lo demas vuelve a la lista
+    r = await req('POST', '/celulares/chips/escanear', { ...lote, chips: [`${N[0]};${ICC[3]}`, `${N[3]};${ICC[0]}`, '12345678;', `${N[4]};${ICC[4]}`, `${N[4]};`].join('\n') });
+    check('Lote con errores: registra el válido y explica cada fallo', r.status === 200 && r.text.includes('1 chip(s) registrados; 4 no se pudieron registrar')
+      && r.text.includes('ya existe un chip con ese número') && r.text.includes(`el ICCID ${ICC[0]} ya está registrado en el chip ${N[0]}`)
+      && r.text.includes('debe tener 9 dígitos') && r.text.includes('está repetido en este mismo lote') && (await chip(N[4])) && !(await chip(N[3])));
+    page = scanPage(r.text);
+    check('Los que fallaron vuelven a la lista y se conservan los datos del lote', page.el('scan_count').textContent === '4'
+      && r.text.includes('value="Plan E2E"') && r.text.includes('<option value="Entel" selected>'));
+    r = await post('/celulares/chips/escanear', { costo_plan: '10', descuento_plan: '20', chips: `${N[3]};` });
+    check('Descuento del lote mayor que el costo: no registra', !(await chip(N[3])));
+
+    // --- Importar desde Excel
+    r = await req('GET', '/celulares/chips/importar');
+    check('Pantalla de importación con las columnas de la plantilla', r.status === 200 && r.text.includes('Descargar plantilla') && r.text.includes('Costo sin descuento'));
+    r = await req('GET', '/celulares/chips/importar/plantilla');
+    const tpl = new ExcelJS.Workbook();
+    await tpl.xlsx.load(r.buffer);
+    const ts = tpl.worksheets[0];
+    check('Plantilla: encabezados esperados y columnas Número e ICCID como texto', ts.getCell('A1').value === 'Número' && ts.getCell('B1').value === 'ICCID'
+      && ts.getCell('E1').value === 'Costo sin descuento' && ts.getColumn(1).numFmt === '@' && ts.getColumn(2).numFmt === '@');
+    ts.addRow([N[5], ICC[5], 'Claro', 'Plan E2E', 29.9, 9.9, 'Promo 6 meses', 'lote_e2e excel']);
+    ts.addRow([Number(N[6]), '', '', '', '', '', '', 'lote_e2e excel']); // numero como numero de Excel, sin mas datos
+    ts.addRow([N[5], '', '', '', '', '', '', '']); // repetido en el archivo
+    ts.addRow([N[7], 8951000000000000000, '', '', '', '', '', '']); // ICCID como numero: Excel lo recorta
+    ts.addRow(['', '', '', '', '', '', '', '']); // fila vacia: se ignora
+    ts.addRow(['', ICC[3], 'Entel', '', '', '', '', '']); // sin numero
+    ts.addRow([N[0], '', '', '', '', '', '', '']); // ya existe
+    const form = new FormData();
+    form.append('_csrf', CSRF);
+    form.append('file', new Blob([Buffer.from(await tpl.xlsx.writeBuffer())]), 'chips.xlsx');
+    r = await req('POST', '/celulares/chips/importar', form);
+    const c5 = await chip(N[5]);
+    check('Importar Excel: 2 importados y 4 filas con error, cada una con su motivo', r.status === 200 && r.text.includes('Importados: 2')
+      && r.text.includes('Con errores: 4') && r.text.includes('está repetido en este mismo lote') && r.text.includes('Excel lo recorta a 15 cifras')
+      && r.text.includes('Falta el número') && r.text.includes('ya existe un chip con ese número'));
+    check('Importar Excel: el chip trae todos sus datos; el número escrito como número también entra', c5 && c5.operadora === 'Claro'
+      && c5.iccid === ICC[5] && Number(c5.costo_plan) === 29.9 && Number(c5.descuento_plan) === 9.9 && c5.descuento_nota === 'Promo 6 meses'
+      && (await chip(N[6])) && (await chip(N[6])).operadora === null && !(await chip(N[7])));
+    const bad = new FormData();
+    bad.append('_csrf', CSRF);
+    r = await post('/celulares/chips/importar', bad);
+    check('Importar sin archivo: avisa', /seleccionar un archivo/.test(r.errors[0] || ''));
+
+    // --- Operadora masiva
+    const [dev] = await pool.query("INSERT INTO mobile_devices (imei, phone_country_code_id, phone_number, has_chip, area, status) VALUES (?, ?, ?, 1, 'PRUEBA-E2E', 'en_stock')", [IMEI, peru.id, N[8]]);
+    await pool.query('INSERT INTO mobile_lines (phone_country_code_id, phone_number, device_id) VALUES (?, ?, ?)', [peru.id, N[8], dev.insertId]);
+    await pool.query('INSERT INTO mobile_lines (phone_number) VALUES (?), (?)', [N[9], N[10]]);
+    const ids = [(await chip(N[8])).id, (await chip(N[9])).id, (await chip(N[6])).id];
+    r = await req('GET', '/celulares/chips?q=9000009&operadora=__sin__');
+    check('Listado filtrado "sin operadora": casillas para marcar y selector de operadora', r.status === 200 && r.text.includes('Asignar a los marcados')
+      && r.text.includes(`class="form-check-input chip-mark" value="${ids[1]}"`) && r.text.includes('id="mark_all"')
+      && r.text.includes('name="back" value="?q=9000009&amp;operadora=__sin__"') && !r.text.includes(`chip-mark" value="${c0.id}"`));
+    r = await post('/celulares/chips/operadora', { ids: ids.join(','), operadora: 'E2E-OPERADORA', back: '?q=9000009&operadora=__sin__' });
+    check('Asignar operadora a los marcados: cambia solo esos y vuelve al mismo filtro', /asignada a 3 chip/.test(r.ok[0] || '')
+      && r.location === '/celulares/chips?q=9000009&operadora=__sin__' && (await chip(N[9])).operadora === 'E2E-OPERADORA'
+      && (await chip(N[6])).operadora === 'E2E-OPERADORA' && (await chip(N[10])).operadora === null && (await chip(N[0])).operadora === 'Entel');
+    check('Si el chip es el número principal de un celular, el celular también queda con esa operadora',
+      (await q('SELECT operadora FROM mobile_devices WHERE imei = ?', [IMEI]))[0].operadora === 'E2E-OPERADORA');
+    r = await post('/celulares/chips/operadora', { ids: '', operadora: 'Entel' });
+    check('Operadora masiva sin marcar chips: avisa', /Marque al menos un chip/.test(r.errors[0] || ''));
+    r = await post('/celulares/chips/operadora', { ids: String(ids[1]), operadora: '' });
+    check('Operadora masiva sin elegir operadora: avisa y no cambia nada', /Elija la operadora/.test(r.errors[0] || '')
+      && (await chip(N[9])).operadora === 'E2E-OPERADORA');
+    r = await post('/celulares/chips/operadora', { ids: `${ids[1]},abc,${ids[1]}`, operadora: 'Entel', back: 'http://otro-sitio' });
+    check('Ids no numéricos se ignoran y una dirección de retorno ajena no se usa', /asignada a 1 chip/.test(r.ok[0] || '')
+      && r.location === '/celulares/chips' && (await chip(N[9])).operadora === 'Entel');
+    check('Quedó registrado en la auditoría', (await q("SELECT COUNT(DISTINCT action) AS n FROM audit_log WHERE action IN ('chips_importados', 'chips_ingresados_por_escaneo', 'chips_operadora_masiva') AND id > ?", [auditStart]))[0].n === 3);
+  } finally {
+    server.close();
+    await cleanup();
+    const left = await q('SELECT COUNT(*) AS n FROM mobile_lines WHERE phone_number IN (?)', [N]);
+    check('Limpieza: no quedan datos de prueba', left[0].n === 0);
+    await pool.end();
+  }
+}
+
+main()
+  .catch((err) => { console.error(err); results.push([false, `Excepción: ${err.message}`]); })
+  .finally(() => {
+    for (const [ok, name] of results) console.log(`${ok ? 'PASA ' : 'FALLA'} ${name}`);
+    const ok = results.filter((r) => r[0]).length;
+    console.log(`\n${ok}/${results.length} pruebas correctas`);
+    process.exit(ok === results.length ? 0 : 1);
+  });

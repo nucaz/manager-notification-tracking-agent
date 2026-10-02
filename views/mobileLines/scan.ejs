@@ -1,0 +1,192 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="/celulares/chips" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Chips</a>
+    <h2 class="mb-0"><%= title %></h2>
+  </div>
+  <a href="/celulares/chips/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Mejor importar un Excel</a>
+</div>
+
+<% if (registrados !== null) { %>
+  <div class="alert alert-warning">
+    <strong><%= registrados %> chip(s) registrados; <%= errores.length %> no se pudieron registrar.</strong>
+    Los que fallaron siguen en la lista de abajo: corríjalos (o quítelos) y vuelva a registrar.
+    <ul class="mb-0 mt-2">
+      <% errores.forEach(function(e) { %><li><%= e.message %></li><% }); %>
+    </ul>
+  </div>
+<% } %>
+
+<form method="post" action="/celulares/chips/escanear" id="scan_form">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <textarea name="chips" id="chips_field" hidden></textarea>
+
+  <div class="card p-3 mb-3">
+    <h5>1. Datos del lote <span class="text-muted fs-6">(se aplican a todos los chips de esta carga)</span></h5>
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label" for="lote_operadora">Operadora</label>
+        <select name="operadora" id="lote_operadora" class="form-select">
+          <option value="">— Sin operadora —</option>
+          <% operadoras.forEach(function(o) { %><option value="<%= o %>" <%= lote.operadora === o ? 'selected' : '' %>><%= o %></option><% }); %>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="lote_plan">Plan</label>
+        <input type="text" name="plan" id="lote_plan" class="form-control" maxlength="60" value="<%= lote.plan || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="lote_costo">Costo sin descuento (S/)</label>
+        <input type="number" name="costo_plan" id="lote_costo" class="form-control" step="0.01" min="0" value="<%= lote.costo_plan || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="lote_descuento">Descuento (S/)</label>
+        <input type="number" name="descuento_plan" id="lote_descuento" class="form-control" step="0.01" min="0" value="<%= lote.descuento_plan || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="lote_notes">Nota del lote</label>
+        <input type="text" name="notes" id="lote_notes" class="form-control" maxlength="250" value="<%= lote.notes || '' %>" placeholder="Ej: lote sellado oct-2026">
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-3 mb-3">
+    <h5>2. Escanear</h5>
+    <div class="row g-3 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label" for="scan_input">Código de barras (o escriba y pulse Enter)</label>
+        <input type="text" id="scan_input" class="form-control form-control-lg font-monospace" autocomplete="off" inputmode="numeric" autofocus
+               placeholder="Escanee el ICCID o el número del chip">
+      </div>
+      <div class="col-md-6">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="solo_numero">
+          <label class="form-check-label" for="solo_numero">Registrar solo el número (sin ICCID): cada número leído entra directo a la lista</label>
+        </div>
+      </div>
+    </div>
+    <div id="scan_status" class="alert alert-secondary mt-3 mb-0" role="status" aria-live="polite">
+      Cada chip necesita su <strong>número</strong> (9 dígitos); el <strong>ICCID</strong> (el código largo impreso en el chip, 18 a 22 dígitos) es opcional.
+      Lea los dos códigos del mismo chip, en cualquier orden: al tener ambos, el chip pasa a la lista.
+    </div>
+  </div>
+
+  <div class="card p-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+      <h5 class="mb-0">3. Chips por registrar <span class="badge bg-primary" id="scan_count">0</span></h5>
+      <div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="scan_clear">Vaciar la lista</button>
+        <button type="submit" class="btn btn-primary" id="scan_submit" disabled><i class="bi bi-check-lg"></i> Registrar en stock</button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th style="width: 4rem;">#</th><th>Número</th><th>ICCID</th><th></th></tr></thead>
+        <tbody id="scan_rows"></tbody>
+      </table>
+    </div>
+    <p class="text-muted small mb-0 mt-2" id="scan_empty">Todavía no hay chips en la lista.</p>
+  </div>
+</form>
+
+<script>
+(function () {
+  var NUMERO = 9;
+  var rows = <%- JSON.stringify(pendientes) %>;
+  var pend = { numero: '', iccid: '' };
+  var input = document.getElementById('scan_input');
+  var status = document.getElementById('scan_status');
+  var soloNumero = document.getElementById('solo_numero');
+  var form = document.getElementById('scan_form');
+
+  function say(kind, text) {
+    status.className = 'alert mt-3 mb-0 alert-' + kind;
+    status.textContent = text;
+  }
+
+  function render() {
+    var body = document.getElementById('scan_rows');
+    body.textContent = '';
+    rows.forEach(function (r, i) {
+      var tr = document.createElement('tr');
+      [String(i + 1), r.numero, r.iccid || '—'].forEach(function (t, c) {
+        var td = document.createElement('td');
+        td.textContent = t;
+        if (c > 0) td.className = 'font-monospace';
+        tr.appendChild(td);
+      });
+      var td = document.createElement('td');
+      td.className = 'text-end';
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-sm btn-outline-danger';
+      b.textContent = 'Quitar';
+      b.setAttribute('aria-label', 'Quitar el chip ' + r.numero);
+      b.addEventListener('click', function () { rows.splice(i, 1); render(); input.focus(); });
+      td.appendChild(b);
+      tr.appendChild(td);
+      body.appendChild(tr);
+    });
+    document.getElementById('scan_count').textContent = rows.length;
+    document.getElementById('scan_empty').hidden = rows.length > 0;
+    document.getElementById('scan_submit').disabled = rows.length === 0;
+  }
+
+  function add(chip) {
+    var dup = rows.filter(function (r) { return r.numero === chip.numero || (chip.iccid && r.iccid === chip.iccid); })[0];
+    if (dup) {
+      say('danger', 'Ese chip ya está en la lista (número ' + dup.numero + '). No se agregó de nuevo.');
+      return;
+    }
+    rows.push(chip);
+    render();
+    say('success', 'Agregado: número ' + chip.numero + (chip.iccid ? ', ICCID ' + chip.iccid : ' (sin ICCID)') + '. Van ' + rows.length + '.');
+  }
+
+  function read(value) {
+    var d = String(value).replace(/\D/g, '');
+    if (!d) return;
+    var kind = d.length === NUMERO ? 'numero' : (d.length >= 18 && d.length <= 22 ? 'iccid' : null);
+    if (!kind) {
+      say('danger', 'No se reconoce "' + value + '" (' + d.length + ' dígitos): un número tiene ' + NUMERO + ' dígitos y un ICCID entre 18 y 22.');
+      return;
+    }
+    if (kind === 'numero' && soloNumero.checked) { pend = { numero: '', iccid: '' }; add({ numero: d, iccid: '' }); return; }
+    var replaced = pend[kind] && pend[kind] !== d;
+    pend[kind] = d;
+    if (pend.numero && pend.iccid) {
+      var chip = pend;
+      pend = { numero: '', iccid: '' };
+      add(chip);
+    } else if (kind === 'iccid') {
+      say('info', (replaced ? 'ICCID anterior reemplazado. ' : '') + 'ICCID ' + d + ' leído. Ahora lea o escriba el número de ese chip.');
+    } else {
+      say('info', (replaced ? 'Número anterior reemplazado. ' : '') + 'Número ' + d + ' leído. Ahora lea el ICCID de ese chip (o marque "solo el número").');
+    }
+  }
+
+  // El lector de códigos de barras "teclea" el código y pulsa Enter: ese
+  // Enter no debe enviar el formulario, solo procesar lo leído.
+  form.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' || e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    if (e.target === input) { read(input.value); input.value = ''; }
+  });
+  document.getElementById('scan_clear').addEventListener('click', function () {
+    if (rows.length && !confirm('¿Vaciar la lista de ' + rows.length + ' chip(s)?')) return;
+    rows = []; pend = { numero: '', iccid: '' }; render(); input.focus();
+  });
+  form.addEventListener('submit', function (e) {
+    if ((pend.numero || pend.iccid) && !confirm('Hay un chip a medio leer (falta su ' + (pend.numero ? 'ICCID' : 'número') + ') que no se registrará. ¿Continuar?')) {
+      e.preventDefault();
+      return;
+    }
+    if (!confirm('Se registrarán ' + rows.length + ' chip(s) en stock con los datos del lote. ¿Continuar?')) { e.preventDefault(); return; }
+    document.getElementById('chips_field').value = rows.map(function (r) { return r.numero + ';' + r.iccid; }).join('\n');
+  });
+  render();
+})();
+</script>
+
+<%- include('../partials/foot') %>

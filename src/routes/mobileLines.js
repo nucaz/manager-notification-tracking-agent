@@ -11,6 +11,8 @@ const catalogService = require('../services/catalogService');
 const employeeService = require('../services/employeeService');
 const auditService = require('../services/auditService');
 const lineService = require('../services/mobileLineService');
+const importService = require('../services/importService');
+const { importUploader } = require('../services/uploadService');
 const labels = require('../config/mobileLabels');
 
 const router = express.Router();
@@ -89,6 +91,7 @@ router.get('/', async (req, res, next) => {
       filters,
       filterQuery: queryString(filters),
       operadoras: opRows.map((r) => r.operadora),
+      catalogOperadoras: await catalogService.getActive('operadora'),
       areas: areaRows.map((r) => r.area),
       sedes: sedeRows.map((r) => r.sede),
       activeFilters: FILTERS.filter((k) => filters[k]).length,
@@ -128,6 +131,168 @@ router.get('/exportar.xlsx', async (req, res, next) => {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="chips_${fecha}.xlsx"`);
     res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------
+// Carga por lote: Excel, escaneo de codigos de barras y operadora masiva.
+// Van antes de las rutas con /:id para que Express no tome "importar" o
+// "escanear" como el id de un chip.
+// ---------------------------------------------------------------------
+const IMPORT_COLUMNS = [
+  { header: 'Número', field: 'phone_number', required: true },
+  { header: 'ICCID', field: 'iccid' },
+  { header: 'Operadora', field: 'operadora' },
+  { header: 'Plan', field: 'plan' },
+  { header: 'Costo sin descuento', field: 'costo_plan' },
+  { header: 'Descuento', field: 'descuento_plan' },
+  { header: 'Detalle del descuento', field: 'descuento_nota' },
+  { header: 'Notas', field: 'notes' },
+];
+
+const importView = (results) => ({
+  title: 'Importar chips',
+  listUrl: '/celulares/chips',
+  actionUrl: '/celulares/chips/importar',
+  templateUrl: '/celulares/chips/importar/plantilla',
+  columns: IMPORT_COLUMNS,
+  results,
+});
+
+router.get('/importar', canWrite, (req, res) => res.render('import', importView(null)));
+
+// Plantilla con Número e ICCID como TEXTO: si Excel los toma como numero,
+// recorta el ICCID (19-20 digitos) a 15 cifras y lo completa con ceros.
+router.get('/importar/plantilla', canWrite, async (req, res, next) => {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Chips');
+    sheet.addRow(IMPORT_COLUMNS.map((c) => c.header)).font = { bold: true };
+    sheet.getColumn(1).numFmt = '@';
+    sheet.getColumn(2).numFmt = '@';
+    [14, 26, 14, 26, 20, 12, 36, 36].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="plantilla_chips.xlsx"');
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    next(err);
+  }
+});
+
+function cell(row, header) {
+  const v = row[header];
+  if (v && typeof v === 'object' && !(v instanceof Date)) return v.text !== undefined ? v.text : v.result !== undefined ? v.result : '';
+  return v === undefined || v === null ? '' : v;
+}
+
+router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToken, async (req, res, next) => {
+  try {
+    if (!req.file) {
+      req.flash('error', 'Debes seleccionar un archivo.');
+      return res.redirect('/celulares/chips/importar');
+    }
+    const sheetRows = await importService.parseSpreadsheet(req.file.buffer, req.file.originalname);
+    const early = [];
+    const rows = [];
+    sheetRows.forEach((raw, i) => {
+      const row = i + 2; // la fila 1 es el encabezado
+      const r = { row };
+      IMPORT_COLUMNS.forEach((c) => { r[c.field] = cell(raw, c.header); });
+      if (IMPORT_COLUMNS.every((c) => String(r[c.field]).trim() === '')) return; // fila vacia
+      if (typeof r.iccid === 'number') {
+        early.push({ row, message: `Número ${r.phone_number}: el ICCID llegó como número y Excel lo recorta a 15 cifras. Use la plantilla (la columna ICCID es de texto) o escríbalo con un apóstrofo delante.` });
+        return;
+      }
+      rows.push(r);
+    });
+    const result = await lineService.createLinesBulk(rows, req.session.user.id);
+    const errors = [...early, ...result.errors].sort((a, b) => a.row - b.row);
+    if (result.imported) {
+      await auditService.log(req, {
+        user: req.session.user, action: 'chips_importados', target: `${result.imported} chip(s)`,
+        detail: `Desde ${req.file.originalname}; ${errors.length} fila(s) con error`,
+      });
+    }
+    res.render('import', importView({ imported: result.imported, errors }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const scanView = async (extra) => ({
+  title: 'Ingresar chips por escaneo',
+  operadoras: await catalogService.getActive('operadora'),
+  lote: {}, pendientes: [], errores: [], registrados: null,
+  ...extra,
+});
+
+router.get('/escanear', canWrite, async (req, res, next) => {
+  try {
+    res.render('mobileLines/scan', await scanView());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// `chips` trae un chip por renglon: "numero;iccid" (lo arma la pantalla a
+// medida que se escanea). Los datos del lote se aplican a todos.
+router.post('/escanear', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const lote = {
+      operadora: String(req.body.operadora || '').trim(), plan: String(req.body.plan || '').trim(),
+      costo_plan: String(req.body.costo_plan || '').trim(), descuento_plan: String(req.body.descuento_plan || '').trim(),
+      notes: String(req.body.notes || '').trim(),
+    };
+    const items = String(req.body.chips || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 2000)
+      .map((l, i) => { const [numero, iccid] = l.split(';'); return { row: i + 1, phone_number: numero, iccid: iccid || '', ...lote }; });
+    if (!items.length) {
+      req.flash('error', 'No hay chips en la lista: escanee o escriba al menos uno.');
+      return res.redirect('/celulares/chips/escanear');
+    }
+    const result = await lineService.createLinesBulk(items, req.session.user.id);
+    if (result.imported) {
+      await auditService.log(req, {
+        user: req.session.user, action: 'chips_ingresados_por_escaneo', target: `${result.imported} chip(s)`,
+        detail: `Operadora ${lote.operadora || '—'}, plan ${lote.plan || '—'}; ${result.errors.length} con error`,
+      });
+    }
+    if (!result.errors.length) {
+      req.flash('success', `${result.imported} chip(s) registrados en stock.`);
+      return res.redirect('/celulares/chips?ubicacion=en_stock');
+    }
+    // Los que fallaron vuelven a la lista para corregirlos sin reescanear todo.
+    const failed = new Set(result.errors.map((e) => e.row));
+    res.render('mobileLines/scan', await scanView({
+      lote, registrados: result.imported, errores: result.errors,
+      pendientes: items.filter((it) => failed.has(it.row)).map((it) => ({ numero: lineService.digits(it.phone_number), iccid: lineService.digits(it.iccid) })),
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Operadora para varios chips a la vez (los marcados en el listado).
+router.post('/operadora', canWrite, verifyCsrfToken, async (req, res, next) => {
+  const back = typeof req.body.back === 'string' && req.body.back.startsWith('?') ? req.body.back : '';
+  try {
+    const ids = [...new Set(String(req.body.ids || '').split(',').map((v) => v.trim()).filter((v) => /^\d+$/.test(v)).map(Number))];
+    const operadora = String(req.body.operadora || '').trim();
+    if (!ids.length) req.flash('error', 'Marque al menos un chip.');
+    else if (!operadora) req.flash('error', 'Elija la operadora que se asignará a los chips marcados.');
+    else if (operadora.length > 50) req.flash('error', 'La operadora no puede superar los 50 caracteres.');
+    else {
+      const changed = await lineService.setOperadora(ids, operadora);
+      await auditService.log(req, {
+        user: req.session.user, action: 'chips_operadora_masiva', target: `${ids.length} chip(s)`,
+        detail: `Operadora "${operadora}" asignada a ${ids.length} chip(s) marcados (${changed} cambiaron)`,
+      });
+      req.flash('success', `Operadora ${operadora} asignada a ${ids.length} chip(s)${changed !== ids.length ? ` (${changed} cambiaron; el resto ya la tenía)` : ''}.`);
+    }
+    res.redirect(`/celulares/chips${back}`);
   } catch (err) {
     next(err);
   }

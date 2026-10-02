@@ -24,6 +24,8 @@
       <i class="bi bi-file-earmark-excel"></i> Exportar Excel
     </a>
     <% if (currentUser.role !== 'lector') { %>
+      <a href="/celulares/chips/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar Excel</a>
+      <a href="/celulares/chips/escanear" class="btn btn-outline-primary"><i class="bi bi-upc-scan"></i> Ingresar por escaneo</a>
       <a href="/celulares/chips/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo chip</a>
     <% } %>
   </div>
@@ -146,11 +148,34 @@
 </div>
 <% } %>
 
+<% const canMark = currentUser.role !== 'lector' && items.length > 0; %>
 <div class="card p-3">
+  <% if (canMark) { %>
+    <form action="/celulares/chips/operadora" method="post" class="row g-2 align-items-center mb-3" id="op_masiva"
+          onsubmit="var c = document.querySelectorAll('.chip-mark:checked'); if (!c.length) { alert('Marque al menos un chip.'); return false; } if (!this.operadora.value) { alert('Elija la operadora.'); return false; } this.ids.value = Array.prototype.map.call(c, function (x) { return x.value; }).join(','); return confirm('Se asignará la operadora ' + this.operadora.value + ' a ' + c.length + ' chip(s). ¿Continuar?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="ids" value="">
+      <input type="hidden" name="back" value="<%= filterQuery %>">
+      <div class="col-auto"><span class="fw-semibold"><span id="marcados">0</span> marcado(s)</span></div>
+      <div class="col-auto">
+        <select name="operadora" class="form-select form-select-sm" aria-label="Operadora a asignar">
+          <option value="">Operadora a asignar…</option>
+          <% catalogOperadoras.forEach(function(o) { %><option value="<%= o %>"><%= o %></option><% }); %>
+        </select>
+      </div>
+      <div class="col-auto"><button class="btn btn-sm btn-primary" type="submit">Asignar a los marcados</button></div>
+      <div class="col-auto small text-muted">
+        Marque uno, varios o todos los de esta lista.
+        <% if (filters.operadora !== '__sin__') { %><a href="<%= withFilter('operadora', '__sin__') %>">Ver solo los que no tienen operadora</a><% } %>
+      </div>
+    </form>
+  <% } %>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
       <thead>
         <tr>
+          <% if (canMark) { %><th style="width: 2rem;"><input type="checkbox" class="form-check-input" id="mark_all" aria-label="Marcar todos"
+            onchange="var on = this.checked; Array.prototype.forEach.call(document.querySelectorAll('.chip-mark'), function (x) { x.checked = on; }); document.getElementById('marcados').textContent = document.querySelectorAll('.chip-mark:checked').length;"></th><% } %>
           <th>Número</th><th>Operadora</th><th>Plan</th><th class="text-end">Sin descuento</th><th class="text-end">Con descuento</th><th>Estado</th><th>Ubicación</th>
           <th>Usuario</th><th>Área</th><th>Sede</th><th>Celular</th><th></th>
         </tr>
@@ -158,6 +183,8 @@
       <tbody>
         <% items.forEach(function(it) { %>
           <tr>
+            <% if (canMark) { %><td><input type="checkbox" class="form-check-input chip-mark" value="<%= it.id %>" aria-label="Marcar <%= it.phone_number %>"
+              onchange="document.getElementById('marcados').textContent = document.querySelectorAll('.chip-mark:checked').length;"></td><% } %>
             <td class="text-nowrap"><a href="/celulares/chips/<%= it.id %>"><%= it.calling_code ? '+' + it.calling_code + ' ' : '' %><%= it.phone_number %></a>
               <% if (it.iccid) { %><div class="small text-muted font-monospace">ICCID <%= it.iccid %></div><% } %></td>
             <td><%= it.operadora || '—' %></td>
@@ -174,13 +201,13 @@
           </tr>
         <% }); %>
         <% if (items.length === 0) { %>
-          <tr><td colspan="12" class="text-center text-muted py-4"><%= activeFilters ? 'Ningún chip cumple estos filtros.' : 'No hay chips registrados.' %></td></tr>
+          <tr><td colspan="13" class="text-center text-muted py-4"><%= activeFilters ? 'Ningún chip cumple estos filtros.' : 'No hay chips registrados.' %></td></tr>
         <% } %>
       </tbody>
       <% if (items.length) { %>
         <tfoot>
           <tr class="fw-semibold" style="font-variant-numeric: tabular-nums;">
-            <td colspan="3"><%= summary.total %> chip(s)</td>
+            <td colspan="<%= canMark ? 4 : 3 %>"><%= summary.total %> chip(s)</td>
             <td class="text-end text-nowrap"><%= soles(summary.costoTotal) %></td>
             <td class="text-end text-nowrap"><%= soles(summary.netoTotal) %></td>
             <td colspan="7"></td>
