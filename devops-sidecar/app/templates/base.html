@@ -68,6 +68,15 @@
     <li class="sidebar-section">Sistema</li>
     <li><a class="nav-link {{ 'active' if request.url.path == '/configuracion' else '' }}" href="/configuracion"><i class="bi bi-gear"></i> <span>Configuración</span></a></li>
   </ul>
+  {% if request.state.user %}
+  <ul class="sidebar-nav" style="flex: 0;">
+    <li class="sidebar-section">{{ request.state.user.name }}</li>
+    {% if request.state.main_app_url %}
+    <li><a class="nav-link" href="{{ request.state.main_app_url }}/"><i class="bi bi-box-arrow-left"></i> <span>Volver a la aplicación</span></a></li>
+    {% endif %}
+    <li><a class="nav-link" href="/salir"><i class="bi bi-door-closed"></i> <span>Cerrar DevOps</span></a></li>
+  </ul>
+  {% endif %}
   <button class="sidebar-toggle" id="sidebarToggle" title="Colapsar/expandir menú">
     <i class="bi bi-layout-sidebar-inset"></i> <span>Colapsar</span>
   </button>

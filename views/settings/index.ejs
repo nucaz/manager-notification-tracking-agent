@@ -226,6 +226,8 @@
           Las mismas credenciales de <code>DASHBOARD_USER</code>/<code>DASHBOARD_PASSWORD</code> del
           <code>.env</code> de <code>devops-sidecar</code>. Con esto conectado, el asistente de WhatsApp/Telegram
           puede responder preguntas sobre los repositorios registrados (estado, leaderboard, últimas auditorías).
+          Con el acceso único activo (<code>SSO_SHARED_SECRET</code> en los dos <code>.env</code>) usuario y contraseña no hacen falta:
+          la conexión usa un pase firmado y las personas entran a DevOps con su usuario de esta aplicación.
         </div>
       </div>
 

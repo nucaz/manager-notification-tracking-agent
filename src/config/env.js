@@ -14,6 +14,13 @@ module.exports = {
   // desde Configuracion (ver src/services/cryptoService.js). Vacio =
   // esas credenciales quedan en texto plano (compatibilidad hacia atras).
   credentialsEncKey: process.env.CREDENTIALS_ENC_KEY || '',
+  // Acceso unico con DevOps Sidecar: secreto compartido con el que se
+  // firman los pases (el mismo valor en devops-sidecar/.env). Vacio = sin
+  // acceso unico (el sidecar pide su propio usuario y contrasena).
+  ssoSharedSecret: process.env.SSO_SHARED_SECRET || '',
+  // Direccion del sidecar como la ve el navegador; admite {host}.
+  // Vacio = mismo protocolo y nombre que esta aplicacion, puerto 8091.
+  sidecarPublicUrl: process.env.SIDECAR_PUBLIC_URL || '',
 
   db: {
     host: process.env.DB_HOST || '127.0.0.1',

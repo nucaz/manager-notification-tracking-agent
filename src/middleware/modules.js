@@ -23,6 +23,7 @@ const MODULES = {
   glpi_inventario: 'Inventario GLPI',
   reportes: 'Reportes',
   asistente: 'Asistente IA (preguntas a Gemini)',
+  devops: 'DevOps Sidecar (repositorios, respaldos y auditoría de código)',
 };
 
 const CONFIGURABLE_ROLES = ['editor', 'lector'];
@@ -36,6 +37,10 @@ const DEFAULT_MODULE_ACCESS = Object.keys(MODULES).reduce((acc, key) => {
   acc[key] = { editor: true, lector: true };
   return acc;
 }, {});
+// DevOps es la excepcion: dentro de ese modulo no hay roles (quien entra
+// puede restaurar o borrar), y antes solo lo veia un administrador. Queda
+// apagado hasta que un admin lo habilite a proposito.
+DEFAULT_MODULE_ACCESS.devops = { editor: false, lector: false };
 
 async function moduleEnabled(role, moduleKey) {
   if (role === 'admin') return true;

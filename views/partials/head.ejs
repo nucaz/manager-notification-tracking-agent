@@ -52,8 +52,11 @@
     <li><a class="nav-link <%= currentPath.startsWith('/historial-chat') ? 'active' : '' %>" href="/historial-chat"><i class="bi bi-chat-dots"></i> <span>Historial de chat</span></a></li>
     <li><a class="nav-link <%= currentPath.startsWith('/mantenimiento') ? 'active' : '' %>" href="/mantenimiento"><i class="bi bi-database-gear"></i> <span>Mantenimiento BD</span></a></li>
     <li><a class="nav-link <%= currentPath.startsWith('/configuracion') ? 'active' : '' %>" href="/configuracion"><i class="bi bi-gear"></i> <span>Configuración</span></a></li>
+    <% } %>
+    <% if (currentUser.role === 'admin' || enabledModules.devops) { %>
+    <%# Entra a DevOps Sidecar con este mismo usuario (acceso unico, ver src/routes/devops.js). %>
     <li>
-      <a class="nav-link" href="http://<%= currentHost %>:8091" target="_blank" rel="noopener">
+      <a class="nav-link" href="/devops" target="_blank" rel="noopener">
         <i class="bi bi-hdd-network"></i> <span>DevOps <i class="bi bi-box-arrow-up-right small"></i></span>
       </a>
     </li>

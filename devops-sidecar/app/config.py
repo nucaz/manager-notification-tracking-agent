@@ -21,6 +21,17 @@ class Settings(BaseSettings):
     # HTTP Basic Auth para el dashboard/API (todo menos el webhook).
     dashboard_user: str = "admin"
     dashboard_password: str = "cambia_esta_password"
+    # Acceso unico con la aplicacion principal: secreto compartido (el MISMO
+    # valor que SSO_SHARED_SECRET en el .env de la raiz) con el que se firman
+    # los pases. Vacio = sin acceso unico (solo HTTP Basic, como antes).
+    sso_shared_secret: str = ""
+    # HTTP Basic con el usuario/contrasena de arriba: "auto" lo deja activo
+    # solo si NO hay acceso unico; "on" lo mantiene tambien con acceso unico
+    # (entrada de emergencia); "off" lo apaga.
+    dashboard_basic_auth: str = "auto"
+    # URL de la aplicacion principal, para devolver ahi a quien llega sin
+    # sesion. Opcional: normalmente se aprende sola del primer ingreso.
+    main_app_url: str = ""
     # Clave Fernet (urlsafe-base64 de 32 bytes) para cifrar en BD las
     # API keys de IA guardadas desde el dashboard (ver crypto_service.py).
     # Vacio = quedan en texto plano (compatibilidad hacia atras).

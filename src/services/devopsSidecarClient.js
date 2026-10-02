@@ -1,9 +1,12 @@
 // Cliente delgado hacia el modulo DevOps Sidecar (devops-sidecar/, FastAPI
 // en Python, servicio aparte en el mismo docker-compose). Se le habla por
 // la red interna de Docker (nombre del servicio, no localhost/8091) y con
-// HTTP Basic Auth (las mismas credenciales del dashboard de ese modulo).
+// un pase de servicio firmado (acceso unico, ver ssoService.js). Sin
+// secreto compartido configurado se usa HTTP Basic Auth con las
+// credenciales del dashboard de ese modulo, como antes.
 const axios = require('axios');
 const settingsService = require('./settingsService');
+const ssoService = require('./ssoService');
 
 async function getConfig() {
   const settings = await settingsService.getAll();
@@ -22,11 +25,12 @@ function requireConfig(cfg) {
 
 async function request(method, path, opts = {}) {
   const cfg = await getConfig();
-  requireConfig(cfg);
+  const sso = ssoService.enabled();
+  if (!sso) requireConfig(cfg);
   const res = await axios.request({
     method,
     url: `${cfg.baseUrl}${path}`,
-    auth: { username: cfg.user, password: cfg.password },
+    ...(sso ? { headers: { Authorization: `Bearer ${ssoService.servicePass()}` } } : { auth: { username: cfg.user, password: cfg.password } }),
     timeout: opts.timeout || 20000,
     params: opts.params,
     data: opts.data,

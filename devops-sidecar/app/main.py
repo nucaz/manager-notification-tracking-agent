@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 
 from .database import SessionLocal, init_db
-from .routers import asistente, backup_jobs, backups, dashboard, deployments, git_targets, repos, restores, settings as settings_router, stats, webhooks
+from .routers import asistente, backup_jobs, backups, dashboard, deployments, git_targets, repos, restores, settings as settings_router, sso, stats, webhooks
 from .scheduler import start_scheduler
 from .services import git_service, settings_store
 
@@ -30,6 +30,7 @@ def on_startup():
 
 
 app.include_router(webhooks.router)
+app.include_router(sso.router)
 app.include_router(asistente.router)
 app.include_router(backups.router)
 app.include_router(backup_jobs.router)
