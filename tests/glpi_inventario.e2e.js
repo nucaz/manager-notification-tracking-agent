@@ -22,14 +22,26 @@ const USER_TOKEN = 'user-token-prueba';
 const DATA = {
   Computer: Array.from({ length: 30 }, (_, i) => ({ id: i + 1, name: `PC-${String(i + 1).padStart(3, '0')}`, serial: `SN${i + 1}`,
     otherserial: `INV-${i + 1}`, state: 'En uso', type: 'Laptop', manufacturer: 'Lenovo', model: 'ThinkPad', location: 'Sede Surco &#62; Piso 2',
-    user: 'jperez', entity: 'Entidad raíz &#62; DEPILZONE', os: 'Windows 11' })),
+    user: 'jperez', entity: 'Entidad raíz &#62; DEPILZONE', os: 'Windows 11',
+    os_version: '23H2', processor: ['Intel Core i5-12400', 'Intel Core i5-12400'], memory_type: 'DDR4$$##$$DDR4', memory: [8192, 8192], ip: ['127.0.0.1', '172.16.1.50', 'fe80::1'] })),
   Monitor: [{ id: 101, name: 'MON-001', serial: 'MSN1', otherserial: 'INV-M1', state: 'En uso', type: 'LED', manufacturer: 'LG',
     model: '24MK430', location: 'Sede Surco', user: 'jperez', entity: 'DEPILZONE' }],
   Printer: [{ id: 201, name: 'IMP-RECEPCION', serial: 'PSN1', otherserial: 'INV-P1', state: 'En uso', type: 'Láser', manufacturer: 'HP',
     model: 'M404', location: 'Recepción', user: '', entity: 'DEPILZONE' }],
 };
-const OPT = { 1: 'name', 2: 'id', 3: 'location', 4: 'type', 5: 'serial', 6: 'otherserial', 23: 'manufacturer', 31: 'state', 40: 'model', 45: 'os', 70: 'user', 80: 'entity', 19: 'date_mod' };
-const seen = { forcedisplay: null, criteria: null };
+const OPT = { 1: 'name', 2: 'id', 3: 'location', 4: 'type', 5: 'serial', 6: 'otherserial', 23: 'manufacturer', 31: 'state', 40: 'model', 45: 'os', 70: 'user', 80: 'entity', 19: 'date_mod', 46: 'os_version', 17: 'processor', 999: 'memory_type', 111: 'memory', 126: 'ip' };
+const SEARCH_OPTIONS = {
+  common: 'Características',
+  1: { name: 'Nombre', table: 'glpi_computers', field: 'name' },
+  10: { name: 'Señuelo', table: 'glpi_devicememories', field: 'designation' },
+  17: { name: 'Procesador', table: 'glpi_deviceprocessors', field: 'designation' },
+  45: { name: 'Sistema operativo - Nombre', table: 'glpi_operatingsystems', field: 'name' },
+  46: { name: 'Sistema operativo - Versión', table: 'glpi_operatingsystemversions', field: 'name' },
+  111: { name: 'Memoria', table: 'glpi_items_devicememories', field: 'size' },
+  126: { name: 'IP', table: 'glpi_ipaddresses', field: 'name' },
+  999: { name: 'Tipo de memoria', table: 'glpi_devicememorytypes', field: 'name' },
+};
+const seen = { forcedisplay: null, criteria: null, options: 0 };
 
 function fakeGlpi() {
   const g = express();
@@ -46,6 +58,7 @@ function fakeGlpi() {
   });
   g.get('/apirest.php/killSession', (req, res) => res.json({}));
   g.get('/apirest.php/getMyProfiles', (req, res) => res.json({ myprofiles: [{ id: 2, name: 'Observer' }] }));
+  g.get('/apirest.php/listSearchOptions/:itemtype', (req, res) => { seen.options += 1; res.json(req.params.itemtype === 'Computer' ? SEARCH_OPTIONS : {}); });
   g.get('/apirest.php/search/:itemtype', (req, res) => {
     const rows = DATA[req.params.itemtype];
     if (!rows) return res.status(400).json(['ERROR_RIGHT_MISSING', 'x']);
@@ -127,7 +140,16 @@ async function main() {
     check('Entidades HTML de GLPI decodificadas (Sede Surco > Piso 2)', p.text.includes('Sede Surco &gt; Piso 2') && !p.text.includes('&amp;#62;'));
     check('Búsqueda envía criteria[0][field]=1 y forcedisplay como GLPI espera',
       seen.forcedisplay && Object.values(seen.forcedisplay).includes('45'));
+    check('Columnas ampliadas en pantalla: sistema operativo y versión, procesador, tipo de memoria, memoria e IP',
+      ['Sistema operativo', 'Versión del SO', 'Procesador', 'Tipo de memoria', 'Memoria', '>IP<', 'Entidad', 'Fabricante'].every((h) => p.text.includes(h))
+      && p.text.includes('Windows 11') && p.text.includes('23H2'));
+    check('Valores repetidos (2 procesadores iguales, 2 módulos DDR4) se muestran una vez; la memoria se suma', p.text.includes('>Intel Core i5-12400<')
+      && p.text.includes('>DDR4<') && p.text.includes('16 GB (2 módulos)'));
+    check('IP: sin la de loopback ni la local de enlace', p.text.includes('>172.16.1.50<') && !p.text.includes('>127.0.0.1') && !p.text.includes('fe80'));
+    check('El número de cada opción se toma del propio GLPI (tipo de memoria = 999 aquí, no el habitual 10)',
+      Object.values(seen.forcedisplay).includes('999') && !Object.values(seen.forcedisplay).includes('10') && Object.values(seen.forcedisplay).includes('126'));
     p = await get('/glpi/inventario?tipo=computadoras&page=2');
+    check('Las opciones de búsqueda se consultan una vez, no en cada página', seen.options === 1);
     check('Página 2 muestra PC-026..PC-030', p.text.includes('PC-026') && p.text.includes('PC-030'));
     p = await get('/glpi/inventario?tipo=computadoras&q=INV-7');
     check('Buscar por N.º de inventario', p.text.includes('PC-007') && !p.text.includes('PC-001<') && seen.criteria && seen.criteria[1].field === '5');
@@ -137,6 +159,8 @@ async function main() {
     check('Pestaña Impresoras', p.text.includes('IMP-RECEPCION') && p.text.includes('M404'));
 
     p = await get('/glpi/inventario/1');
+    check('Detalle de computadora: incluye procesador, memoria, sistema operativo e IP', p.text.includes('Procesador') && p.text.includes('Intel Core i5-12400')
+      && p.text.includes('16 GB (2 módulos)') && p.text.includes('Versión del SO') && p.text.includes('172.16.1.50'));
     check('Detalle de computadora (ruta de siempre) con monitores e impresoras conectados',
       p.status === 200 && p.text.includes('MON-001') && p.text.includes('IMP-RECEPCION') && p.text.includes('/glpi/inventario/monitores/101'));
     p = await get('/glpi/inventario/monitores/101');
@@ -150,6 +174,13 @@ async function main() {
     const sheet = wb.worksheets[0];
     check(`Excel de computadoras con TODAS las páginas (${sheet.rowCount - 1} filas) y columna Sistema operativo`,
       sheet.rowCount === 31 && sheet.getRow(1).values.includes('Sistema operativo') && sheet.getRow(2).values.includes('Windows 11'));
+    const head = sheet.getRow(1).values;
+    const cell = (label) => sheet.getRow(2).getCell(head.indexOf(label)).value;
+    check('Excel: sistema operativo y versión, entidad, fabricante, procesador, tipo de memoria, memoria e IP', cell('Versión del SO') === '23H2'
+      && cell('Entidad') === 'Entidad raíz > DEPILZONE' && cell('Fabricante') === 'Lenovo' && cell('Procesador') === 'Intel Core i5-12400'
+      && cell('Tipo de memoria') === 'DDR4' && cell('Memoria') === '16 GB (2 módulos)' && cell('IP') === '172.16.1.50');
+    check('API clásica apagada en GLPI 11 (["ERROR","API deshabilitada"]): mensaje claro', glpiClient.explainGlpiError(400, ['ERROR', 'API deshabilitada'])
+      .includes('Enable Legacy REST API'));
 
     cfg = { ...cfg, glpi_app_token: 'malo' };
     p = await get('/glpi/inventario');

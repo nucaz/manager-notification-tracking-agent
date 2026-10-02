@@ -6,7 +6,8 @@
     return '/glpi/inventario?' + p.toString();
   }
   // En pantalla: las columnas mas utiles; el Excel lleva todas.
-  const visibles = ['name', 'state', 'type', 'manufacturer', 'model', 'serial', 'otherserial', 'location', 'user'];
+  const visibles = ['name', 'state', 'type', 'manufacturer', 'model', 'os', 'os_version', 'processor', 'memory_type', 'memory', 'ip',
+    'serial', 'otherserial', 'location', 'user', 'entity'];
   const columnas = type.columns.filter(function (c) { return visibles.includes(c.key); });
 %>
 
@@ -44,13 +45,21 @@
     </div>
   </form>
 
+  <% if (extras && !extras.ok) { %>
+    <div class="alert alert-warning">
+      <strong>Sin sistema operativo, procesador, memoria ni IP.</strong>
+      La API v2 de GLPI no entrega esos datos; la app los toma de la API clásica del mismo GLPI, que ahora no responde: <%= extras.message %>
+      <div class="small mt-1"><%= extras.help %> El resto del inventario no se ve afectado.</div>
+    </div>
+  <% } %>
+
   <div class="card p-3">
     <p class="text-muted small mb-2"><%= type.label %> en GLPI<%= q ? ' que coinciden con "' + q + '"' : '' %>: <strong><%= total %></strong></p>
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover table-sm align-middle mb-0 <%= columnas.length > 10 ? 'small' : '' %>">
         <thead>
           <tr>
-            <% columnas.forEach(function(c) { %><th><%= c.label %></th><% }); %>
+            <% columnas.forEach(function(c) { %><th class="text-nowrap"><%= c.label %></th><% }); %>
             <th></th>
           </tr>
         </thead>

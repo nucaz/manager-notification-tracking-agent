@@ -80,6 +80,11 @@ Aplicación web para el seguimiento de:
   la **API clásica** (App-Token + User-Token; GLPI 9/10 y la "Legacy API"
   de GLPI 11) o con la **API v2 de GLPI 11** (OAuth: cliente OAuth con
   acceso "Password" + usuario de servicio), a elegir en Configuración.
+  De las computadoras trae además sistema operativo y versión, procesador,
+  tipo de memoria, memoria total e IP (pantalla, detalle y Excel). Esos
+  datos solo los entrega la API clásica: en modo v2 la app los pide a la API
+  clásica del mismo GLPI si tiene App-Token y User-Token, y si no puede,
+  lista el inventario igual y explica qué activar.
   Pruebas: `node tests/glpi_inventario.e2e.js` y `node tests/glpi_v2.e2e.js`
   (contra un GLPI simulado)
 - **Tipo de cambio USD → PEN**: se muestra en el panel principal y junto a

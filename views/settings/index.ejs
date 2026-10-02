@@ -22,12 +22,12 @@
           <label class="form-label d-block">API de GLPI</label>
           <div class="form-check form-check-inline">
             <input class="form-check-input" type="radio" name="glpi_api_version" id="glpi_api_legacy" value="legacy" <%= glpiV2 ? '' : 'checked' %>
-              onchange="document.getElementById('glpi_legacy_fields').hidden = false; document.getElementById('glpi_v2_fields').hidden = true;">
+              onchange="document.getElementById('glpi_v2_fields').hidden = true; document.getElementById('glpi_legacy_note').hidden = true;">
             <label class="form-check-label" for="glpi_api_legacy">API clásica (App-Token + User-Token)</label>
           </div>
           <div class="form-check form-check-inline">
             <input class="form-check-input" type="radio" name="glpi_api_version" id="glpi_api_v2" value="v2" <%= glpiV2 ? 'checked' : '' %>
-              onchange="document.getElementById('glpi_legacy_fields').hidden = true; document.getElementById('glpi_v2_fields').hidden = false;">
+              onchange="document.getElementById('glpi_v2_fields').hidden = false; document.getElementById('glpi_legacy_note').hidden = false;">
             <label class="form-check-label" for="glpi_api_v2">API v2 de GLPI 11 (OAuth)</label>
           </div>
           <div class="form-text">GLPI 11 trae las dos. La API v2 es la nueva y la recomendada por GLPI; la clásica ("Legacy API") sirve también para GLPI 9 y 10.</div>
@@ -38,7 +38,11 @@
           <div class="form-text">Pegue la que muestra GLPI en Configuración → General → API; la app la ajusta a la API elegida.</div>
         </div>
 
-        <div id="glpi_legacy_fields" <%= glpiV2 ? 'hidden' : '' %>>
+        <div id="glpi_legacy_fields">
+          <div id="glpi_legacy_note" class="alert alert-secondary py-2 small" <%= glpiV2 ? '' : 'hidden' %>>
+            <strong>Tokens de la API clásica (opcionales con la API v2).</strong> La API v2 no entrega el sistema operativo, el procesador,
+            la memoria ni la IP de las computadoras. Si completa estos dos tokens y la API clásica está activa en GLPI, el inventario los trae de ahí.
+          </div>
           <div class="mb-2">
             <label class="form-label" for="glpi_app_token">App-Token</label>
             <input type="password" name="glpi_app_token" id="glpi_app_token" class="form-control" autocomplete="new-password"

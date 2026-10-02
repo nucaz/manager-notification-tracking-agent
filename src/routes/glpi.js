@@ -58,10 +58,12 @@ router.get('/inventario', moduleRequired('glpi_inventario'), async (req, res) =>
   const limit = 25;
   const base = { title: 'Inventario GLPI', tipo, tipos: TIPOS, type: TIPOS[tipo], q, page, limit };
   try {
-    const { items, total } = await glpiClient.listItems(tipo, { query: q, start: (page - 1) * limit, limit });
-    res.render('glpi/inventario', { ...base, items, total, totalPages: Math.max(Math.ceil(total / limit), 1), connectionError: null });
+    const { items, total, extras } = await glpiClient.listItems(tipo, { query: q, start: (page - 1) * limit, limit });
+    res.render('glpi/inventario', {
+      ...base, items, total, totalPages: Math.max(Math.ceil(total / limit), 1), connectionError: null, extras: extras || null,
+    });
   } catch (err) {
-    res.render('glpi/inventario', { ...base, items: [], total: 0, totalPages: 1, connectionError: err.message });
+    res.render('glpi/inventario', { ...base, items: [], total: 0, totalPages: 1, connectionError: err.message, extras: null });
   }
 });
 
@@ -78,6 +80,7 @@ router.get('/inventario/exportar.xlsx', moduleRequired('glpi_inventario'), async
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: type.columns.length + 1 } };
     sheet.columns.forEach((col, i) => { col.width = i === 0 ? 9 : 20; });
+    type.columns.forEach((c, i) => { if (['os', 'processor', 'ip', 'entity'].includes(c.key)) sheet.getColumn(i + 2).width = 34; });
     const buffer = await workbook.xlsx.writeBuffer();
     const fecha = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -35,14 +35,16 @@ const GLPI_ERRORS = {
   ERROR_GLPI_LOGIN: 'GLPI rechazó el inicio de sesión (usuario inactivo, sin perfil o token revocado).',
   ERROR_NOT_ALLOWED_IP: 'GLPI no acepta conexiones desde la IP de este servidor: en Configuración → General → API → cliente de API de la app, ponga en "Rango de direcciones IPv4" la IP del servidor de la app (inicio y fin iguales) o déjelo vacío, y Activo = Sí.',
   ERROR_UNAUTHENTICATED: 'Esa URL es la API nueva de GLPI 11 (v2), que no usa App-Token/User-Token. Use la URL de la "Legacy API" (termina en /api.php/v1).',
-  ERROR_API_DISABLED: 'La API REST está desactivada en GLPI: Configuración → General → API → "Habilitar API Rest" = Sí.',
+  ERROR_API_DISABLED: 'La API clásica está desactivada en GLPI: Configuración → General → API → "Habilitar API Rest" = Sí (en GLPI 11: "Enable Legacy REST API" = Sí).',
   ERROR_LOGIN_WITH_TOKEN_DISABLED: 'GLPI no permite iniciar sesión con token: Configuración → General → API → "Habilitar inicio de sesión con token externo" = Sí.',
   ERROR_RIGHT_MISSING: 'El usuario de servicio no tiene permiso para ver ese inventario (revise su perfil y entidades en GLPI).',
   ERROR_SESSION_TOKEN_INVALID: 'La sesión con GLPI expiró; vuelva a intentarlo.',
 };
 
 function explainGlpiError(status, data) {
-  const code = Array.isArray(data) ? data[0] : data && (data.error || data.status);
+  let code = Array.isArray(data) ? data[0] : data && (data.error || data.status);
+  // GLPI 11 con la Legacy API apagada responde ["ERROR", "API deshabilitada"].
+  if (code === 'ERROR' && Array.isArray(data) && /deshabilitad|disabled|d[eé]sactiv/i.test(String(data[1] || ''))) code = 'ERROR_API_DISABLED';
   if (code && GLPI_ERRORS[code]) {
     // GLPI incluye la IP que ve en el mensaje: sirve para saber cual autorizar.
     const ip = code === 'ERROR_NOT_ALLOWED_IP' && Array.isArray(data) && /\((\d+\.\d+\.\d+\.\d+)\)/.exec(String(data[1] || ''));
@@ -332,10 +334,48 @@ const COMMON_COLUMNS = [
   { id: 19, key: 'date_mod', label: 'Última modificación' },
 ];
 
+// Varios valores de un mismo campo (dos modulos de memoria, varias IP)
+// llegan de la busqueda como arreglo o unidos con "$$##$$".
+function values(raw) {
+  const list = Array.isArray(raw) ? raw : String(raw === null || raw === undefined ? '' : raw).split('$$##$$');
+  return list.map(decodeHtml).filter(Boolean);
+}
+const unique = (raw) => [...new Set(values(raw))].join(', ');
+
+// Memoria: GLPI guarda el tamano de cada modulo en MiB; se muestra el total.
+function memoryTotal(raw) {
+  const sizes = values(raw).map(Number);
+  if (!sizes.length) return '';
+  if (sizes.some((n) => !Number.isFinite(n))) return values(raw).join(', ');
+  const total = sizes.reduce((a, b) => a + b, 0);
+  const gb = total / 1024;
+  const text = total >= 1024 ? `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB` : `${total} MB`;
+  return sizes.length > 1 ? `${text} (${sizes.length} módulos)` : text;
+}
+
+// IP: sin la de loopback ni las locales de enlace; IPv4 primero.
+function ipList(raw) {
+  const ips = [...new Set(values(raw))].filter((ip) => !/^(127\.|::1$|fe80:|0\.0\.0\.0$|169\.254\.)/i.test(ip));
+  return [...ips.filter((ip) => !ip.includes(':')), ...ips.filter((ip) => ip.includes(':'))].join(', ');
+}
+
+// Columnas de computadoras que solo entrega la busqueda de la API clasica
+// (sistema operativo, componentes y red). El numero de cada opcion de
+// busqueda se averigua en el propio GLPI por su tabla y campo (ver
+// resolveColumns); `id` es el habitual, por si esa consulta fallara.
+const EXTRA_COLUMNS = [
+  { id: 45, key: 'os', label: 'Sistema operativo', table: 'glpi_operatingsystems', field: 'name', format: unique },
+  { id: 46, key: 'os_version', label: 'Versión del SO', table: 'glpi_operatingsystemversions', field: 'name', format: unique },
+  { id: 17, key: 'processor', label: 'Procesador', table: 'glpi_deviceprocessors', field: 'designation', format: unique },
+  { id: 10, key: 'memory_type', label: 'Tipo de memoria', table: 'glpi_devicememorytypes', field: 'name', format: unique },
+  { id: 111, key: 'memory', label: 'Memoria', table: 'glpi_items_devicememories', field: 'size', format: memoryTotal },
+  { id: 126, key: 'ip', label: 'IP', table: 'glpi_ipaddresses', field: 'name', format: ipList },
+].map((c) => ({ ...c, extra: true }));
+
 const ASSET_TYPES = {
   computadoras: {
     itemtype: 'Computer', label: 'Computadoras', singular: 'Computadora', icon: 'bi-pc-display',
-    columns: [...COMMON_COLUMNS.slice(0, 5), { id: 45, key: 'os', label: 'Sistema operativo' }, ...COMMON_COLUMNS.slice(5)],
+    columns: [...COMMON_COLUMNS.slice(0, 5), ...EXTRA_COLUMNS, ...COMMON_COLUMNS.slice(5)],
     detail: [['name', 'Nombre'], ['states_id', 'Estado'], ['computertypes_id', 'Tipo'], ['manufacturers_id', 'Fabricante'],
       ['computermodels_id', 'Modelo'], ['serial', 'N.º de serie'], ['otherserial', 'N.º de inventario'],
       ['locations_id', 'Ubicación'], ['users_id', 'Usuario'], ['groups_id', 'Grupo'], ['entities_id', 'Entidad'],
@@ -396,27 +436,53 @@ function searchQuery({ query, start, limit, display }) {
   return p.toString();
 }
 
-function mapRow(type, raw) {
+function mapRow(columns, raw) {
   const row = { id: raw['2'] };
-  for (const c of type.columns) row[c.key] = decodeHtml(raw[String(c.id)]);
+  for (const c of columns) row[c.key] = (c.format || decodeHtml)(raw[String(c.id)]);
   return row;
+}
+
+// Columnas del tipo con el numero de opcion de busqueda de ESTE GLPI. Las
+// comunes no cambian; las "extra" se buscan en listSearchOptions por tabla
+// y campo, porque su numero puede variar entre versiones y plugins.
+const optionsCache = new Map();
+async function resolveColumns(type, http, headers, cfg) {
+  if (!type.columns.some((c) => c.extra)) return type.columns;
+  const key = `${cfg.baseUrl}|${type.itemtype}`;
+  const hit = optionsCache.get(key);
+  if (hit && Date.now() - hit.at < 3600 * 1000) return hit.columns;
+  let options = {};
+  try {
+    const res = await http.get(`/listSearchOptions/${type.itemtype}`, { headers });
+    if (res.status === 200 && res.data && typeof res.data === 'object') options = res.data;
+  } catch (_) {
+    // sin la lista se usan los numeros habituales
+  }
+  const columns = type.columns.map((c) => {
+    if (!c.extra) return c;
+    const match = (id) => options[id] && options[id].table === c.table && options[id].field === c.field;
+    const id = match(c.id) ? c.id : Object.keys(options).find((k) => /^\d+$/.test(k) && match(k));
+    return id ? { ...c, id: Number(id) } : c;
+  });
+  if (Object.keys(options).length) optionsCache.set(key, { at: Date.now(), columns });
+  return columns;
 }
 
 async function listItems(typeKey, { query, start = 0, limit = 20 } = {}) {
   const type = ASSET_TYPES[typeKey];
   if (!type) throw new Error('Tipo de inventario no válido.');
   return withSession(async (http, cfg, sessionToken) => {
-    const display = [2, ...type.columns.map((c) => c.id)];
-    const res = await http.get(`/search/${type.itemtype}?${searchQuery({ query, start, limit, display })}`, {
-      headers: { 'App-Token': cfg.appToken, 'Session-Token': sessionToken },
-    });
+    const headers = { 'App-Token': cfg.appToken, 'Session-Token': sessionToken };
+    const columns = await resolveColumns(type, http, headers, cfg);
+    const display = [2, ...columns.map((c) => c.id)];
+    const res = await http.get(`/search/${type.itemtype}?${searchQuery({ query, start, limit, display })}`, { headers });
     if (res.status !== 200 && res.status !== 206) {
       throw new Error(`Error listando ${type.label.toLowerCase()} en GLPI: ${explainGlpiError(res.status, res.data)}`);
     }
     const total = parseInt(String(res.headers['content-range'] || '').split('/')[1], 10);
     const rows = (res.data && res.data.data) || [];
     return {
-      items: rows.map((r) => mapRow(type, r)),
+      items: rows.map((r) => mapRow(columns, r)),
       total: Number.isNaN(total) ? (res.data.totalcount || rows.length) : total,
     };
   });
@@ -427,8 +493,9 @@ async function listAllItems(typeKey, { query, max = 20000 } = {}) {
   const type = ASSET_TYPES[typeKey];
   if (!type) throw new Error('Tipo de inventario no válido.');
   return withSession(async (http, cfg, sessionToken) => {
-    const display = [2, ...type.columns.map((c) => c.id)];
     const headers = { 'App-Token': cfg.appToken, 'Session-Token': sessionToken };
+    const columns = await resolveColumns(type, http, headers, cfg);
+    const display = [2, ...columns.map((c) => c.id)];
     const all = [];
     let total = Infinity;
     for (let start = 0; start < Math.min(total, max); start += 200) {
@@ -439,7 +506,7 @@ async function listAllItems(typeKey, { query, max = 20000 } = {}) {
       const t = parseInt(String(res.headers['content-range'] || '').split('/')[1], 10);
       total = Number.isNaN(t) ? (res.data.totalcount || 0) : t;
       const rows = (res.data && res.data.data) || [];
-      all.push(...rows.map((r) => mapRow(type, r)));
+      all.push(...rows.map((r) => mapRow(columns, r)));
       if (rows.length < 200) break;
     }
     return all;
@@ -514,15 +581,103 @@ function dual(legacyFn, v2Fn) {
   };
 }
 
+// ---------------------------------------------------------------------
+// Datos ampliados de las computadoras (sistema operativo, procesador,
+// memoria, IP). La API v2 de GLPI 11 no los entrega: no tiene sistema
+// operativo ni direcciones IP, y los componentes van uno por equipo. La
+// busqueda de la API clasica si, en una sola consulta. Por eso, aunque la
+// app este en modo v2, estos datos se piden a la API clasica del mismo
+// GLPI con el App-Token y el User-Token, si estan configurados.
+// ---------------------------------------------------------------------
+const EXTRAS_HELP = 'En GLPI: Configuración → General → API → active la API clásica ("Enable Legacy REST API") y el inicio de sesión con token externo; '
+  + 'en el cliente de API autorice la IP de este servidor; y en Configuración de esta app complete App-Token y User-Token.';
+const extrasCache = new Map(); // baseUrl -> { at, map }
+
+// Map id de computadora -> { os, os_version, processor, memory_type, memory, ip }.
+async function computerExtras() {
+  const legacy = await getConfig();
+  if (!legacy.appToken || !legacy.userToken) throw new Error('faltan el App-Token y el User-Token de la API clásica.');
+  const hit = extrasCache.get(legacy.baseUrl);
+  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.map;
+  const type = ASSET_TYPES.computadoras;
+  const map = await withSession(async (http, cfg, sessionToken) => {
+    const headers = { 'App-Token': cfg.appToken, 'Session-Token': sessionToken };
+    const columns = (await resolveColumns(type, http, headers, cfg)).filter((c) => c.extra);
+    const display = [2, ...columns.map((c) => c.id)];
+    const out = new Map();
+    let total = Infinity;
+    for (let start = 0; start < Math.min(total, 20000); start += 200) {
+      const res = await http.get(`/search/${type.itemtype}?${searchQuery({ start, limit: 200, display })}`, { headers });
+      if (res.status !== 200 && res.status !== 206) throw new Error(explainGlpiError(res.status, res.data));
+      const t = parseInt(String(res.headers['content-range'] || '').split('/')[1], 10);
+      total = Number.isNaN(t) ? (res.data.totalcount || 0) : t;
+      const rows = (res.data && res.data.data) || [];
+      rows.forEach((r) => { const row = mapRow(columns, r); out.set(String(row.id), row); });
+      if (rows.length < 200) break;
+    }
+    return out;
+  });
+  extrasCache.set(legacy.baseUrl, { at: Date.now(), map });
+  return map;
+}
+
+// Completa las filas (del modo v2) con los datos ampliados. Nunca hace
+// fallar el listado: si la API clasica no responde, devuelve el motivo.
+async function addExtras(typeKey, items) {
+  if (typeKey !== 'computadoras') return null;
+  try {
+    const map = await computerExtras();
+    items.forEach((it) => {
+      const extra = map.get(String(it.id));
+      if (extra) EXTRA_COLUMNS.forEach((c) => { it[c.key] = extra[c.key]; });
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err.message.replace(/^No se pudo iniciar sesión en GLPI: /, ''), help: EXTRAS_HELP };
+  }
+}
+
+async function listItemsAny(typeKey, opts) {
+  const cfg = await v2Config();
+  if (!cfg) return listItems(typeKey, opts); // la API clasica ya trae todas las columnas
+  const res = await v2.listItems(cfg, typeKey, opts);
+  res.extras = await addExtras(typeKey, res.items);
+  return res;
+}
+
+async function listAllItemsAny(typeKey, opts) {
+  const cfg = await v2Config();
+  if (!cfg) return listAllItems(typeKey, opts);
+  const items = await v2.listAllItems(cfg, typeKey, opts);
+  await addExtras(typeKey, items);
+  return items;
+}
+
+// Detalle del equipo: a los datos generales se suman los ampliados.
+async function getItemDetailAny(typeKey, id) {
+  const cfg = await v2Config();
+  const detail = cfg ? await v2.getItemDetail(cfg, typeKey, id) : await getItemDetail(typeKey, id);
+  if (typeKey === 'computadoras') {
+    try {
+      const extra = (await computerExtras()).get(String(id));
+      if (extra) EXTRA_COLUMNS.forEach((c) => { if (extra[c.key]) detail.fields.push({ label: c.label, value: extra[c.key] }); });
+    } catch (_) {
+      // el detalle se muestra igual, sin los datos ampliados
+    }
+  }
+  return detail;
+}
+
 module.exports = {
   ASSET_TYPES,
   normalizeBaseUrl,
   explainGlpiError,
   getConfig,
   apiVersion: async () => ((await v2Config()) ? 'v2' : 'legacy'),
-  listItems: dual(listItems, v2.listItems),
-  listAllItems: dual(listAllItems, v2.listAllItems),
-  getItemDetail: dual(getItemDetail, v2.getItemDetail),
+  listItems: listItemsAny,
+  listAllItems: listAllItemsAny,
+  getItemDetail: getItemDetailAny,
+  _clearCaches: () => { optionsCache.clear(); extrasCache.clear(); },
   getConnections: dual(getConnections, v2.getConnections),
   testConnection: dual(testConnection, v2.testConnection),
   searchComputers: dual(searchComputers, v2.searchComputers),

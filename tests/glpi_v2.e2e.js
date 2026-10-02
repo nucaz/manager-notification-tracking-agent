@@ -30,7 +30,23 @@ const DATA = {
   Printer: [{ id: 201, name: 'IMP-RECEPCION', serial: 'PSN1', otherserial: 'INV-P1', status: obj('En uso'), type: obj('Láser'),
     manufacturer: obj('HP'), model: obj('M404'), location: obj('Recepción'), entity: obj('DEPILZONE') }],
 };
-const seen = { tokenRequests: 0, lastToken: null, headers: null, filter: null, contract: null };
+const seen = { tokenRequests: 0, lastToken: null, headers: null, filter: null, contract: null, legacySearches: 0 };
+// API clasica del mismo GLPI (en GLPI 11: /api.php/v1): de ahi salen los
+// datos ampliados. Se puede "apagar", como viene por defecto en GLPI 11.
+const LEGACY = { enabled: false, app: 'app-token-prueba', user: 'user-token-prueba' };
+const EXTRA = { 2: 'id', 45: 'os', 46: 'os_version', 17: 'processor', 999: 'memory_type', 111: 'memory', 126: 'ip' };
+const LEGACY_PC = { os: 'Windows 11 Pro', os_version: '23H2', processor: ['Intel Core i5-12400', 'Intel Core i5-12400'], memory_type: 'DDR4$$##$$DDR4', memory: [8192, 8192], ip: ['127.0.0.1', '172.16.1.50', 'fe80::1'] };
+const SEARCH_OPTIONS = {
+  common: 'Características',
+  1: { name: 'Nombre', table: 'glpi_computers', field: 'name' },
+  10: { name: 'Señuelo', table: 'glpi_devicememories', field: 'designation' },
+  17: { name: 'Procesador', table: 'glpi_deviceprocessors', field: 'designation' },
+  45: { name: 'Sistema operativo - Nombre', table: 'glpi_operatingsystems', field: 'name' },
+  46: { name: 'Sistema operativo - Versión', table: 'glpi_operatingsystemversions', field: 'name' },
+  111: { name: 'Memoria', table: 'glpi_items_devicememories', field: 'size' },
+  126: { name: 'IP', table: 'glpi_ipaddresses', field: 'name' },
+  999: { name: 'Tipo de memoria', table: 'glpi_devicememorytypes', field: 'name' },
+};
 
 function fakeGlpi() {
   const g = express();
@@ -47,6 +63,20 @@ function fakeGlpi() {
       return res.status(400).json({ error: 'invalid_grant', error_description: 'The user credentials were incorrect.' });
     }
     res.json({ token_type: 'Bearer', expires_in: 3600, access_token: 'token-v2', refresh_token: 'r' });
+  });
+  g.get('/api.php/v1/initSession', (req, res) => {
+    if (!LEGACY.enabled) return res.status(400).json(['ERROR', 'API deshabilitada']);
+    if (req.get('App-Token') !== LEGACY.app) return res.status(400).json(['ERROR_WRONG_APP_TOKEN_PARAMETER', 'x']);
+    if (req.get('Authorization') !== `user_token ${LEGACY.user}`) return res.status(401).json(['ERROR_GLPI_LOGIN_USER_TOKEN', 'x']);
+    res.json({ session_token: 'sesion-legacy' });
+  });
+  g.get('/api.php/v1/killSession', (req, res) => res.json({}));
+  g.get('/api.php/v1/listSearchOptions/Computer', (req, res) => res.json(SEARCH_OPTIONS));
+  g.get('/api.php/v1/search/Computer', (req, res) => {
+    seen.legacySearches += 1;
+    const display = Object.values(req.query.forcedisplay || {}).map(String);
+    const data = PCS.map((pc) => Object.fromEntries(display.map((id) => [id, EXTRA[id] === 'id' ? pc.id : LEGACY_PC[EXTRA[id]]])));
+    res.set('Content-Range', `0-${data.length - 1}/${data.length}`).json({ totalcount: data.length, count: data.length, data });
   });
   g.use('/api.php', (req, res, next) => {
     if (req.get('Authorization') !== 'Bearer token-v2') {
@@ -151,6 +181,37 @@ async function main() {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(Buffer.from(await x.arrayBuffer()));
     check(`Excel con todas las páginas (${wb.worksheets[0].rowCount - 1} filas)`, wb.worksheets[0].rowCount === 31);
+
+    // --- Datos ampliados: la API v2 no los entrega; salen de la API clasica
+    p = await get('/glpi/inventario');
+    check('v2 sin tokens de la API clásica: el inventario se lista igual y avisa qué falta para los datos ampliados', p.text.includes('PC-001')
+      && p.text.includes('Sin sistema operativo, procesador, memoria ni IP') && p.text.includes('faltan el App-Token y el User-Token'));
+    check('En v2 la pantalla también muestra entidad y fabricante', p.text.includes('Raíz &gt; DEPILZONE') && p.text.includes('Lenovo'));
+    cfg = { ...cfg, glpi_app_token: LEGACY.app, glpi_user_token: LEGACY.user };
+    p = await get('/glpi/inventario');
+    check('v2 con la API clásica apagada en GLPI: lo explica y dice cómo activarla', p.text.includes('PC-001')
+      && p.text.includes('La API clásica está desactivada en GLPI') && p.text.includes('Enable Legacy REST API') && p.text.includes('autorice la IP de este servidor'));
+    p = await get('/glpi/inventario?tipo=monitores');
+    check('El aviso solo aparece en Computadoras', !p.text.includes('Sin sistema operativo'));
+    LEGACY.enabled = true;
+    p = await get('/glpi/inventario');
+    check('v2 + API clásica activa: trae sistema operativo y versión, procesador, tipo de memoria, memoria e IP, sin aviso',
+      !p.text.includes('Sin sistema operativo') && p.text.includes('Windows 11 Pro') && p.text.includes('23H2') && p.text.includes('>Intel Core i5-12400<')
+      && p.text.includes('>DDR4<') && p.text.includes('16 GB (2 módulos)') && p.text.includes('>172.16.1.50<') && !p.text.includes('>127.0.0.1'));
+    const searches = seen.legacySearches;
+    p = await get('/glpi/inventario?tipo=computadoras&page=2');
+    check('Los datos ampliados se piden una vez y se reutilizan entre páginas', p.text.includes('Windows 11 Pro') && seen.legacySearches === searches);
+    p = await get('/glpi/inventario/1');
+    check('Detalle de computadora en v2: suma procesador, memoria, sistema operativo e IP', p.text.includes('Procesador') && p.text.includes('Intel Core i5-12400')
+      && p.text.includes('Versión del SO') && p.text.includes('172.16.1.50'));
+    const x2 = await fetch(`${base}/glpi/inventario/exportar.xlsx?tipo=computadoras`);
+    const wb2 = new ExcelJS.Workbook();
+    await wb2.xlsx.load(Buffer.from(await x2.arrayBuffer()));
+    const head = wb2.worksheets[0].getRow(1).values;
+    const cell = (label) => wb2.worksheets[0].getRow(2).getCell(head.indexOf(label)).value;
+    check('Excel en v2: todas las columnas pedidas, con datos', wb2.worksheets[0].rowCount === 31 && cell('Sistema operativo') === 'Windows 11 Pro'
+      && cell('Versión del SO') === '23H2' && cell('Entidad') === 'Raíz > DEPILZONE' && cell('Fabricante') === 'Lenovo'
+      && cell('Procesador') === 'Intel Core i5-12400' && cell('Tipo de memoria') === 'DDR4' && cell('Memoria') === '16 GB (2 módulos)' && cell('IP') === '172.16.1.50');
 
     const ent = await glpiClient.listEntities();
     check('Entidades por la API v2', ent[0] && ent[0].completename === 'Raíz');
