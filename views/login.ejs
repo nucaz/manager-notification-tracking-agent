@@ -30,6 +30,15 @@
         <label class="form-label">Contraseña</label>
         <input type="password" name="password" class="form-control" required>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="captcha">Código de verificación</label>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <%- captchaSvg %>
+          <a href="/login" class="small" title="Mostrar otro código">Otro código</a>
+        </div>
+        <input type="text" name="captcha" id="captcha" class="form-control text-uppercase" required autocomplete="off" autocapitalize="characters"
+               spellcheck="false" maxlength="<%= captchaLength %>" placeholder="Los <%= captchaLength %> caracteres de la imagen">
+      </div>
       <button type="submit" class="btn btn-primary w-100">Ingresar</button>
     </form>
   </div>

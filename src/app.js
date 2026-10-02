@@ -3,6 +3,7 @@ const express = require('express');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const flash = require('connect-flash');
+const rateLimit = require('express-rate-limit');
 const env = require('./config/env');
 const { ensureCsrfToken } = require('./middleware/csrf');
 const mobileLabels = require('./config/mobileLabels');
@@ -48,10 +49,30 @@ app.use(
   whatsappWebhookRoutes
 );
 
+// Cabeceras de seguridad basicas en toda respuesta.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  next();
+});
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Tope general por IP (despues de los archivos estaticos, que no cuentan):
+// muy por encima del uso de una persona, pero corta a un script que
+// recorre rutas (fuzzing) o descarga pantallas en serie (scraping). El
+// login y el 2FA tienen ademas su propio limite, mas estricto.
+app.use(rateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Demasiadas solicitudes seguidas desde este equipo. Espere un minuto e intente de nuevo.',
+}));
 
 app.use(
   session({

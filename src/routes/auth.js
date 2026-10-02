@@ -5,6 +5,7 @@ const pool = require('../db/pool');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const auditService = require('../services/auditService');
 const trustedDeviceService = require('../services/trustedDeviceService');
+const captchaService = require('../services/captchaService');
 const { completeLogin } = require('./twoFactor');
 
 const router = express.Router();
@@ -25,11 +26,19 @@ const MAX_LOGIN_ATTEMPTS = 5;
 
 router.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
-  res.render('login', { title: 'Iniciar sesion' });
+  // Cada vez que se muestra el formulario se emite un captcha nuevo.
+  res.render('login', { title: 'Iniciar sesion', captchaSvg: captchaService.issue(req), captchaLength: captchaService.LENGTH });
 });
 
 router.post('/login', loginLimiter, verifyCsrfToken, async (req, res) => {
   const { email, password } = req.body;
+  // Captcha antes que nada: sin resolverlo no se llega a probar la
+  // contraseña (ni se consume un intento de la cuenta).
+  if (!captchaService.verify(req, req.body.captcha)) {
+    await auditService.log(req, { action: 'login_failed', target: email, detail: 'código de verificación incorrecto o vencido' });
+    req.flash('error', 'El código de verificación no coincide o venció. Escriba el nuevo código que aparece en la imagen.');
+    return res.redirect('/login');
+  }
   try {
     const [rows] = await pool.query(
       'SELECT * FROM users WHERE email = ? AND active = 1 LIMIT 1',
