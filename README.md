@@ -59,6 +59,18 @@ Aplicación web para el seguimiento de:
 - **Catálogos** (Configuración → Gestionar catálogos, solo admin): listas
   de sedes, áreas, marcas y modelos reutilizables desde los formularios
   (por ahora, en Celulares) para estandarizar la carga de datos
+- **Reportes y consultas**: vencimientos (licencias, dominios, ISP,
+  servidores, certificados), inventario (celulares, chips y computadoras,
+  monitores e impresoras de GLPI) y repositorios del módulo DevOps. Cada
+  reporte muestra la cantidad total y por grupo (estado, sede, operadora,
+  entidad…), se filtra y se exporta a Excel, CSV o **PDF para imprimir**.
+  En los de inventario el PDF lleva, por fila, un código de barras
+  (Code 128: IMEI, código interno, número, ICCID, n.º de serie o de
+  inventario, a elección) y una casilla para marcar, para verificar el
+  inventario físico con un lector contra lo que dice la aplicación
+- **Panel principal**: además de los vencimientos, cuántos celulares y
+  chips hay y cuántas computadoras, monitores e impresoras tiene GLPI
+  (el conteo de GLPI se renueva cada 10 minutos)
 - **Tablas ajustables** (en todas las pantallas): elija cuántos registros
   ver (10, 20, 30, 40, 50, 100 o todos) con "Anterior / Siguiente", estire
   una columna arrastrando el borde derecho de su encabezado y cámbiela de

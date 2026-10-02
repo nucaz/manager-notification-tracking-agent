@@ -3,6 +3,7 @@ const pool = require('../db/pool');
 const { requireAuth } = require('../middleware/auth');
 const { daysUntil, statusFromDays } = require('../services/expirationService');
 const exchangeRateService = require('../services/exchangeRateService');
+const glpiClient = require('../services/glpiClient');
 
 const router = express.Router();
 
@@ -29,6 +30,11 @@ router.get('/', requireAuth, async (req, res, next) => {
     const [servers] = await pool.query('SELECT * FROM servers');
     const [certificates] = await pool.query('SELECT * FROM certificates');
     const [mobileDeviceCountRows] = await pool.query('SELECT COUNT(*) AS c FROM mobile_devices');
+    const [mobileLineCountRows] = await pool.query("SELECT COUNT(*) AS c FROM mobile_lines WHERE estado <> 'de_baja'");
+    // Computadoras, monitores e impresoras salen de GLPI; si no responde, el
+    // panel se muestra igual (sin esos numeros).
+    const glpiCounts = res.locals.enabledModules && res.locals.enabledModules.glpi_inventario
+      ? await glpiClient.assetCounts().catch(() => null) : null;
 
     const all = [
       ...enrich(licenses, 'expiration_date', 'license', 'Licencia', '/licencias'),
@@ -49,6 +55,7 @@ router.get('/', requireAuth, async (req, res, next) => {
       servers: servers.length,
       certificates: certificates.length,
       mobileDevices: mobileDeviceCountRows[0].c,
+      mobileLines: mobileLineCountRows[0].c,
     };
 
     const upcoming = all
@@ -64,6 +71,8 @@ router.get('/', requireAuth, async (req, res, next) => {
       counts,
       upcoming,
       diagramCount: diagramCountRows[0].c,
+      glpiCounts,
+      glpiTypes: glpiClient.ASSET_TYPES,
       exchangeRate,
     });
   } catch (err) {

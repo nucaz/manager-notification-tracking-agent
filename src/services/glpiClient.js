@@ -679,8 +679,40 @@ async function getItemDetailAny(typeKey, id) {
   return detail;
 }
 
+// ---------------------------------------------------------------------
+// Cuantas computadoras, monitores e impresoras hay en GLPI (panel
+// principal). El panel no puede quedar esperando a GLPI: el conteo se
+// guarda 10 minutos, pasado ese tiempo se entrega el ultimo conocido
+// mientras se renueva por detras, y la primera vez se espera poco.
+//   null                      -> GLPI no esta configurado
+//   { computadoras: n|null }  -> null = sin respuesta o sin permiso
+// ---------------------------------------------------------------------
+const COUNTS_TTL_MS = 10 * 60 * 1000;
+const COUNTS_WAIT_MS = 4000;
+const countsCache = { url: null, at: 0, value: null, pending: null };
+const NO_COUNTS = Object.fromEntries(Object.keys(ASSET_TYPES).map((k) => [k, null]));
+
+async function assetCounts() {
+  const settings = await settingsService.getAll();
+  const url = settings.glpi_base_url || '';
+  if (!url) return null;
+  if (countsCache.url !== url) Object.assign(countsCache, { url, at: 0, value: null });
+  if (countsCache.value && Date.now() - countsCache.at < COUNTS_TTL_MS) return countsCache.value;
+  if (!countsCache.pending) {
+    countsCache.pending = module.exports.testConnection()
+      .then((r) => { if (countsCache.url === url) Object.assign(countsCache, { at: Date.now(), value: { ...NO_COUNTS, ...r.counts } }); })
+      // GLPI caido: se anota "sin respuesta" por un minuto, para no hacer esperar a cada visita al panel.
+      .catch(() => { if (countsCache.url === url && !countsCache.value) Object.assign(countsCache, { at: Date.now() - COUNTS_TTL_MS + 60000, value: NO_COUNTS }); })
+      .finally(() => { countsCache.pending = null; });
+  }
+  if (countsCache.value) return countsCache.value;
+  await Promise.race([countsCache.pending, new Promise((resolve) => { setTimeout(resolve, COUNTS_WAIT_MS).unref(); })]);
+  return countsCache.value || NO_COUNTS;
+}
+
 module.exports = {
   ASSET_TYPES,
+  assetCounts,
   normalizeBaseUrl,
   explainGlpiError,
   getConfig,
@@ -688,7 +720,7 @@ module.exports = {
   listItems: listItemsAny,
   listAllItems: listAllItemsAny,
   getItemDetail: getItemDetailAny,
-  _clearCaches: () => { optionsCache.clear(); extrasCache.clear(); },
+  _clearCaches: () => { optionsCache.clear(); extrasCache.clear(); Object.assign(countsCache, { url: null, at: 0, value: null }); },
   _formats: { ipList, memoryTotal },
   getConnections: dual(getConnections, v2.getConnections),
   testConnection: dual(testConnection, v2.testConnection),

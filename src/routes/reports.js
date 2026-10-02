@@ -1,113 +1,84 @@
 const express = require('express');
-const pool = require('../db/pool');
 const { requireAuth } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/modules');
-const { daysUntil, statusFromDays } = require('../services/expirationService');
+const reportService = require('../services/reportService');
+const { buildPdf } = require('../services/reportPdf');
 
 const router = express.Router();
 router.use(requireAuth, moduleRequired('reportes'));
 
-const MODULES = {
-  license: {
-    label: 'Licencias de software',
-    table: 'software_licenses',
-    dateField: 'expiration_date',
-    nameField: 'product_name',
-    columns: ['product_name', 'vendor', 'assigned_to', 'seats', 'cost', 'currency', 'expiration_date'],
-  },
-  domain: {
-    label: 'Dominios',
-    table: 'domains',
-    dateField: 'expiration_date',
-    nameField: 'domain_name',
-    columns: ['domain_name', 'registrar', 'responsible', 'renewal_cost', 'currency', 'expiration_date'],
-  },
-  isp_contract: {
-    label: 'Contratos ISP',
-    table: 'isp_contracts',
-    dateField: 'end_date',
-    nameField: 'provider',
-    columns: ['provider', 'contract_number', 'bandwidth_down', 'bandwidth_up', 'monthly_cost', 'currency', 'end_date'],
-  },
-  server: {
-    label: 'Servidores y Activos TI',
-    table: 'servers',
-    dateField: 'support_expiration_date',
-    nameField: 'name',
-    columns: ['name', 'asset_type', 'environment', 'criticality', 'responsible', 'status', 'support_expiration_date'],
-  },
-  certificate: {
-    label: 'Certificados TLS',
-    table: 'certificates',
-    dateField: 'expiration_date',
-    nameField: 'common_name',
-    columns: ['common_name', 'certificate_type', 'issuer', 'responsible', 'cost', 'currency', 'expiration_date'],
-  },
-};
+// El reporte pedido (?modulo=), entre los que este usuario puede abrir.
+function pick(req, res) {
+  const reports = reportService.available(req.session.user, res.locals.enabledModules);
+  const mod = reports[req.query.modulo] ? req.query.modulo : Object.keys(reports)[0];
+  return { reports, mod, report: reports[mod] };
+}
 
-async function fetchModule(mod, { from, to, status }) {
-  const cfg = MODULES[mod];
-  const [rows] = await pool.query(`SELECT * FROM ${cfg.table}`);
-  let enriched = rows.map((r) => {
-    const days = daysUntil(r[cfg.dateField]);
-    return { ...r, days_left: days, computed_status: statusFromDays(days) };
-  });
-  if (from) enriched = enriched.filter((r) => r[cfg.dateField] && r[cfg.dateField] >= from);
-  if (to) enriched = enriched.filter((r) => r[cfg.dateField] && r[cfg.dateField] <= to);
-  if (status) enriched = enriched.filter((r) => r.computed_status === status);
-  enriched.sort((a, b) => (a.days_left ?? 9999) - (b.days_left ?? 9999));
-  return { cfg, rows: enriched };
+// Parametros que acompanan a los enlaces de exportacion: los mismos
+// filtros que se estan viendo.
+function exportQuery(mod, query, selects) {
+  const p = new URLSearchParams({ modulo: mod });
+  ['q', 'from', 'to', 'status', 'barras'].forEach((k) => { if (query[k]) p.set(k, String(query[k])); });
+  selects.forEach((s) => { if (s.value) p.set(s.name, s.value); });
+  return p.toString();
 }
 
 router.get('/', async (req, res, next) => {
   try {
-    const mod = MODULES[req.query.modulo] ? req.query.modulo : 'license';
-    const { from = '', to = '', status = '' } = req.query;
-    const { cfg, rows } = await fetchModule(mod, { from, to, status });
-    res.render('reports/index', {
-      title: 'Reportes y consultas',
-      modules: MODULES,
-      mod,
-      cfg,
-      rows,
-      filters: { from, to, status },
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get('/exportar.csv', async (req, res, next) => {
-  try {
-    const mod = MODULES[req.query.modulo] ? req.query.modulo : 'license';
-    const { from = '', to = '', status = '' } = req.query;
-    const { cfg, rows } = await fetchModule(mod, { from, to, status });
-
-    const headers = [...cfg.columns, 'dias_restantes', 'estado'];
-    const lines = [headers.join(',')];
-    for (const r of rows) {
-      const values = cfg.columns.map((c) => csvEscape(r[c]));
-      values.push(csvEscape(r.days_left));
-      values.push(csvEscape(r.computed_status));
-      lines.push(values.join(','));
+    const { reports, mod, report } = pick(req, res);
+    const base = {
+      title: 'Reportes y consultas', reports, mod, report,
+      filters: { q: req.query.q || '', from: req.query.from || '', to: req.query.to || '', status: req.query.status || '' },
+    };
+    let result;
+    try {
+      result = await reportService.run(report, req.query);
+    } catch (err) {
+      // GLPI o el sidecar no respondieron: la pantalla se muestra igual, con el motivo.
+      return res.render('reports/index', {
+        ...base, rows: [], selects: [], barcode: null, summary: { total: 0, groups: [] }, loadError: err.message, exportQuery: `modulo=${mod}`,
+      });
     }
-    const csv = '﻿' + lines.join('\n'); // BOM para acentos en Excel
-
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="reporte_${mod}.csv"`);
-    res.send(csv);
+    res.render('reports/index', { ...base, ...result, loadError: null, exportQuery: exportQuery(mod, req.query, result.selects) });
   } catch (err) {
     next(err);
   }
 });
 
-function csvEscape(value) {
-  if (value === null || value === undefined) return '';
-  const str = String(value);
-  if (/[",\n]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
+const FORMATS = {
+  csv: {
+    type: 'text/csv; charset=utf-8',
+    build: (report, result) => reportService.buildCsv(report, result.rows),
+  },
+  xlsx: {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    build: (report, result, meta) => reportService.buildWorkbook(report, result, meta),
+  },
+  pdf: {
+    type: 'application/pdf',
+    build: (report, result, meta) => buildPdf({
+      title: `Reporte: ${report.label}`, appName: meta.appName, generatedBy: meta.generatedBy, generatedAt: meta.generatedAt,
+      filtersText: result.filtersText, summary: result.summary, columns: report.print, rows: result.rows, barcode: result.barcode,
+    }),
+  },
+};
+
+router.get('/exportar.:formato', async (req, res, next) => {
+  const format = FORMATS[req.params.formato];
+  if (!format) return next();
+  const { mod, report } = pick(req, res);
+  try {
+    const result = await reportService.run(report, req.query);
+    const user = req.session.user || {};
+    const meta = { appName: res.locals.appName || 'Gestión de Licencias', generatedBy: user.full_name || user.email || 'usuario', generatedAt: reportService.now() };
+    const body = await format.build(report, result, meta);
+    res.setHeader('Content-Type', format.type);
+    res.setHeader('Content-Disposition', `attachment; filename="reporte_${mod}_${new Date().toISOString().slice(0, 10)}.${req.params.formato}"`);
+    res.send(body);
+  } catch (err) {
+    req.flash('error', `No se pudo generar el reporte "${report.label}": ${err.message}`);
+    res.redirect(`/reportes?modulo=${encodeURIComponent(mod)}`);
   }
-  return str;
-}
+});
 
 module.exports = router;

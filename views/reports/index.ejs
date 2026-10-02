@@ -1,64 +1,112 @@
 <%- include('../partials/head', { title: title }) %>
+<%
+  const grupos = {};
+  Object.entries(reports).forEach(function(entry) { (grupos[entry[1].group] = grupos[entry[1].group] || []).push(entry); });
+%>
 
 <h2 class="mb-3">Reportes y consultas</h2>
 
-<form class="row g-2 mb-3" method="get">
+<form class="row g-2 mb-3 align-items-end" method="get" id="reporte_form">
   <div class="col-auto">
-    <select name="modulo" class="form-select">
-      <% Object.entries(modules).forEach(function(entry) { %>
-        <option value="<%= entry[0] %>" <%= mod === entry[0] ? 'selected' : '' %>><%= entry[1].label %></option>
+    <label class="form-label small mb-1" for="reporte_modulo">Reporte</label>
+    <%# Al cambiar de reporte se limpian los filtros del anterior (no aplican al nuevo). %>
+    <select name="modulo" id="reporte_modulo" class="form-select" onchange="location.href = '/reportes?modulo=' + encodeURIComponent(this.value)">
+      <% Object.entries(grupos).forEach(function(grupo) { %>
+        <optgroup label="<%= grupo[0] %>">
+          <% grupo[1].forEach(function(entry) { %>
+            <option value="<%= entry[0] %>" <%= mod === entry[0] ? 'selected' : '' %>><%= entry[1].label %></option>
+          <% }); %>
+        </optgroup>
       <% }); %>
     </select>
   </div>
   <div class="col-auto">
-    <input type="date" name="from" value="<%= filters.from %>" class="form-control" title="Vence desde">
+    <label class="form-label small mb-1" for="reporte_q">Buscar</label>
+    <input type="search" name="q" id="reporte_q" value="<%= filters.q %>" class="form-control" placeholder="Texto en cualquier columna">
   </div>
-  <div class="col-auto">
-    <input type="date" name="to" value="<%= filters.to %>" class="form-control" title="Vence hasta">
-  </div>
-  <div class="col-auto">
-    <select name="status" class="form-select">
-      <option value="">Todos los estados</option>
-      <option value="vencido" <%= filters.status === 'vencido' ? 'selected' : '' %>>Vencidos</option>
-      <option value="por_vencer" <%= filters.status === 'por_vencer' ? 'selected' : '' %>>Por vencer</option>
-      <option value="activo" <%= filters.status === 'activo' ? 'selected' : '' %>>Activos</option>
-    </select>
-  </div>
+  <% if (report.kind === 'vencimientos') { %>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="reporte_from">Vence desde</label>
+      <input type="date" name="from" id="reporte_from" value="<%= filters.from %>" class="form-control">
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="reporte_to">Vence hasta</label>
+      <input type="date" name="to" id="reporte_to" value="<%= filters.to %>" class="form-control">
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="reporte_status">Estado</label>
+      <select name="status" id="reporte_status" class="form-select">
+        <option value="">Todos los estados</option>
+        <option value="vencido" <%= filters.status === 'vencido' ? 'selected' : '' %>>Vencidos</option>
+        <option value="por_vencer" <%= filters.status === 'por_vencer' ? 'selected' : '' %>>Por vencer</option>
+        <option value="activo" <%= filters.status === 'activo' ? 'selected' : '' %>>Activos</option>
+      </select>
+    </div>
+  <% } %>
+  <% selects.forEach(function(s) { %>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="reporte_<%= s.name %>"><%= s.label %></label>
+      <select name="<%= s.name %>" id="reporte_<%= s.name %>" class="form-select" style="max-width: 16rem;">
+        <option value="">Todos</option>
+        <% s.options.forEach(function(o) { %><option value="<%= o %>" <%= s.value === o ? 'selected' : '' %>><%= o %></option><% }); %>
+      </select>
+    </div>
+  <% }); %>
+  <% if (report.barcodes.length) { %>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="reporte_barras">Código de barras del PDF</label>
+      <select name="barras" id="reporte_barras" class="form-select">
+        <% report.barcodes.forEach(function(b) { %><option value="<%= b.key %>" <%= barcode && barcode.key === b.key ? 'selected' : '' %>><%= b.label %></option><% }); %>
+      </select>
+    </div>
+  <% } %>
   <div class="col-auto">
     <button class="btn btn-outline-secondary" type="submit">Consultar</button>
   </div>
-  <div class="col-auto">
-    <a class="btn btn-outline-success"
-       href="/reportes/exportar.csv?modulo=<%= mod %>&from=<%= filters.from %>&to=<%= filters.to %>&status=<%= filters.status %>">
-      <i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV
+  <div class="col-auto ms-auto d-flex gap-2">
+    <a class="btn btn-outline-danger" href="/reportes/exportar.pdf?<%= exportQuery %>"
+       title="<%= report.barcodes.length ? 'Para imprimir y verificar el inventario físico: cada fila lleva su código de barras y una casilla para marcar' : 'Para imprimir' %>">
+      <i class="bi bi-file-earmark-pdf"></i> PDF<%= report.barcodes.length ? ' con código de barras' : '' %>
     </a>
+    <a class="btn btn-outline-success" href="/reportes/exportar.xlsx?<%= exportQuery %>"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+    <a class="btn btn-outline-secondary" href="/reportes/exportar.csv?<%= exportQuery %>"><i class="bi bi-filetype-csv"></i> CSV</a>
   </div>
 </form>
 
+<% if (loadError) { %>
+  <div class="alert alert-warning"><strong>No se pudo cargar este reporte.</strong> <%= loadError %></div>
+<% } else { %>
+  <div class="card p-3 mb-3">
+    <div class="d-flex flex-wrap align-items-baseline gap-2">
+      <span class="fs-4 fw-semibold" id="reporte_total"><%= summary.total %></span>
+      <span class="text-muted">registro(s) · <%= report.label %></span>
+    </div>
+    <% summary.groups.forEach(function(g) { %>
+      <div class="mt-2 small">
+        <span class="text-muted me-1"><%= g.label %>:</span>
+        <% g.items.slice(0, 14).forEach(function(i) { %><span class="badge bg-light text-dark border me-1 mb-1"><%= i[0] %> <strong><%= i[1] %></strong></span><% }); %>
+        <% if (g.items.length > 14) { %><span class="text-muted">y <%= g.items.length - 14 %> más (completo en el Excel)</span><% } %>
+      </div>
+    <% }); %>
+  </div>
+<% } %>
+
 <div class="card p-3">
   <div class="table-responsive">
-    <table class="table table-hover align-middle">
+    <table class="table table-hover table-sm align-middle">
       <thead>
-        <tr>
-          <% cfg.columns.forEach(function(c) { %><th><%= c %></th><% }); %>
-          <th>Días restantes</th>
-          <th>Estado</th>
-        </tr>
+        <tr><% report.columns.forEach(function(c) { %><th><%= c.label %></th><% }); %></tr>
       </thead>
       <tbody>
         <% rows.forEach(function(r) { %>
           <tr>
-            <% cfg.columns.forEach(function(c) { %><td><%= r[c] !== null && r[c] !== undefined ? r[c] : '—' %></td><% }); %>
-            <td><%= r.days_left !== null ? r.days_left : '—' %></td>
-            <td>
-              <span class="badge <%= r.computed_status === 'vencido' ? 'bg-danger' : r.computed_status === 'por_vencer' ? 'bg-warning text-dark' : r.computed_status === 'activo' ? 'bg-success' : 'bg-secondary' %>">
-                <%= r.computed_status %>
-              </span>
-            </td>
+            <% report.columns.forEach(function(c) { const v = r[c.key]; const vacio = v === null || v === undefined || v === ''; %>
+              <td<%- !vacio && String(v).length <= 22 ? ' class="text-nowrap"' : '' %>><% if (c.badge && !vacio) { %><span class="badge <%= c.badge(r) %>"><%= v %></span><% } else { %><%= vacio ? '—' : v %><% } %></td>
+            <% }); %>
           </tr>
         <% }); %>
         <% if (rows.length === 0) { %>
-          <tr><td colspan="<%= cfg.columns.length + 2 %>" class="text-center text-muted py-4">Sin resultados para los filtros seleccionados.</td></tr>
+          <tr><td colspan="<%= report.columns.length %>" class="text-center text-muted py-4">Sin resultados para los filtros seleccionados.</td></tr>
         <% } %>
       </tbody>
     </table>
