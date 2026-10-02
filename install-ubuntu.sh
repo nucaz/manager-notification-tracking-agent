@@ -310,6 +310,25 @@ if [ "$CONFIGURE_SIDECAR_ENV" -eq 1 ]; then
 fi
 
 # ==========================================================================
+# 5b. Acceso unico entre la app y DevOps Sidecar
+# ==========================================================================
+# Un solo usuario para las dos aplicaciones: la app firma pases con este
+# secreto y el sidecar los verifica, asi que debe ser el MISMO valor en los
+# dos .env. No lo escribe una persona. Si ya coincide en ambos, no se toca;
+# si falta en alguno o difieren, se iguala (conservando el de la app si ya
+# tenia uno).
+SSO_APP_VAL="$(grep '^SSO_SHARED_SECRET=' .env 2>/dev/null | head -1 | cut -d= -f2-)"
+SSO_SIDECAR_VAL="$(grep '^SSO_SHARED_SECRET=' devops-sidecar/.env 2>/dev/null | head -1 | cut -d= -f2-)"
+if [ -z "$SSO_APP_VAL" ] || [ "$SSO_APP_VAL" != "$SSO_SIDECAR_VAL" ]; then
+  [ -n "$SSO_APP_VAL" ] || SSO_APP_VAL="$(gen_secret)"
+  set_env_var .env SSO_SHARED_SECRET "$SSO_APP_VAL"
+  set_env_var devops-sidecar/.env SSO_SHARED_SECRET "$SSO_APP_VAL"
+  c_ok "Acceso unico configurado: a DevOps Sidecar se entra desde el menu DevOps de la"
+  c_ok "app, con el mismo usuario (el usuario/contraseña del dashboard quedan de reserva"
+  c_ok "y apagados; ver DASHBOARD_BASIC_AUTH en devops-sidecar/.env)."
+fi
+
+# ==========================================================================
 # 6. Construir y levantar los contenedores
 # ==========================================================================
 echo

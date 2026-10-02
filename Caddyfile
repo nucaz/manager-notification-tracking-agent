@@ -1,0 +1,41 @@
+# HTTPS delante de las dos aplicaciones (ver docker-compose.https.yml y el
+# apartado "HTTPS" del README). Caddy termina el cifrado y reenvia por la
+# red interna de Docker; las aplicaciones dejan de publicarse directamente.
+#
+# El certificado lo emite la autoridad interna de Caddy ("tls internal"),
+# para cualquier nombre o IP por el que se entre: sirve en una red interna,
+# sin dominio publico. Los navegadores avisaran hasta que se instale en las
+# PC el certificado raiz de esa autoridad (README, "HTTPS").
+#
+# No se envia la cabecera HSTS a proposito: con un certificado que el
+# navegador todavia no reconoce, HSTS impediria entrar.
+{
+	admin off
+	auto_https disable_redirects
+}
+
+# Aplicacion principal: https://<servidor>
+https:// {
+	tls internal {
+		on_demand
+	}
+	encode gzip
+	reverse_proxy app:3000
+}
+
+# DevOps Sidecar: https://<servidor>:8443
+https://:8443 {
+	tls internal {
+		on_demand
+	}
+	reverse_proxy devops-sidecar:8000
+}
+
+# Direcciones anteriores (sin cifrar): solo redirigen a la version cifrada.
+http://:80, http://:8090 {
+	redir https://{host}{uri} 308
+}
+
+http://:8091 {
+	redir https://{host}:8443{uri} 308
+}

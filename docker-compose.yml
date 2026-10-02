@@ -11,7 +11,10 @@ services:
       # Puerto expuesto en el host. Se usa 8090 para no chocar con GLPI/Zabbix
       # (que normalmente ocupan 80/443/8080 en el mismo servidor). Ajustar si
       # ese puerto ya esta en uso: "OTRO_PUERTO:3000"
-      - "8090:3000"
+      # Con HTTPS (docker-compose.https.yml) se cambia en el .env a
+      # APP_PUBLISH=127.0.0.1:18090: la app deja de publicarse a la red y
+      # solo se llega a ella por el proxy cifrado.
+      - "${APP_PUBLISH:-8090}:3000"
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -30,7 +33,8 @@ services:
       - ./devops-sidecar/.env
     ports:
       # Puerto distinto al de "app" (8090). Cambialo si ya esta en uso.
-      - "8091:8000"
+      # Con HTTPS: SIDECAR_PUBLISH=127.0.0.1:18091 (ver arriba).
+      - "${SIDECAR_PUBLISH:-8091}:8000"
     volumes:
       - devops_repos:/data/repos
       - devops_backups:/data/backups
