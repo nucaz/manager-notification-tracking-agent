@@ -108,24 +108,25 @@ router.get('/exportar.xlsx', async (req, res, next) => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Chips');
     const headers = ['Número', 'Código de país', 'ICCID', 'Operadora', 'Plan', 'Costo sin descuento (S/)', 'Descuento (S/)',
-      'Costo con descuento (S/)', 'Detalle del descuento', 'Estado', 'Ubicación',
+      'Costo con descuento (S/)', 'Detalle del descuento', 'Estado', 'Fecha de baja', 'Motivo de la baja', 'Ubicación',
       'Usuario', 'Área', 'Sede', 'IMEI del celular', 'Código de activo', 'Notas'];
     sheet.addRow(headers);
     rows.forEach((r) => sheet.addRow([
       String(r.phone_number), r.calling_code ? `+${r.calling_code}` : '', r.iccid ? String(r.iccid) : '', r.operadora || '',
       r.plan || '', r.costo_plan === null ? '' : Number(r.costo_plan), r.costo_plan === null ? '' : Number(r.descuento_plan) || 0,
       r.costo_plan === null ? '' : lineService.netCost(r), r.descuento_nota || '', labels.lineEstado(r.estado).label,
+      r.fecha_baja || '', r.motivo_baja || '',
       labels.lineUbicacion(r.ubicacion).label, r.holder || '', r.area || '', r.sede || '', r.imei ? String(r.imei) : '',
       r.asset_code || '', r.notes || '',
     ]));
     sheet.addRow([]);
-    const total = sheet.addRow(['TOTAL', '', '', '', `${summary.total} chip(s)`, summary.costoTotal, summary.descuentoTotal, summary.netoTotal]);
+    const total = sheet.addRow(['TOTAL (sin los de baja)', '', '', '', `${summary.total} chip(s)`, summary.costoTotal, summary.descuentoTotal, summary.netoTotal]);
     total.font = { bold: true };
     sheet.getRow(1).font = { bold: true };
     [6, 7, 8].forEach((c) => { sheet.getColumn(c).numFmt = '#,##0.00'; });
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
-    [14, 10, 22, 12, 18, 16, 14, 16, 34, 16, 20, 22, 32, 24, 16, 18, 14, 30].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+    [14, 10, 22, 12, 18, 16, 14, 16, 34, 16, 14, 30, 20, 22, 32, 24, 16, 18, 14, 30].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
     const buffer = await workbook.xlsx.writeBuffer();
     const fecha = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -218,6 +219,29 @@ router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToke
       });
     }
     res.render('import', importView({ imported: result.imported, errors }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ¿Existe ya este numero o ICCID? Lo consultan el formulario y la pantalla
+// de escaneo mientras se escribe, para avisar "chip existente" sin esperar
+// a guardar. Solo lectura.
+router.get('/existe', async (req, res, next) => {
+  try {
+    const numero = lineService.digits(req.query.numero);
+    const iccid = lineService.digits(req.query.iccid);
+    const exceptId = /^\d+$/.test(String(req.query.excepto || '')) ? Number(req.query.excepto) : null;
+    const found = await lineService.findExisting({ numero, iccid: numero ? '' : iccid, exceptId });
+    if (!found) return res.json({ existe: false });
+    const partes = [labels.lineEstado(found.estado).label, labels.lineUbicacion(found.ubicacion).label];
+    if (found.holder) partes.push(found.holder);
+    if (found.operadora) partes.push(found.operadora);
+    if (found.asset_code || found.imei) partes.push(`celular ${found.asset_code || found.imei}`);
+    res.json({
+      existe: true, numero: found.phone_number, estado: found.estado, detalle: partes.join(' · '),
+      url: found.id ? `/celulares/chips/${found.id}` : `/celulares/${found.device_id}`,
+    });
   } catch (err) {
     next(err);
   }
@@ -397,6 +421,44 @@ router.post('/:id/eliminar', canWrite, verifyCsrfToken, async (req, res, next) =
     res.redirect('/celulares/chips');
   } catch (err) {
     next(err);
+  }
+});
+
+router.post('/:id/baja', canWrite, verifyCsrfToken, async (req, res, next) => {
+  const back = `/celulares/chips/${req.params.id}`;
+  try {
+    const fecha = String(req.body.fecha_baja || '').trim();
+    const motivo = String(req.body.motivo_baja || '').trim();
+    const r = await lineService.dropLine(req.params.id, { fecha, motivo });
+    await auditService.log(req, {
+      user: req.session.user, action: 'chip_dado_de_baja', target: lineLabel(r.line),
+      detail: `Baja desde ${fecha || 'hoy'}${motivo ? `; motivo: ${motivo}` : ''}`
+        + (r.device ? `; retirado del celular IMEI ${r.device.imei}` : '')
+        + (r.assignment ? `; se cerró su asignación a ${r.assignment.holder_name}` : ''),
+    });
+    req.flash('success', `Chip ${r.line.phone_number} dado de baja: ya no cuenta en lo que se paga.`);
+    res.redirect(back);
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+    res.redirect(back);
+  }
+});
+
+router.post('/:id/reactivar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  const back = `/celulares/chips/${req.params.id}`;
+  try {
+    const line = await lineService.reactivateLine(req.params.id);
+    await auditService.log(req, {
+      user: req.session.user, action: 'chip_reactivado', target: lineLabel(line),
+      detail: `Estaba de baja desde ${line.fecha_baja || '—'}${line.motivo_baja ? ` (${line.motivo_baja})` : ''}; vuelve a stock`,
+    });
+    req.flash('success', `Chip ${line.phone_number} reactivado: queda activo y en stock.`);
+    res.redirect(back);
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+    res.redirect(back);
   }
 });
 

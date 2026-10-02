@@ -334,6 +334,8 @@ CREATE TABLE IF NOT EXISTS mobile_lines (
   descuento_plan DECIMAL(10,2) NULL,            -- descuento mensual vigente; se paga costo_plan - descuento_plan
   descuento_nota VARCHAR(150) NULL,             -- de donde sale el descuento y hasta cuando (ej. fidelizacion 11/18)
   estado ENUM('activo','suspendido','de_baja') NOT NULL DEFAULT 'activo',
+  fecha_baja DATE NULL,                         -- solo con estado 'de_baja': desde cuando ya no se paga
+  motivo_baja VARCHAR(150) NULL,
   device_id INT NULL,
   notes VARCHAR(250) NULL,
   created_by INT NULL,

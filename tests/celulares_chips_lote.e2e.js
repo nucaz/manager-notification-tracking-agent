@@ -38,31 +38,43 @@ async function cleanup() {
   await pool.query('DELETE FROM mobile_lines WHERE phone_number IN (?)', [N]);
   await pool.query('DELETE FROM mobile_devices WHERE imei = ?', [IMEI]);
   if (auditStart !== null) {
-    await pool.query("DELETE FROM audit_log WHERE id > ? AND action IN ('chips_importados', 'chips_ingresados_por_escaneo', 'chips_operadora_masiva')", [auditStart]);
+    await pool.query("DELETE FROM audit_log WHERE id > ? AND (action IN ('chips_importados', 'chips_ingresados_por_escaneo', 'chips_operadora_masiva') OR target LIKE 'Chip 9000009%')", [auditStart]);
   }
 }
 
 // DOM minimo para ejecutar el script de la pantalla de escaneo.
-function scanPage(html) {
-  const start = html.lastIndexOf('(function () {');
+function scanPage(html, request) {
+  const start = html.indexOf('(function () {', html.indexOf('<script>', html.indexOf('id="scan_rows"')));
   const script = html.slice(start, html.indexOf('</script>', start));
   const els = {};
   const el = (id) => {
     if (!els[id]) {
       els[id] = {
-        id, value: '', textContent: '', className: '', hidden: false, disabled: false, checked: false, children: [], listeners: {},
+        id, value: '', className: '', hidden: false, disabled: false, checked: false, children: [], listeners: {},
         addEventListener(type, fn) { this.listeners[type] = fn; }, appendChild(c) { this.children.push(c); }, setAttribute() {}, focus() {},
       };
       Object.defineProperty(els[id], 'textContent', { get() { return this._t || ''; }, set(v) { this._t = String(v); if (v === '') this.children = []; } });
     }
     return els[id];
   };
-  const confirms = [];
-  const sandbox = { document: { getElementById: el, createElement: () => el(`tmp${Math.random()}`) }, confirm: (m) => { confirms.push(m); return true; } };
+  let pending = 0;
+  const sandbox = {
+    document: { getElementById: el, createElement: () => el(`tmp${Math.random()}`) },
+    confirm: () => true,
+    fetch: (url) => { pending += 1; return request(url).finally(() => { pending -= 1; }); },
+  };
   vm.runInNewContext(script, sandbox);
-  const scan = (text) => { el('scan_input').value = text; el('scan_form').listeners.keydown({ key: 'Enter', target: el('scan_input'), preventDefault() {} }); };
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  // Como el lector: escribe el codigo y pulsa Enter; espera a que termine
+  // la consulta de "chip existente".
+  const scan = async (text) => {
+    el('scan_input').value = text;
+    el('scan_form').listeners.keydown({ key: 'Enter', target: el('scan_input'), preventDefault() {} });
+    do { await tick(); } while (pending > 0);
+    await tick();
+  };
   const submit = () => { el('scan_form').listeners.submit({ preventDefault() {} }); return el('chips_field').value; };
-  return { el, scan, submit, confirms };
+  return { el, scan, submit };
 }
 
 async function main() {
@@ -113,27 +125,29 @@ async function main() {
   };
   const q = async (sql, params) => (await pool.query(sql, params))[0];
   const chip = async (num) => (await q('SELECT * FROM mobile_lines WHERE phone_number = ?', [num]))[0];
+  const browser = (url) => fetch(base + url, { headers: { cookie } });
+  const existe = async (qs) => JSON.parse((await req('GET', `/celulares/chips/existe?${qs}`)).text);
 
   try {
     // --- Pantalla de escaneo: logica del navegador
     let r = await req('GET', '/celulares/chips/escanear');
     check('Pantalla de ingreso por escaneo', r.status === 200 && r.text.includes('Datos del lote') && r.text.includes('scan_input'));
-    let page = scanPage(r.text);
-    page.scan(`${ICC[0]}F`);
+    let page = scanPage(r.text, browser);
+    await page.scan(`${ICC[0]}F`);
     check('Escaneo: un ICCID solo queda a la espera de su número (la "F" final del código se descarta)', page.el('scan_count').textContent === '0'
       && /Ahora lea o escriba el número/.test(page.el('scan_status').textContent) && page.el('scan_status').textContent.includes(ICC[0]));
-    page.scan(N[0]);
+    await page.scan(N[0]);
     check('Escaneo: al leer ICCID y número el chip pasa a la lista', page.el('scan_count').textContent === '1' && page.el('scan_submit').disabled === false);
-    page.scan(N[1]); page.scan(ICC[1]);
+    await page.scan(N[1]); await page.scan(ICC[1]);
     check('Escaneo: también en el orden número → ICCID', page.el('scan_count').textContent === '2');
-    page.scan(N[0]); page.scan(ICC[2]);
+    await page.scan(N[0]); await page.scan(ICC[2]);
     check('Escaneo: un número que ya está en la lista no se agrega dos veces', page.el('scan_count').textContent === '2'
       && /ya está en la lista/.test(page.el('scan_status').textContent));
-    page.scan('12345');
+    await page.scan('12345');
     check('Escaneo: un código que no es ni número ni ICCID se rechaza con explicación', /No se reconoce/.test(page.el('scan_status').textContent)
       && page.el('scan_count').textContent === '2');
     page.el('solo_numero').checked = true;
-    page.scan(N[2]);
+    await page.scan(N[2]);
     check('Escaneo "solo el número": entra directo, sin ICCID', page.el('scan_count').textContent === '3');
     const armado = page.submit();
     check('Escaneo: la lista se envía como un chip por renglón (número;ICCID)', armado === `${N[0]};${ICC[0]}\n${N[1]};${ICC[1]}\n${N[2]};`);
@@ -147,6 +161,28 @@ async function main() {
     check('Cada chip recibe los datos del lote: operadora, plan, los dos montos, nota y país', c0.operadora === 'Entel' && c0.plan === 'Plan E2E'
       && Number(c0.costo_plan) === 31.9 && Number(c0.descuento_plan) === 15.95 && c0.notes === 'lote_e2e sellado' && c0.iccid === ICC[0]
       && c0.phone_country_code_id === peru.id && c0.device_id === null && c0.estado === 'activo' && (await chip(N[2])).iccid === null);
+
+    // --- Chip existente: se avisa al escribir o escanear, sin esperar a guardar
+    let e = await existe(`numero=${N[0]}`);
+    check('Consulta "¿existe?": un número ya registrado responde con su estado, ubicación y enlace', e.existe === true && e.numero === N[0]
+      && e.detalle === 'Activo · En stock · Entel' && e.url === `/celulares/chips/${c0.id}`);
+    check('Consulta "¿existe?": también por ICCID, y un número nuevo responde que no', (await existe(`iccid=${ICC[0]}`)).numero === N[0]
+      && (await existe(`numero=${N[11]}`)).existe === false && (await existe('numero=')).existe === false);
+    check('Consulta "¿existe?": al editar un chip, su propio número no cuenta como existente', (await existe(`numero=${N[0]}&excepto=${c0.id}`)).existe === false);
+    r = await req('GET', '/celulares/chips/escanear');
+    page = scanPage(r.text, browser);
+    await page.scan(N[0]);
+    check('Escaneo de un número ya registrado: avisa "Chip existente" y no lo agrega', page.el('scan_count').textContent === '0'
+      && page.el('scan_status').textContent.startsWith(`Chip existente: ${N[0]} — Activo · En stock · Entel`));
+    await page.scan(ICC[1]);
+    check('Escaneo de un ICCID ya registrado: avisa de qué chip es', page.el('scan_count').textContent === '0'
+      && page.el('scan_status').textContent.includes(`ese ICCID ya es del chip ${N[1]}`));
+    await page.scan(ICC[3]); await page.scan(N[11]);
+    check('Tras un aviso de existente, un chip nuevo se agrega con normalidad', page.el('scan_count').textContent === '1');
+    r = await req('GET', '/celulares/chips/nuevo');
+    check('Formulario de chip nuevo: incluye el aviso de chip existente', r.status === 200 && r.text.includes('id="existe_numero"')
+      && r.text.includes("/celulares/chips/existe?"));
+
     r = await post('/celulares/chips/escanear', { chips: '' });
     check('Registrar sin chips en la lista: avisa', /No hay chips en la lista/.test(r.errors[0] || ''));
 
@@ -155,7 +191,7 @@ async function main() {
     check('Lote con errores: registra el válido y explica cada fallo', r.status === 200 && r.text.includes('1 chip(s) registrados; 4 no se pudieron registrar')
       && r.text.includes('ya existe un chip con ese número') && r.text.includes(`el ICCID ${ICC[0]} ya está registrado en el chip ${N[0]}`)
       && r.text.includes('debe tener 9 dígitos') && r.text.includes('está repetido en este mismo lote') && (await chip(N[4])) && !(await chip(N[3])));
-    page = scanPage(r.text);
+    page = scanPage(r.text, browser);
     check('Los que fallaron vuelven a la lista y se conservan los datos del lote', page.el('scan_count').textContent === '4'
       && r.text.includes('value="Plan E2E"') && r.text.includes('<option value="Entel" selected>'));
     r = await post('/celulares/chips/escanear', { costo_plan: '10', descuento_plan: '20', chips: `${N[3]};` });
@@ -216,7 +252,49 @@ async function main() {
     r = await post('/celulares/chips/operadora', { ids: `${ids[1]},abc,${ids[1]}`, operadora: 'Entel', back: 'http://otro-sitio' });
     check('Ids no numéricos se ignoran y una dirección de retorno ajena no se usa', /asignada a 1 chip/.test(r.ok[0] || '')
       && r.location === '/celulares/chips' && (await chip(N[9])).operadora === 'Entel');
-    check('Quedó registrado en la auditoría', (await q("SELECT COUNT(DISTINCT action) AS n FROM audit_log WHERE action IN ('chips_importados', 'chips_ingresados_por_escaneo', 'chips_operadora_masiva') AND id > ?", [auditStart]))[0].n === 3);
+
+    // --- Dar de baja y reactivar
+    const lineSvc = require(path.join(ROOT, 'src/services/mobileLineService'));
+    const sum = async () => lineSvc.summarize(await lineSvc.listLines({ q: '9000009', operadora: 'Entel' }));
+    const antes = await sum();
+    r = await req('GET', `/celulares/chips/${c0.id}`);
+    check('Detalle del chip: botón "Dar de baja" con fecha y motivo', r.text.includes('Dar de baja este chip') && r.text.includes('name="motivo_baja"'));
+    r = await post(`/celulares/chips/${c0.id}/baja`, { fecha_baja: '2026-09-30', motivo_baja: 'Línea cancelada con la operadora' });
+    c0 = await chip(N[0]);
+    check('Dar de baja: el chip queda de baja con su fecha y motivo', /dado de baja/.test(r.ok[0] || '') && c0.estado === 'de_baja'
+      && c0.fecha_baja === '2026-09-30' && c0.motivo_baja === 'Línea cancelada con la operadora');
+    let s2 = await sum();
+    check('El chip de baja deja de sumar en lo que se paga (y se informa cuánto costaba)', s2.total === antes.total
+      && s2.netoTotal === Math.round((antes.netoTotal - 15.95) * 100) / 100 && s2.costoTotal === Math.round((antes.costoTotal - 31.9) * 100) / 100
+      && s2.ahorroBajas === 15.95 && s2.porEstado.de_baja === 1);
+    r = await req('GET', '/celulares/chips?q=9000009&operadora=Entel');
+    check('Listado: muestra los de baja aparte, con su fecha', r.text.includes('de baja no se suman') && r.text.includes('costaban S/ 15.95')
+      && r.text.includes('desde 2026-09-30'));
+    r = await req('GET', `/celulares/chips/${c0.id}`);
+    check('Detalle de un chip de baja: lo indica y ofrece reactivar', r.text.includes('Chip dado de baja desde el 2026-09-30') && r.text.includes('Reactivar')
+      && r.text.includes('Se pagaba al mes'));
+    r = await post(`/celulares/chips/${c0.id}/baja`, {});
+    check('Dar de baja dos veces: avisa', /ya está dado de baja/.test(r.errors[0] || ''));
+    e = await existe(`numero=${N[0]}`);
+    check('Un número dado de baja sigue apareciendo como existente, con su estado', e.existe && e.detalle.startsWith('De baja'));
+    r = await post(`/celulares/chips/${c0.id}/reactivar`, {});
+    c0 = await chip(N[0]);
+    check('Reactivar: vuelve a activo, sin fecha ni motivo, y a sumar', /reactivado/.test(r.ok[0] || '') && c0.estado === 'activo'
+      && c0.fecha_baja === null && c0.motivo_baja === null && (await sum()).netoTotal === antes.netoTotal);
+    r = await post(`/celulares/chips/${c0.id}/reactivar`, {});
+    check('Reactivar un chip que no está de baja: avisa', /no está dado de baja/.test(r.errors[0] || ''));
+    const c8 = await chip(N[8]);
+    r = await post(`/celulares/chips/${c8.id}/baja`, {});
+    const d8 = (await q('SELECT has_chip, phone_number FROM mobile_devices WHERE imei = ?', [IMEI]))[0];
+    check('Baja de un chip puesto en un celular: sale del equipo, que queda sin número; la fecha es hoy', (await chip(N[8])).device_id === null
+      && (await chip(N[8])).estado === 'de_baja' && (await chip(N[8])).fecha_baja !== null && d8.has_chip === 0 && d8.phone_number === null);
+    r = await post(`/celulares/chips/${c8.id}/editar`, { phone_number: N[8], phone_country_code_id: String(peru.id), estado: 'activo' });
+    check('Cambiar el estado a activo desde el formulario también limpia la fecha de baja', (await chip(N[8])).estado === 'activo'
+      && (await chip(N[8])).fecha_baja === null);
+    r = await post(`/celulares/chips/${c8.id}/editar`, { phone_number: N[8], phone_country_code_id: String(peru.id), estado: 'de_baja' });
+    check('Y ponerlo de baja desde el formulario le pone la fecha de hoy', (await chip(N[8])).fecha_baja !== null);
+
+    check('Quedó registrado en la auditoría', (await q("SELECT COUNT(DISTINCT action) AS n FROM audit_log WHERE action IN ('chips_importados', 'chips_ingresados_por_escaneo', 'chips_operadora_masiva', 'chip_dado_de_baja', 'chip_reactivado') AND id > ?", [auditStart]))[0].n === 5);
   } finally {
     server.close();
     await cleanup();

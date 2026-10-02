@@ -32,6 +32,9 @@ Aplicación web para el seguimiento de:
   ICCID y el número de cada chip, arma la lista y aplica a todos los datos
   del lote), **importación desde Excel** con plantilla, y **operadora
   masiva** (marcar uno, varios o todos los chips del listado y asignarla).
+  Al escribir o escanear un número (o ICCID) ya registrado avisa **"chip
+  existente"** sin esperar a guardar. **Dar de baja** un chip (fecha y
+  motivo, reversible): sale de su celular y deja de sumar en lo que se paga.
   Prueba: `E2E_PERMITIR=1 node tests/celulares_chips_lote.e2e.js`
   **Recibos** (`/celulares/recibos`): se sube el recibo de la operadora
   (hoy Entel: el PDF del recibo o su Excel de detalle; se leen sin IA) y la

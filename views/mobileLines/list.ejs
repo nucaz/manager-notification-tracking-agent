@@ -94,7 +94,8 @@
     <div class="card p-3 h-100">
       <div class="text-muted small">Chips<%= activeFilters ? ' (filtrados)' : '' %></div>
       <div class="fs-3 fw-semibold" style="font-variant-numeric: tabular-nums;"><%= summary.total %></div>
-      <div class="small text-muted"><%= summary.porEstado.activo %> activos · <%= summary.porEstado.suspendido %> suspendidos · <%= summary.porEstado.de_baja %> de baja</div>
+      <div class="small text-muted"><%= summary.porEstado.activo %> activos · <%= summary.porEstado.suspendido %> suspendidos ·
+        <% if (summary.porEstado.de_baja) { %><a href="<%= withFilter('estado', 'de_baja') %>"><%= summary.porEstado.de_baja %> de baja</a><% } else { %>0 de baja<% } %></div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
@@ -109,6 +110,9 @@
         <%= summary.conCosto %> con costo ·
         <% if (summary.sinCosto) { %><a href="<%= withFilter('costo', 'sin') %>"><%= summary.sinCosto %> sin costo registrado</a><% } else { %>0 sin costo<% } %>
       </div>
+      <% if (summary.porEstado.de_baja) { %>
+        <div class="small text-muted">Los <%= summary.porEstado.de_baja %> de baja no se suman<%= summary.ahorroBajas ? ' (costaban ' + soles(summary.ahorroBajas) + ')' : '' %>.</div>
+      <% } %>
     </div>
   </div>
   <div class="col-12 col-lg-6">
@@ -191,7 +195,8 @@
             <td><%= it.plan || '—' %></td>
             <td class="text-end text-nowrap" style="font-variant-numeric: tabular-nums;"><%= it.costo_plan === null ? '—' : soles(it.costo_plan) %></td>
             <td class="text-end text-nowrap" style="font-variant-numeric: tabular-nums;" title="<%= it.descuento_nota || '' %>"><%= it.costo_plan === null ? '—' : soles(Number(it.costo_plan) - (Number(it.descuento_plan) || 0)) %></td>
-            <td><span class="badge <%= mobileLabels.lineEstado(it.estado).badge %>"><%= mobileLabels.lineEstado(it.estado).label %></span></td>
+            <td><span class="badge <%= mobileLabels.lineEstado(it.estado).badge %>"><%= mobileLabels.lineEstado(it.estado).label %></span>
+              <% if (it.estado === 'de_baja' && it.fecha_baja) { %><div class="small text-muted text-nowrap" title="<%= it.motivo_baja || '' %>">desde <%= it.fecha_baja %></div><% } %></td>
             <td><span class="badge <%= mobileLabels.lineUbicacion(it.ubicacion).badge %>"><%= mobileLabels.lineUbicacion(it.ubicacion).label %></span></td>
             <td><%= it.holder || '—' %></td>
             <td><%= it.area || '—' %></td>

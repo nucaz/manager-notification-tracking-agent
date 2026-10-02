@@ -144,14 +144,33 @@
     say('success', 'Agregado: número ' + chip.numero + (chip.iccid ? ', ICCID ' + chip.iccid : ' (sin ICCID)') + '. Van ' + rows.length + '.');
   }
 
+  // ¿Ya está registrado? Si la consulta falla se sigue: al registrar el
+  // lote el servidor valida todo de nuevo.
+  function exists(kind, d) {
+    return fetch('/celulares/chips/existe?' + kind + '=' + d, { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .catch(function () { return { existe: false }; });
+  }
+
   function read(value) {
     var d = String(value).replace(/\D/g, '');
-    if (!d) return;
+    if (!d) return Promise.resolve();
     var kind = d.length === NUMERO ? 'numero' : (d.length >= 18 && d.length <= 22 ? 'iccid' : null);
     if (!kind) {
       say('danger', 'No se reconoce "' + value + '" (' + d.length + ' dígitos): un número tiene ' + NUMERO + ' dígitos y un ICCID entre 18 y 22.');
-      return;
+      return Promise.resolve();
     }
+    return exists(kind, d).then(function (j) {
+      if (j.existe) {
+        pend = { numero: '', iccid: '' };
+        say('danger', 'Chip existente: ' + (kind === 'iccid' ? 'ese ICCID ya es del chip ' : '') + j.numero + ' — ' + j.detalle + '. No se agregó a la lista.');
+        return;
+      }
+      accept(kind, d);
+    });
+  }
+
+  function accept(kind, d) {
     if (kind === 'numero' && soloNumero.checked) { pend = { numero: '', iccid: '' }; add({ numero: d, iccid: '' }); return; }
     var replaced = pend[kind] && pend[kind] !== d;
     pend[kind] = d;
@@ -168,10 +187,16 @@
 
   // El lector de códigos de barras "teclea" el código y pulsa Enter: ese
   // Enter no debe enviar el formulario, solo procesar lo leído.
+  // Las lecturas se procesan una tras otra, aunque el lector vaya más rápido
+  // que la consulta de "chip existente".
+  var queue = Promise.resolve();
   form.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' || e.target.tagName === 'BUTTON') return;
     e.preventDefault();
-    if (e.target === input) { read(input.value); input.value = ''; }
+    if (e.target !== input) return;
+    var value = input.value;
+    input.value = '';
+    queue = queue.then(function () { return read(value); });
   });
   document.getElementById('scan_clear').addEventListener('click', function () {
     if (rows.length && !confirm('¿Vaciar la lista de ' + rows.length + ' chip(s)?')) return;

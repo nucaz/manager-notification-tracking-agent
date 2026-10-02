@@ -23,6 +23,7 @@
       <input type="text" name="phone_number" id="phone_number_input" class="form-control" required value="<%= item.phone_number || '' %>"
         inputmode="numeric" pattern="\d*" <%- selectedCountry ? 'maxlength="' + selectedCountry.mobile_length + '" placeholder="' + selectedCountry.mobile_length + ' dígitos"' : '' %>>
       <div class="form-text">Un chip siempre tiene número. Solo dígitos.</div>
+      <div id="existe_numero" class="alert alert-warning py-2 mt-2 mb-0" role="status" hidden></div>
     </div>
     <div class="col-md-5">
       <label class="form-label" for="iccid">ICCID (opcional)</label>
@@ -86,5 +87,43 @@
     <a href="<%= item.id ? '/celulares/chips/' + item.id : '/celulares/chips' %>" class="btn btn-outline-secondary">Cancelar</a>
   </div>
 </form>
+
+<script>
+// Avisa "chip existente" al escribir el número o el ICCID, sin esperar a guardar.
+(function () {
+  var excepto = '<%= item.id || '' %>';
+  function watch(input, param, box) {
+    var timer = null;
+    input.addEventListener('input', function () {
+      clearTimeout(timer);
+      var d = input.value.replace(/\D/g, '');
+      if (d.length < (param === 'numero' ? 7 : 18)) { box.hidden = true; return; }
+      timer = setTimeout(function () {
+        fetch('/celulares/chips/existe?' + param + '=' + d + (excepto ? '&excepto=' + excepto : ''), { headers: { Accept: 'application/json' } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (input.value.replace(/\D/g, '') !== d) return;
+            box.hidden = !j.existe;
+            if (!j.existe) return;
+            box.textContent = 'Chip existente: ' + j.numero + ' — ' + j.detalle + '. ';
+            var a = document.createElement('a');
+            a.href = j.url;
+            a.textContent = 'Abrir';
+            box.appendChild(a);
+          })
+          .catch(function () { box.hidden = true; });
+      }, 250);
+    });
+  }
+  var iccid = document.getElementById('iccid');
+  var boxIccid = document.createElement('div');
+  boxIccid.className = 'alert alert-warning py-2 mt-2 mb-0';
+  boxIccid.setAttribute('role', 'status');
+  boxIccid.hidden = true;
+  iccid.parentNode.appendChild(boxIccid);
+  watch(document.getElementById('phone_number_input'), 'numero', document.getElementById('existe_numero'));
+  watch(iccid, 'iccid', boxIccid);
+})();
+</script>
 
 <%- include('../partials/foot') %>

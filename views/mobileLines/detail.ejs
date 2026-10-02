@@ -15,6 +15,15 @@
   </div>
   <% if (canEdit) { %>
     <div>
+      <% if (item.estado === 'de_baja') { %>
+        <form action="/celulares/chips/<%= item.id %>/reactivar" method="post" class="d-inline"
+              onsubmit="return confirm('¿Reactivar el chip <%= item.phone_number %>? Vuelve a estar activo, en stock, y a contar en lo que se paga.');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="btn btn-outline-success" type="submit">Reactivar</button>
+        </form>
+      <% } else { %>
+        <button class="btn btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#baja_form" aria-expanded="false" aria-controls="baja_form">Dar de baja</button>
+      <% } %>
       <a href="/celulares/chips/<%= item.id %>/editar" class="btn btn-outline-primary">Editar</a>
       <form action="/celulares/chips/<%= item.id %>/eliminar" method="post" class="d-inline"
             onsubmit="return confirm('¿Eliminar el chip <%= item.phone_number %>?<%= item.device_id ? ' Es un chip puesto en un celular: el celular quedará sin ese número.' : '' %> Esta acción no se puede deshacer.');">
@@ -24,6 +33,34 @@
     </div>
   <% } %>
 </div>
+
+<% if (item.estado === 'de_baja') { %>
+  <div class="alert alert-danger">
+    <strong>Chip dado de baja<%= item.fecha_baja ? ' desde el ' + item.fecha_baja : '' %>.</strong>
+    Ya no cuenta en lo que se paga. <%= item.motivo_baja ? 'Motivo: ' + item.motivo_baja + '.' : '' %>
+    Si un recibo lo sigue facturando, el cruce de Recibos lo marca como observado.
+  </div>
+<% } else if (canEdit) { %>
+  <div class="collapse mb-3" id="baja_form">
+    <form action="/celulares/chips/<%= item.id %>/baja" method="post" class="card p-3 border-warning"
+          onsubmit="return confirm('¿Dar de baja el chip <%= item.phone_number %>?<%= item.device_id ? ' Sale de su celular, que quedará sin ese número.' : '' %><%= item.line_holder ? ' Se cierra su asignación.' : '' %> Deja de contar en lo que se paga.');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h5>Dar de baja este chip</h5>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label" for="fecha_baja">Fecha de baja</label>
+          <input type="date" name="fecha_baja" id="fecha_baja" class="form-control" value="<%= new Date().toISOString().slice(0, 10) %>">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="motivo_baja">Motivo</label>
+          <input type="text" name="motivo_baja" id="motivo_baja" class="form-control" maxlength="150" placeholder="Ej: línea cancelada con la operadora, chip perdido...">
+        </div>
+        <div class="col-auto"><button class="btn btn-warning" type="submit">Confirmar baja</button></div>
+      </div>
+      <div class="form-text">El chip no se borra: queda en el inventario como "de baja", fuera de los montos que se pagan. Se puede reactivar.</div>
+    </form>
+  </div>
+<% } %>
 
 <div class="row g-3">
   <div class="col-md-6">
@@ -38,7 +75,7 @@
         <% if (item.costo_plan !== null) { %>
           <tr><th>Descuento mensual</th><td><%= Number(item.descuento_plan) ? '− ' + soles(item.descuento_plan) : 'Sin descuento' %>
             <% if (item.descuento_nota) { %><div class="small text-muted"><%= item.descuento_nota %></div><% } %></td></tr>
-          <tr><th>Se paga al mes</th><td class="fw-semibold"><%= soles(Number(item.costo_plan) - (Number(item.descuento_plan) || 0)) %></td></tr>
+          <tr><th><%= item.estado === 'de_baja' ? 'Se pagaba al mes' : 'Se paga al mes' %></th><td class="fw-semibold"><%= soles(Number(item.costo_plan) - (Number(item.descuento_plan) || 0)) %><%= item.estado === 'de_baja' ? ' (ya no se paga: de baja)' : '' %></td></tr>
         <% } %>
         <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
         <tr><th>Registrado</th><td><%= item.created_at || '—' %></td></tr>

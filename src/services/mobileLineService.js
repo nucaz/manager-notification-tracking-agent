@@ -276,9 +276,11 @@ async function saveLine(lineId, data, userId) {
       const [[old]] = await conn.query('SELECT * FROM mobile_lines WHERE id = ?', [lineId]);
       await conn.query(
         `UPDATE mobile_lines SET phone_country_code_id = ?, phone_number = ?, iccid = ?, operadora = ?, plan = ?,
-           costo_plan = ?, descuento_plan = ?, descuento_nota = ?, estado = ?, notes = ? WHERE id = ?`,
+           costo_plan = ?, descuento_plan = ?, descuento_nota = ?, estado = ?, notes = ?,
+           fecha_baja = IF(? = 'de_baja', COALESCE(fecha_baja, CURDATE()), NULL),
+           motivo_baja = IF(? = 'de_baja', motivo_baja, NULL) WHERE id = ?`,
         [data.phone_country_code_id, data.phone_number, data.iccid, data.operadora, data.plan, data.costo_plan,
-          data.descuento_plan || null, data.descuento_nota || null, data.estado, data.notes, lineId]
+          data.descuento_plan || null, data.descuento_nota || null, data.estado, data.notes, data.estado, data.estado, lineId]
       );
       if (old.device_id) {
         await conn.query(
@@ -300,6 +302,57 @@ async function saveLine(lineId, data, userId) {
   } finally {
     conn.release();
   }
+}
+
+// Da de baja el chip: sale de su celular, se cierra su asignacion y deja
+// de contar en lo que se paga. Queda en el inventario, con fecha y motivo.
+async function dropLine(lineId, { fecha, motivo } = {}) {
+  const line = await getLine(lineId);
+  if (!line) throw new Error('Chip no encontrado.');
+  if (line.estado === 'de_baja') throw new Error('El chip ya está dado de baja.');
+  if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new Error('La fecha de baja no es válida.');
+  if (motivo && motivo.length > 150) throw new Error('El motivo no puede superar los 150 caracteres.');
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const device = await releaseFromDevice(line, conn);
+    const assignment = await closeAssignment(line.id, 'Chip dado de baja', conn);
+    await conn.query(
+      "UPDATE mobile_lines SET estado = 'de_baja', fecha_baja = COALESCE(?, CURDATE()), motivo_baja = ? WHERE id = ?",
+      [fecha || null, motivo || null, line.id]
+    );
+    await conn.commit();
+    return { line, device, assignment };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// Revierte la baja: el chip vuelve a estar activo, en stock.
+async function reactivateLine(lineId) {
+  const line = await getLine(lineId);
+  if (!line) throw new Error('Chip no encontrado.');
+  if (line.estado !== 'de_baja') throw new Error('El chip no está dado de baja.');
+  await pool.query("UPDATE mobile_lines SET estado = 'activo', fecha_baja = NULL, motivo_baja = NULL WHERE id = ?", [lineId]);
+  return line;
+}
+
+// ¿Ya esta registrado este numero (o este ICCID)? Para avisar mientras se
+// escribe o se escanea, sin esperar a guardar. Devuelve el chip con su
+// ubicacion, o null. `exceptId` = el chip que se esta editando.
+async function findExisting({ numero, iccid, exceptId }) {
+  const col = numero ? 'phone_number' : 'iccid';
+  const value = numero || iccid;
+  if (!value) return null;
+  const [[line]] = await pool.query(`SELECT * FROM (${BASE_SELECT}) x WHERE x.${col} = ? AND x.id <> ? LIMIT 1`, [value, exceptId || 0]);
+  if (line) return line;
+  if (!numero) return null;
+  // Datos anteriores al registro de chips: un celular que usa ese numero.
+  const [[dev]] = await pool.query('SELECT id, imei, asset_code FROM mobile_devices WHERE phone_number = ? AND has_chip = 1 LIMIT 1', [numero]);
+  return dev ? { id: null, phone_number: numero, device_id: dev.id, imei: dev.imei, asset_code: dev.asset_code, estado: 'activo', ubicacion: 'en_celular' } : null;
 }
 
 async function deleteLine(lineId) {
@@ -443,18 +496,28 @@ function netCost(line) {
 function summarize(rows) {
   const money = (n) => Math.round(n * 100) / 100;
   const s = {
-    total: rows.length, costoTotal: 0, descuentoTotal: 0, netoTotal: 0, conCosto: 0, sinCosto: 0, conDescuento: 0,
+    total: rows.length, costoTotal: 0, descuentoTotal: 0, netoTotal: 0, conCosto: 0, sinCosto: 0, conDescuento: 0, ahorroBajas: 0,
     porUbicacion: Object.fromEntries(UBICACIONES.map((u) => [u, 0])),
     porEstado: Object.fromEntries(ESTADOS.map((e) => [e, 0])),
     porOperadora: {},
   };
   for (const r of rows) {
+    s.porEstado[r.estado] = (s.porEstado[r.estado] || 0) + 1;
+    // Un chip de baja ya no se paga: no entra en ningun monto. Lo que
+    // costaba se informa aparte (ahorroBajas).
+    if (r.estado === 'de_baja') {
+      s.ahorroBajas += netCost(r) || 0;
+      s.porUbicacion[r.ubicacion] = (s.porUbicacion[r.ubicacion] || 0) + 1;
+      const opBaja = r.operadora || 'Sin operadora';
+      s.porOperadora[opBaja] = s.porOperadora[opBaja] || { cantidad: 0, costo: 0, neto: 0 };
+      s.porOperadora[opBaja].cantidad += 1;
+      continue;
+    }
     const costo = r.costo_plan === null || r.costo_plan === undefined ? null : Number(r.costo_plan);
     const dscto = costo === null ? 0 : Number(r.descuento_plan) || 0;
     if (costo === null) s.sinCosto += 1; else { s.conCosto += 1; s.costoTotal += costo; }
     if (dscto) { s.conDescuento += 1; s.descuentoTotal += dscto; }
     s.porUbicacion[r.ubicacion] = (s.porUbicacion[r.ubicacion] || 0) + 1;
-    s.porEstado[r.estado] = (s.porEstado[r.estado] || 0) + 1;
     const op = r.operadora || 'Sin operadora';
     s.porOperadora[op] = s.porOperadora[op] || { cantidad: 0, costo: 0, neto: 0 };
     s.porOperadora[op].cantidad += 1;
@@ -462,6 +525,7 @@ function summarize(rows) {
     s.porOperadora[op].neto = money(s.porOperadora[op].neto + (costo || 0) - dscto);
   }
   s.costoTotal = money(s.costoTotal);
+  s.ahorroBajas = money(s.ahorroBajas);
   s.descuentoTotal = money(s.descuentoTotal);
   s.netoTotal = money(s.costoTotal - s.descuentoTotal);
   return s;
@@ -499,5 +563,5 @@ module.exports = {
   validateLineData, numberTaken, deviceChipConflict, syncDeviceChip,
   placeInDevice, removeFromDevice, assignLine, closeAssignment, saveLine, deleteLine, getLine,
   listLines, summarize, netCost, getLineDetail, linesOfDevice, linesOfEmployee,
-  createLinesBulk, setOperadora, digits,
+  createLinesBulk, setOperadora, digits, dropLine, reactivateLine, findExisting,
 };
