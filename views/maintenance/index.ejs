@@ -1,0 +1,144 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  const tam = function(bytes) {
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+    if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB';
+    return bytes + ' B';
+  };
+  const fecha = function(v) { return v ? String(v).slice(0, 16) : '—'; };
+%>
+
+<h2 class="mb-1">Mantenimiento de base de datos</h2>
+<p class="text-muted">Estado de las tablas y sus índices, mantenimiento y retención de históricos. Solo administradores.</p>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="card stat-card p-3 text-center"><div class="stat-number"><%= tables.length %></div><div class="text-muted">Tablas</div></div></div>
+  <div class="col-6 col-md-3"><div class="card stat-card p-3 text-center"><div class="stat-number"><%= totals.indexes %></div><div class="text-muted">Índices</div></div></div>
+  <div class="col-6 col-md-3"><div class="card stat-card p-3 text-center"><div class="stat-number"><%= tam(totals.dataBytes + totals.indexBytes) %></div><div class="text-muted">Datos + índices</div></div></div>
+  <div class="col-6 col-md-3"><div class="card stat-card p-3 text-center"><div class="stat-number"><%= tam(totals.freeBytes) %></div><div class="text-muted">Espacio recuperable</div></div></div>
+</div>
+
+<% if (results) { %>
+<div class="card p-3 mb-3" id="resultado_mantenimiento">
+  <h6 class="mb-2">Resultado de <%= results.action %></h6>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0" data-tabla="no">
+      <thead><tr><th>Tabla</th><th>Resultado</th><th class="text-end">Tiempo</th></tr></thead>
+      <tbody>
+        <% results.results.forEach(function(r) { %>
+          <tr><td><code><%= r.table %></code></td>
+            <td><span class="badge <%= r.ok ? 'bg-success' : 'bg-danger' %>"><%= r.ok ? 'Correcto' : 'Error' %></span> <span class="small text-muted"><%= r.message %></span></td>
+            <td class="text-end"><%= r.ms %> ms</td></tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<% } %>
+
+<div class="card p-3 mb-4">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <h5 class="mb-0 me-auto">Tablas e índices</h5>
+    <form method="post" action="/mantenimiento/tablas/analizar" class="d-inline">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn-sm btn-outline-primary" type="submit" title="Actualiza las estadísticas que usa el motor para elegir índices. Rápido y sin bloqueos largos.">Analizar todas</button>
+    </form>
+    <form method="post" action="/mantenimiento/tablas/optimizar" class="d-inline"
+          onsubmit="return confirm('Optimizar reconstruye cada tabla y sus índices. Mientras dura, esa tabla no acepta cambios. ¿Continuar con todas?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn-sm btn-outline-warning" type="submit" title="Reconstruye tablas e índices y recupera espacio. Hágalo fuera del horario de uso.">Optimizar todas</button>
+    </form>
+  </div>
+  <p class="small text-muted mb-2">
+    <strong>Analizar</strong> pone al día las estadísticas de los índices. <strong>Optimizar</strong> reconstruye la tabla y sus índices y recupera el espacio libre.
+    Tope de columnas por tabla: <%= limits.max %> (aviso desde <%= limits.warn + 1 %>).
+  </p>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle">
+      <thead>
+        <tr><th>Tabla</th><th class="text-end">Columnas</th><th class="text-end">Filas (aprox.)</th><th class="text-end">Datos</th><th class="text-end">Índices</th>
+          <th class="text-end">Recuperable</th><th>Índices de la tabla</th><th>Último cambio</th><th></th></tr>
+      </thead>
+      <tbody>
+        <% tables.forEach(function(t) { %>
+          <tr>
+            <td><code><%= t.name %></code></td>
+            <td class="text-end"><span class="badge <%= t.columnsLevel === 'excede' ? 'bg-danger' : t.columnsLevel === 'alto' ? 'bg-warning text-dark' : 'bg-light text-dark border' %>"
+                  title="<%= t.columnsLevel === 'excede' ? 'Supera el tope de ' + limits.max + ' columnas' : t.columnsLevel === 'alto' ? 'Más de ' + limits.warn + ' columnas: no agregar más sin revisar' : 'Dentro del límite' %>"><%= t.columns %></span></td>
+            <td class="text-end"><%= t.rows %></td>
+            <td class="text-end text-nowrap"><%= tam(t.dataBytes) %></td>
+            <td class="text-end text-nowrap"><%= tam(t.indexBytes) %></td>
+            <td class="text-end text-nowrap"><%= t.freeBytes ? tam(t.freeBytes) : '—' %></td>
+            <td>
+              <details>
+                <summary><%= t.indexes.length %> índice(s)</summary>
+                <ul class="small mb-0 ps-3">
+                  <% t.indexes.forEach(function(i) { %>
+                    <li><code><%= i.name %></code> (<%= i.columns %>)<%= i.unique ? ' · único' : '' %><%= i.cardinality !== null ? ' · ' + i.cardinality + ' valores' : '' %></li>
+                  <% }); %>
+                </ul>
+              </details>
+            </td>
+            <td class="text-nowrap small"><%= fecha(t.updatedAt) %></td>
+            <td class="text-nowrap text-end">
+              <form method="post" action="/mantenimiento/tablas/analizar" class="d-inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="tabla" value="<%= t.name %>">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Analizar</button>
+              </form>
+              <form method="post" action="/mantenimiento/tablas/optimizar" class="d-inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="tabla" value="<%= t.name %>">
+                <button class="btn btn-sm btn-outline-warning" type="submit">Optimizar</button>
+              </form>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card p-3" id="historicos">
+  <h5>Retención de históricos</h5>
+  <p class="small text-muted">
+    La auditoría y el historial de chat se conservan el tiempo indicado; lo más antiguo se borra solo cada madrugada.
+    Los datos de trabajo (celulares, chips, recibos, licencias…) no se borran nunca por esta vía.
+  </p>
+  <form method="post" action="/mantenimiento/retencion" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="retencion_meses">Meses a conservar</label>
+      <input type="number" class="form-control" id="retencion_meses" name="meses" min="0" max="<%= limits.maxMonths %>" value="<%= months %>" style="width: 8rem;" required>
+    </div>
+    <div class="col-auto"><button class="btn btn-outline-secondary" type="submit">Guardar</button></div>
+    <div class="col-auto small text-muted">0 = no borrar automáticamente.</div>
+  </form>
+
+  <div class="table-responsive mb-3">
+    <table class="table table-sm align-middle" data-tabla="no">
+      <thead><tr><th>Histórico</th><th class="text-end">Registros</th><th>Más antiguo</th><th class="text-end">Fuera del plazo (<%= months %> mes(es))</th></tr></thead>
+      <tbody>
+        <% histories.forEach(function(h) { %>
+          <tr><td><%= h.label %></td><td class="text-end"><%= h.total %></td><td><%= fecha(h.oldest) %></td>
+            <td class="text-end"><span class="badge <%= h.expired ? 'bg-warning text-dark' : 'bg-light text-dark border' %>"><%= h.expired %></span></td></tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+
+  <h6>Borrar ahora</h6>
+  <form method="post" action="/mantenimiento/historicos/borrar" class="row g-2 align-items-end">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="borrar_meses">Conservar los últimos (meses)</label>
+      <input type="number" class="form-control" id="borrar_meses" name="meses" min="0" max="<%= limits.maxMonths %>" value="<%= months || 3 %>" style="width: 8rem;" required>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="borrar_confirmacion">Escriba <strong><%= phrase %></strong> para confirmar</label>
+      <input type="text" class="form-control" id="borrar_confirmacion" name="confirmacion" autocomplete="off" required>
+    </div>
+    <div class="col-auto"><button class="btn btn-outline-danger" type="submit">Borrar historial anterior</button></div>
+    <div class="col-12 small text-muted">0 borra todo el historial. Antes de borrar se guarda automáticamente una copia de la base en el servidor. No se puede deshacer desde la aplicación.</div>
+  </form>
+</div>
+
+<%- include('../partials/foot') %>

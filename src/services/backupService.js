@@ -100,9 +100,18 @@ function dumpToBuffer() {
 // backup real fuera del servidor, pero da un punto de vuelta atras
 // inmediato si alguien restaura el archivo equivocado por error.
 async function snapshotBeforeRestore() {
+  return snapshot('antes_de_restaurar');
+}
+
+// Copia de seguridad previa a cualquier accion irreversible (restaurar,
+// borrar historial): mismo lugar y formato, cambia el nombre para saber
+// de que accion viene.
+async function snapshot(label) {
+  if (!/^[a-z_]+$/.test(label)) throw new Error('Nombre de copia no válido.');
+  await checkBinaryAvailable('mariadb-dump');
   fs.mkdirSync(PRE_RESTORE_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
-  const filename = `antes_de_restaurar_${stamp}.sql`;
+  const filename = `${label}_${stamp}.sql`;
   const buffer = await dumpToBuffer();
   fs.writeFileSync(path.join(PRE_RESTORE_DIR, filename), buffer);
   return filename;
@@ -141,4 +150,4 @@ async function restoreFromSqlBuffer(sqlBuffer) {
   return { snapshotFile };
 }
 
-module.exports = { streamBackupZip, restoreFromSqlBuffer };
+module.exports = { streamBackupZip, restoreFromSqlBuffer, snapshot };

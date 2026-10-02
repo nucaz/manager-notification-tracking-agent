@@ -130,6 +130,7 @@ app.use('/configuracion/catalogos', catalogRoutes);
 app.use('/configuracion', settingsRoutes);
 app.use('/usuarios', usersRoutes);
 app.use('/auditoria', auditRoutes);
+app.use('/mantenimiento', require('./routes/maintenance'));
 app.use('/historial-chat', chatHistoryRoutes);
 app.use('/permisos', permissionsRoutes);
 app.use('/mi-cuenta', accountRoutes);

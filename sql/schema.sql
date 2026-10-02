@@ -235,7 +235,11 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   CONSTRAINT fk_mobile_device_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_mobile_device_area (area),
   INDEX idx_mobile_device_status (status),
-  INDEX idx_mobile_device_phone_country (phone_country_code_id)
+  INDEX idx_mobile_device_phone_country (phone_country_code_id),
+  INDEX idx_mobile_device_imei (imei),
+  INDEX idx_mobile_device_asset_code (asset_code),
+  INDEX idx_mobile_device_sede (sede),
+  INDEX idx_mobile_device_phone_number (phone_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Directorio de empleados (DNI, nombres, apellidos, area/sede/cargo).
@@ -254,7 +258,10 @@ CREATE TABLE IF NOT EXISTS employees (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_employee_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-  UNIQUE KEY uniq_employee_dni (dni)
+  UNIQUE KEY uniq_employee_dni (dni),
+  INDEX idx_employee_name (last_name, first_name),
+  INDEX idx_employee_area (area),
+  INDEX idx_employee_sede (sede)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Historial de asignaciones de celulares. A lo sumo una fila con
@@ -346,7 +353,8 @@ CREATE TABLE IF NOT EXISTS mobile_lines (
   UNIQUE KEY uniq_mobile_line_number (phone_number),
   INDEX idx_mobile_line_device (device_id),
   INDEX idx_mobile_line_estado (estado),
-  INDEX idx_mobile_line_operadora (operadora)
+  INDEX idx_mobile_line_operadora (operadora),
+  INDEX idx_mobile_line_iccid (iccid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS mobile_line_assignments (
@@ -364,7 +372,8 @@ CREATE TABLE IF NOT EXISTS mobile_line_assignments (
   CONSTRAINT fk_mobile_line_asg_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
   CONSTRAINT fk_mobile_line_asg_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_mobile_line_asg_line (line_id),
-  INDEX idx_mobile_line_asg_employee (employee_id)
+  INDEX idx_mobile_line_asg_employee (employee_id),
+  INDEX idx_mobile_line_asg_active (line_id, returned_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Recibos de las operadoras (subidos en PDF o Excel). Se guarda lo que el
@@ -463,7 +472,8 @@ CREATE TABLE IF NOT EXISTS agent_message_log (
   message_text TEXT,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_agent_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-  INDEX idx_agent_log_contact (channel, contact)
+  INDEX idx_agent_log_contact (channel, contact),
+  INDEX idx_agent_log_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Cada noche se "cierra" el dia anterior de agent_message_log: se
@@ -505,7 +515,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_audit_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_audit_log_action (action),
-  INDEX idx_audit_log_created (created_at)
+  INDEX idx_audit_log_created (created_at),
+  INDEX idx_audit_log_email (user_email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
@@ -543,7 +554,8 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at DATETIME NOT NULL,
   CONSTRAINT fk_trusted_device_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  INDEX idx_trusted_device_token (token_hash)
+  INDEX idx_trusted_device_token (token_hash),
+  INDEX idx_trusted_device_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
