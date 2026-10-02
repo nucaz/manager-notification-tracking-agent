@@ -660,7 +660,7 @@ async function listAllItemsAny(typeKey, opts) {
   const cfg = await v2Config();
   if (!cfg) return listAllItems(typeKey, opts);
   const items = await v2.listAllItems(cfg, typeKey, opts);
-  await addExtras(typeKey, items);
+  items.extras = await addExtras(typeKey, items); // el arreglo lleva el resultado, para quien quiera avisar
   return items;
 }
 

@@ -169,7 +169,7 @@
       </div>
       <div class="col-auto"><button class="btn btn-sm btn-primary" type="submit">Asignar a los marcados</button></div>
       <div class="col-auto small text-muted">
-        Marque uno, varios o todos los de esta lista.
+        Marque uno, varios o todos los que se ven (para marcar más a la vez, elija "Todos" en "Mostrar … registros").
         <% if (filters.operadora !== '__sin__') { %><a href="<%= withFilter('operadora', '__sin__') %>">Ver solo los que no tienen operadora</a><% } %>
       </div>
     </form>
@@ -179,7 +179,7 @@
       <thead>
         <tr>
           <% if (canMark) { %><th style="width: 2rem;"><input type="checkbox" class="form-check-input" id="mark_all" aria-label="Marcar todos"
-            onchange="var on = this.checked; Array.prototype.forEach.call(document.querySelectorAll('.chip-mark'), function (x) { x.checked = on; }); document.getElementById('marcados').textContent = document.querySelectorAll('.chip-mark:checked').length;"></th><% } %>
+            onchange="var on = this.checked; Array.prototype.forEach.call(document.querySelectorAll('tr:not([hidden]) .chip-mark'), function (x) { x.checked = on; }); document.getElementById('marcados').textContent = document.querySelectorAll('.chip-mark:checked').length;"></th><% } %>
           <th>Número</th><th>Operadora</th><th>Plan</th><th class="text-end">Sin descuento</th><th class="text-end">Con descuento</th><th>Estado</th><th>Ubicación</th>
           <th>Usuario</th><th>Área</th><th>Sede</th><th>Celular</th><th></th>
         </tr>
@@ -212,10 +212,12 @@
       <% if (items.length) { %>
         <tfoot>
           <tr class="fw-semibold" style="font-variant-numeric: tabular-nums;">
-            <td colspan="<%= canMark ? 4 : 3 %>"><%= summary.total %> chip(s)</td>
+            <%# Una celda por columna (sin combinar): asi las columnas se pueden mover. %>
+            <% if (canMark) { %><td></td><% } %>
+            <td class="text-nowrap"><%= summary.total %> chip(s)</td><td></td><td></td>
             <td class="text-end text-nowrap"><%= soles(summary.costoTotal) %></td>
             <td class="text-end text-nowrap"><%= soles(summary.netoTotal) %></td>
-            <td colspan="7"></td>
+            <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
           </tr>
         </tfoot>
       <% } %>

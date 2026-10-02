@@ -50,17 +50,24 @@ router.get('/api/entidades', async (req, res) => {
 // Inventario GLPI" y no debe quedar gateado por el mismo permiso.
 const TIPOS = glpiClient.ASSET_TYPES;
 const tipoOf = (value) => (TIPOS[value] ? value : 'computadoras');
+// Registros por pagina (?por=): uno de estos, o "todos".
+const POR_PAGINA = [10, 20, 30, 40, 50, 100];
+const porOf = (value) => (value === 'todos' ? 'todos' : (POR_PAGINA.includes(Number(value)) ? Number(value) : 20));
 
 router.get('/inventario', moduleRequired('glpi_inventario'), async (req, res) => {
   const tipo = tipoOf(req.query.tipo);
   const q = (req.query.q || '').trim();
-  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-  const limit = 25;
-  const base = { title: 'Inventario GLPI', tipo, tipos: TIPOS, type: TIPOS[tipo], q, page, limit };
+  const por = porOf(req.query.por);
+  const page = por === 'todos' ? 1 : Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const base = { title: 'Inventario GLPI', tipo, tipos: TIPOS, type: TIPOS[tipo], q, page, por, porPagina: POR_PAGINA };
   try {
-    const { items, total, extras } = await glpiClient.listItems(tipo, { query: q, start: (page - 1) * limit, limit });
+    if (por === 'todos') {
+      const items = await glpiClient.listAllItems(tipo, { query: q });
+      return res.render('glpi/inventario', { ...base, items, total: items.length, totalPages: 1, connectionError: null, extras: items.extras || null });
+    }
+    const { items, total, extras } = await glpiClient.listItems(tipo, { query: q, start: (page - 1) * por, limit: por });
     res.render('glpi/inventario', {
-      ...base, items, total, totalPages: Math.max(Math.ceil(total / limit), 1), connectionError: null, extras: extras || null,
+      ...base, items, total, totalPages: Math.max(Math.ceil(total / por), 1), connectionError: null, extras: extras || null,
     });
   } catch (err) {
     res.render('glpi/inventario', { ...base, items: [], total: 0, totalPages: 1, connectionError: err.message, extras: null });

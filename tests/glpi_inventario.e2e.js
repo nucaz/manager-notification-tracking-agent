@@ -157,6 +157,14 @@ async function main() {
     check('Página 2 muestra PC-026..PC-030', p.text.includes('PC-026') && p.text.includes('PC-030'));
     p = await get('/glpi/inventario?tipo=computadoras&q=INV-7');
     check('Buscar por N.º de inventario', p.text.includes('PC-007') && !p.text.includes('PC-001<') && seen.criteria && seen.criteria[1].field === '5');
+    p = await get('/glpi/inventario?por=10&page=3');
+    check('Registros por página (10): 3 páginas, la tercera con PC-021..PC-030, y los enlaces conservan la elección', p.text.includes('Página 3 de 3 · 21–30 de 30')
+      && p.text.includes('PC-030') && !p.text.includes('PC-020<') && p.text.includes('por=10&amp;page=2') && p.text.includes('<option value="10" selected>'));
+    p = await get('/glpi/inventario?por=todos');
+    check('Registros por página "Todos": los 30 en una sola página, sin paginador', p.text.includes('PC-001') && p.text.includes('PC-030')
+      && !p.text.includes('Página 1 de') && p.text.includes('<option value="todos" selected>'));
+    p = await get('/glpi/inventario?por=999');
+    check('Un valor no admitido vuelve al predeterminado (20)', p.text.includes('Página 1 de 2') && p.text.includes('1–20 de 30'));
     p = await get('/glpi/inventario?tipo=monitores');
     check('Pestaña Monitores', p.text.includes('MON-001') && p.text.includes('24MK430'));
     p = await get('/glpi/inventario?tipo=impresoras');

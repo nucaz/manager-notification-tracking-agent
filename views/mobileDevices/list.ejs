@@ -92,7 +92,7 @@
       <thead>
         <tr>
           <% if (currentUser.role !== 'lector') { %>
-            <th><input type="checkbox" id="selectAllCheckbox" onchange="document.querySelectorAll('.row-check').forEach(function(cb){cb.checked = this.checked;}, this); updateBulkDeleteButton();"></th>
+            <th><input type="checkbox" id="selectAllCheckbox" onchange="document.querySelectorAll('tr:not([hidden]) .row-check').forEach(function(cb){cb.checked = this.checked;}, this); updateBulkDeleteButton();"></th>
           <% } %>
           <th>IMEI</th><th>Código</th><th>Modelo</th><th>Área</th><th data-col="sede">Sede</th>
           <th data-col="operadora">Operadora</th><th data-col="numero">Número de línea</th>
@@ -150,7 +150,7 @@
   <script>
     function updateBulkDeleteButton() {
       var count = document.querySelectorAll('.row-check:checked').length;
-      var all = document.querySelectorAll('.row-check');
+      var all = document.querySelectorAll('tr:not([hidden]) .row-check'); // los de la pagina a la vista
       var btn = document.getElementById('bulkDeleteBtn');
       btn.disabled = count === 0;
       btn.textContent = count > 0 ? 'Eliminar seleccionados (' + count + ')' : 'Eliminar seleccionados';

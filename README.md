@@ -59,6 +59,12 @@ Aplicación web para el seguimiento de:
 - **Catálogos** (Configuración → Gestionar catálogos, solo admin): listas
   de sedes, áreas, marcas y modelos reutilizables desde los formularios
   (por ahora, en Celulares) para estandarizar la carga de datos
+- **Tablas ajustables** (en todas las pantallas): elija cuántos registros
+  ver (10, 20, 30, 40, 50, 100 o todos) con "Anterior / Siguiente", estire
+  una columna arrastrando el borde derecho de su encabezado y cámbiela de
+  lugar arrastrando el encabezado. Cada persona conserva su ajuste en su
+  navegador, por pantalla; "Restablecer columnas" lo deshace. "Marcar
+  todos" alcanza solo a las filas que se ven
 - **Adjuntos**: contratos, adendas y facturas vinculados a cada registro
 - **Extracción de facturas con IA (Gemini)**: al adjuntar una factura/recibo
   (PDF o imagen), un botón "Extraer datos con IA" lee el documento y

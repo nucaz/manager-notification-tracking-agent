@@ -94,3 +94,25 @@ a.stat-card-link .stat-card { transition: transform .12s ease, box-shadow .12s e
 a.stat-card-link:hover .stat-card,
 a.stat-card-link:focus-visible .stat-card { transform: translateY(-3px); box-shadow: 0 6px 14px rgba(0,0,0,.15); }
 a.stat-card-link:focus-visible { outline: 2px solid #2d5be3; outline-offset: 2px; border-radius: 10px; }
+
+/* Tablas de listado (public/js/tablas.js): columnas que se estiran y se
+   mueven, y pie con registros por pagina. */
+.table-responsive > table > thead th { position: relative; }
+.col-ancho { position: absolute; top: 0; right: 0; width: 9px; height: 100%; cursor: col-resize; user-select: none; }
+.col-ancho::after { content: ""; position: absolute; top: 20%; right: 3px; width: 2px; height: 60%; background: transparent; border-radius: 1px; }
+th:hover > .col-ancho::after, .ajustando-columna .col-ancho::after { background: #b6bcc9; }
+.col-ancho:hover::after { background: #2d5be3; }
+body.ajustando-columna { cursor: col-resize; user-select: none; }
+.col-movible { cursor: grab; }
+.col-arrastrando { opacity: .45; }
+.col-destino { box-shadow: inset 3px 0 0 #2d5be3; }
+/* Con anchos fijados, el texto que no cabe se corta con puntos suspensivos
+   en vez de empujar a las demas columnas. */
+table.tabla-fija { table-layout: fixed; max-width: none; }
+table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: ellipsis; }
+.tabla-pie { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-top: .75rem; font-size: .875rem; }
+.tabla-pie:empty { display: none; }
+.tabla-filas { display: inline-flex; align-items: center; gap: .4rem; margin: 0; white-space: nowrap; }
+.tabla-filas .form-select { width: auto; }
+.tabla-info { font-variant-numeric: tabular-nums; }
+.tabla-restablecer { margin-left: auto; }

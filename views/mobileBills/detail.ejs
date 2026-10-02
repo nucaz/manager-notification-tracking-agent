@@ -202,7 +202,7 @@
       <input type="hidden" name="numbers" value="">
       <button class="btn btn-sm btn-outline-primary" type="submit">Registrar como chips solo los marcados</button>
       <button class="btn btn-sm btn-link" type="button"
-              onclick="var c = document.querySelectorAll('.chip-falta'); var on = !c[0].checked; Array.prototype.forEach.call(c, function (x) { x.checked = on; });">Marcar / desmarcar todos</button>
+              onclick="var c = document.querySelectorAll('tr:not([hidden]) .chip-falta'); if (!c.length) return; var on = !c[0].checked; Array.prototype.forEach.call(c, function (x) { x.checked = on; });">Marcar / desmarcar los que se ven</button>
     </form>
   <% } %>
 
