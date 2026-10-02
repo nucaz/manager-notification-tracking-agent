@@ -1,0 +1,46 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex flex-wrap align-items-start gap-2 mb-2">
+  <div class="me-auto">
+    <h2 class="mb-1">Reporte temporal</h2>
+    <div class="text-muted" id="reporte_temporal_titulo"><%= result.title %></div>
+  </div>
+  <form method="post" action="/asistente/exportar" class="d-flex gap-2 align-items-end">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="spec" value="<%= spec %>">
+    <% if (result.barcodes.length) { %>
+      <div>
+        <label class="form-label small mb-1" for="temporal_barras">Código de barras del PDF</label>
+        <select name="barras" id="temporal_barras" class="form-select form-select-sm">
+          <% result.barcodes.forEach(function(b) { %><option value="<%= b.key %>"><%= b.label %></option><% }); %>
+        </select>
+      </div>
+    <% } %>
+    <button class="btn btn-outline-danger" type="submit" name="formato" value="pdf"><i class="bi bi-file-earmark-pdf"></i> PDF<%= result.barcodes.length ? ' con código de barras' : '' %></button>
+    <button class="btn btn-outline-success" type="submit" name="formato" value="xlsx"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+  </form>
+</div>
+
+<div class="alert alert-light border small">
+  Armado por el asistente el <%= generatedAt %> con los datos de este momento. <strong>No se guarda</strong>: si cierra la pestaña, pídalo de nuevo
+  o descárguelo. <span id="reporte_temporal_total"><%= result.total %></span> registro(s)<%= result.grouped ? ', resumidos en ' + result.lines + ' fila(s)' : '' %>.
+  <% if (result.reportUrl) { %><a href="<%= result.reportUrl %>">Ver el mismo resultado en Reportes</a>.<% } %>
+</div>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle">
+      <thead><tr><% result.columns.forEach(function(c) { %><th><%= c %></th><% }); %></tr></thead>
+      <tbody>
+        <% result.rows.forEach(function(r) { %>
+          <tr><% r.forEach(function(v) { const vacio = v === '' || v === null || v === undefined; %><td<%- typeof v === 'number' ? ' class="text-end"' : (!vacio && String(v).length <= 22 ? ' class="text-nowrap"' : '') %>><%= vacio ? '—' : v %></td><% }); %></tr>
+        <% }); %>
+        <% if (!result.rows.length) { %>
+          <tr><td colspan="<%= result.columns.length %>" class="text-center text-muted py-4">Sin registros.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

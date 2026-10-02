@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const assistantService = require('../services/assistantService');
+const reportService = require('../services/reportService');
+const { buildPdf } = require('../services/reportPdf');
 
 const router = express.Router();
 
@@ -55,16 +57,38 @@ router.post('/preguntar', limiter, async (req, res) => {
   }
 });
 
-// Descarga en Excel de una tabla que mostro el asistente (formulario normal).
-router.post('/exportar', async (req, res) => {
+const specOf = (req) => JSON.parse(String(req.body.spec || '{}'));
+const metaOf = (req, res) => ({
+  appName: res.locals.appName || 'Gestión de Licencias',
+  generatedBy: req.session.user.full_name || req.session.user.email || 'usuario',
+  generatedAt: reportService.now(),
+});
+
+// Reporte temporal: la tabla de una respuesta, a pantalla completa (con
+// registros por pagina y columnas ajustables) y con exportacion. No se
+// guarda: se vuelve a calcular con la consulta que viaja en el formulario.
+router.post('/reporte', async (req, res) => {
   try {
-    const spec = JSON.parse(String(req.body.spec || '{}'));
-    const { buffer } = await assistantService.exportQuery({ spec, user: req.session.user, enabledModules: res.locals.enabledModules });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="consulta_${new Date().toISOString().slice(0, 10)}.xlsx"`);
-    res.send(buffer);
+    const result = await assistantService.rerun({ spec: specOf(req), user: req.session.user, enabledModules: res.locals.enabledModules });
+    res.render('assistant/report', { title: 'Reporte temporal', result, spec: JSON.stringify(result.spec), generatedAt: reportService.now() });
   } catch (err) {
-    res.status(400).json({ ok: false, error: `No se pudo generar el Excel: ${err.message}` });
+    res.status(400).render('error', { title: 'No se pudo armar el reporte', message: err.message });
+  }
+});
+
+// Descarga de una tabla del asistente en Excel o PDF (formulario normal).
+router.post('/exportar', async (req, res) => {
+  const pdf = req.body.formato === 'pdf';
+  try {
+    const result = await assistantService.rerun({ spec: specOf(req), user: req.session.user, enabledModules: res.locals.enabledModules });
+    const body = pdf
+      ? await buildPdf(assistantService.pdfInput(result, metaOf(req, res), String(req.body.barras || '')))
+      : await assistantService.buildWorkbook(result, req.session.user);
+    res.setHeader('Content-Type', pdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="consulta_${new Date().toISOString().slice(0, 10)}.${pdf ? 'pdf' : 'xlsx'}"`);
+    res.send(body);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: `No se pudo generar el archivo: ${err.message}` });
   }
 });
 

@@ -98,16 +98,16 @@
 
     var foot = el('div', 'ia-tabla-pie');
     var count = t.total + ' registro(s)';
-    if (t.shown < t.lines) count += ' · se muestran ' + t.shown + ' de ' + t.lines + ' filas (el Excel las trae todas)';
+    if (t.shown < t.lines) count += ' · se muestran ' + t.shown + ' de ' + t.lines + ' filas (el reporte y el Excel las traen todas)';
     foot.appendChild(el('span', 'text-muted', count));
-    var excel = el('button', 'btn btn-sm btn-outline-success', 'Descargar Excel');
-    excel.type = 'button';
-    excel.addEventListener('click', function () {
+    // Envia la consulta (no las filas) por formulario: el servidor la vuelve a ejecutar.
+    function post(action, extra, newTab) {
       var f = el('form');
       f.method = 'post';
-      f.action = '/asistente/exportar';
+      f.action = action;
       f.hidden = true;
-      [['_csrf', csrf], ['spec', JSON.stringify(t.spec)]].forEach(function (pair) {
+      if (newTab) f.target = '_blank';
+      [['_csrf', csrf], ['spec', JSON.stringify(t.spec)]].concat(extra || []).forEach(function (pair) {
         var i = el('input');
         i.type = 'hidden';
         i.name = pair[0];
@@ -117,7 +117,15 @@
       document.body.appendChild(f);
       f.submit();
       f.remove();
-    });
+    }
+    var open = el('button', 'btn btn-sm btn-outline-primary', 'Abrir como reporte');
+    open.type = 'button';
+    open.title = 'Reporte temporal a pantalla completa, con todas las filas, Excel y PDF. No se guarda.';
+    open.addEventListener('click', function () { post('/asistente/reporte', null, true); });
+    foot.appendChild(open);
+    var excel = el('button', 'btn btn-sm btn-outline-success', 'Descargar Excel');
+    excel.type = 'button';
+    excel.addEventListener('click', function () { post('/asistente/exportar'); });
     foot.appendChild(excel);
     if (t.reportUrl && /^\/reportes\?/.test(t.reportUrl)) {
       var link = el('a', 'btn btn-sm btn-outline-secondary', 'Abrir en Reportes');
@@ -162,7 +170,7 @@
     hilo.textContent = '';
     if (!turns.length) {
       var intro = el('div', 'ia-inicio');
-      intro.appendChild(el('p', 'mb-2', 'Pregunte por lo que hay registrado en la aplicación, pida un resumen o un listado, o que busque un modelo o una tecnología en internet.'));
+      intro.appendChild(el('p', 'mb-2', 'Converse con libertad: pregunte por lo que hay registrado, pida resúmenes, listados o reportes, o que busque un modelo, una tecnología o cualquier tema en internet. Puede consultar todo lo que usted puede ver; no puede crear ni cambiar datos.'));
       var list = EXAMPLES.filter(function (e) { return e[0].test(location.pathname); })[0][1];
       list.forEach(function (q) {
         var b = el('button', 'btn btn-sm btn-outline-primary ia-ejemplo', q);

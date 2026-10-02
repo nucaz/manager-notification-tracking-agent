@@ -147,6 +147,51 @@ async function main() {
     check('Descargar Excel: vuelve a ejecutar la consulta y entrega la tabla', x.status === 200 && sheet.getRow(4).values.slice(1).join() === 'Sede,Cantidad'
       && sheet.getRow(5).values.slice(1).join() === 'Sede Ñandú,1' && String(sheet.getRow(1).values[1]).includes('Celulares (equipos) por sede'));
 
+    // --- Reporte temporal y PDF de esa misma tabla
+    const form = (url, extra) => fetch(base + url, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ _csrf: CSRF, ...extra }).toString() });
+    const listSpec = JSON.stringify({ reporte: 'celulares', filtros: [{ columna: 'area', valor: AREA }], columnas: ['asset_code', 'imei', 'model', 'estado'], ordenar_por: 'asset_code', descendente: true });
+    let rp = await form('/asistente/reporte', { spec: listSpec });
+    let html = await rp.text();
+    check('Abrir como reporte: página completa con la tabla, sus exportaciones y el aviso de que no se guarda', rp.status === 200 && html.includes('Reporte temporal')
+      && html.includes('id="reporte_temporal_total">3<') && html.includes(IMEI[0]) && html.includes('No se guarda') && html.includes('value="pdf"') && html.includes('value="xlsx"')
+      && html.indexOf('A-90073') < html.indexOf('A-90071'));
+    check('El reporte temporal de un inventario ofrece el código de barras para el PDF', html.includes('name="barras"') && html.includes('<option value="imei">IMEI</option>'));
+    rp = await form('/asistente/exportar', { spec: listSpec, formato: 'pdf', barras: 'imei' });
+    const pdfBuffer = Buffer.from(await rp.arrayBuffer());
+    const pdfText = (await require(path.join(ROOT, 'src/services/mobileBillParsers/pdfText')).extractLines(pdfBuffer)).join(' ');
+    check('PDF del reporte temporal: con los datos, el código de barras por fila y el cierre de verificación', rp.headers.get('content-type') === 'application/pdf'
+      && pdfBuffer.slice(0, 5).toString() === '%PDF-' && pdfText.includes('Código de barras (IMEI)') && IMEI.every((i) => pdfText.includes(i)) && pdfText.includes('A-90071')
+      && pdfText.includes('Encontrados: ________ de 3'));
+    rp = await form('/asistente/reporte', { spec: JSON.stringify(t.spec) });
+    html = await rp.text();
+    check('Reporte temporal de un resumen (agrupado): sin código de barras y con enlace a Reportes', html.includes('resumidos en 2 fila(s)') && !html.includes('name="barras"')
+      && html.includes('Ver el mismo resultado en Reportes'));
+    rp = await form('/asistente/reporte', { spec: JSON.stringify({ reporte: 'usuarios; DROP TABLE users' }) });
+    check('Un reporte temporal con una consulta inválida se rechaza con explicación', rp.status === 400 && (await rp.text()).includes('no existe o este usuario no tiene acceso'));
+
+    // --- Mas datos consultables, orden y tope
+    const top = await assistantService.runQuery(assistantService.datasets(admin, new Proxy({}, { get: () => true })),
+      { reporte: 'chips', buscar: '9000007', columnas: ['phone_number', 'neto'], ordenar_por: 'neto', descendente: true, limite: 1 });
+    check('"Los N más...": ordenar de mayor a menor y quedarse con los primeros', top.rows.length === 1 && top.rows[0][0] === N[1] && top.rows[0][1] === '39.90' && top.total === 2);
+    const full = assistantService.datasets(admin, new Proxy({}, { get: () => true }));
+    check('El asistente puede consultar también asignaciones, incidentes, recibos, catálogos, adjuntos, diagramas y (admin) usuarios y auditoría',
+      ['empleados', 'asignaciones_celulares', 'incidentes_celulares', 'recibos', 'recibos_lineas', 'recibos_cargos', 'catalogos', 'adjuntos', 'diagramas_red', 'usuarios', 'auditoria'].every((k) => full[k]));
+    const usuarios = await assistantService.runQuery(full, { reporte: 'usuarios' });
+    const dumpUsers = JSON.stringify(usuarios.rows) + usuarios.columns.join();
+    check('Usuarios: se ven nombre, rol y estado, nunca contraseñas ni secretos de 2FA', usuarios.total >= 1 && usuarios.columns.join() === 'Nombre,Correo,Rol,Activo,2FA activo,Bloqueado,Creado el'
+      && !/password|hash|otp_secret|\$2[aby]\$/i.test(dumpUsers));
+    for (const k of ['asignaciones_celulares', 'incidentes_celulares', 'recibos', 'recibos_lineas', 'recibos_cargos', 'catalogos', 'adjuntos', 'diagramas_red', 'auditoria']) {
+      await assistantService.runQuery(full, { reporte: k, limite: 3 }); // cada consulta nueva corre contra la base real sin error
+    }
+    check('Todas las consultas nuevas corren contra la base real', true);
+    const editorSets = assistantService.datasets({ role: 'editor' }, new Proxy({}, { get: () => true }));
+    check('Usuarios y auditoría son solo para administradores', !editorSets.usuarios && !editorSets.auditoria && editorSets.catalogos && editorSets.recibos);
+    const prompt = assistantService._systemPrompt(full, '/celulares', admin);
+    check('Instrucciones a la IA: libertad para conversar, consultar, armar reportes y buscar; prohibido crear, cambiar o borrar e inventar datos',
+      prompt.includes('No te limites a esta aplicación') && prompt.includes('Crear, cambiar o borrar datos de la aplicación. No tienes ninguna herramienta para eso')
+      && prompt.includes('Inventar datos de la empresa'));
+
     // --- Un filtro que no existe: la aplicacion dice que valores hay y la IA corrige
     script = [
       call('consultar_datos', { reporte: 'celulares', filtros: [{ columna: 'area', valor: AREA }, { columna: 'estado', valor: 'disponible' }] }),
@@ -178,17 +223,17 @@ async function main() {
       && r.json.answer.includes('5000 mAh') && r.json.tables.length === 0);
 
     // --- Lo que la IA pida mal no rompe nada
-    script = [call('consultar_datos', { reporte: 'celulares', agrupar_por: ['clave_secreta'] }), call('borrar_todo', {}), call('consultar_datos', { reporte: 'usuarios' }), say('No pude.')];
+    script = [call('consultar_datos', { reporte: 'celulares', agrupar_por: ['clave_secreta'] }), call('borrar_todo', {}), call('consultar_datos', { reporte: 'tabla_secreta' }), say('No pude.')];
     r = await preguntar('Prueba de errores [e2e]');
     const errs = seen.bodies.slice(-3).map((b) => b.contents.slice(-1)[0].parts[0].functionResponse.response.error);
     check('Columna, herramienta o reporte inexistentes: se le informa el error a la IA, sin fallar ni tocar nada', r.status === 200 && r.json.answer === 'No pude.'
-      && errs[0].includes('"clave_secreta" no existe') && errs[1].includes('"borrar_todo" no existe') && errs[2].includes('"usuarios" no existe o este usuario no tiene acceso'));
+      && errs[0].includes('"clave_secreta" no existe') && errs[1].includes('"borrar_todo" no existe') && errs[2].includes('"tabla_secreta" no existe o este usuario no tiene acceso'));
 
     // --- Limite de pasos
     script = Array.from({ length: 12 }, () => call('consultar_datos', { reporte: 'celulares', filtros: [{ columna: 'area', valor: AREA }], agrupar_por: ['estado'] }));
     const before = seen.bodies.length;
     r = await preguntar('Bucle [e2e]');
-    check('Una IA que no termina de pedir datos se corta a los 6 pasos y se muestra lo encontrado', seen.bodies.length - before === 6 && r.json.ok
+    check('Una IA que no termina de pedir datos se corta a los 8 pasos y se muestra lo encontrado', seen.bodies.length - before === 8 && r.json.ok
       && r.json.answer === 'Esto es lo que encontré en los datos:' && r.json.tables.length === 3);
     script = [];
 
