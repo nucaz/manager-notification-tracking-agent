@@ -185,6 +185,29 @@ async function askText(prompt) {
   return text;
 }
 
+// Llamada cruda a generateContent, para quien arma su propio cuerpo
+// (instrucciones de sistema, herramientas, varios turnos): la usa el
+// asistente de la aplicacion. Devuelve la respuesta completa de la API.
+async function generate(body, { timeout = 60000 } = {}) {
+  const { apiKey, model } = await getConfig();
+  if (!apiKey) {
+    throw new Error('La API key de Gemini no esta configurada. Ve a Configuracion y agrega tu API key.');
+  }
+  const url = `${API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  let response;
+  try {
+    response = await axios.post(url, body, { timeout, validateStatus: () => true });
+  } catch (err) {
+    // El mensaje de axios puede traer la URL (con la API key): no se propaga.
+    throw new Error(`No se pudo contactar a la API de Gemini (${err.code || 'error de red'}).`);
+  }
+  if (response.status !== 200) {
+    const apiMsg = (response.data && response.data.error && response.data.error.message) || JSON.stringify(response.data);
+    throw new Error(`Gemini respondió con error (HTTP ${response.status}): ${apiMsg}`);
+  }
+  return response.data;
+}
+
 // Llamada minima para verificar que la API key funciona, usada desde Configuracion
 async function testConnection() {
   const { apiKey, model } = await getConfig();
@@ -206,4 +229,4 @@ async function testConnection() {
   return true;
 }
 
-module.exports = { extractInvoiceData, testConnection, askText, extractJson, EXTRACTION_FIELDS };
+module.exports = { extractInvoiceData, testConnection, askText, generate, extractJson, EXTRACTION_FIELDS };

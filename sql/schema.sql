@@ -456,8 +456,8 @@ CREATE TABLE IF NOT EXISTS catalog_items (
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS agent_message_log (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  channel ENUM('whatsapp','telegram') NOT NULL,
-  contact VARCHAR(32) NOT NULL,                 -- numero de WhatsApp o chat_id de Telegram
+  channel ENUM('whatsapp','telegram','web') NOT NULL, -- 'web' = asistente dentro de la aplicacion
+  contact VARCHAR(100) NOT NULL,                -- numero de WhatsApp, chat_id de Telegram o correo del usuario (web)
   user_id INT NULL,                             -- NULL si el contacto no estaba autorizado
   direction ENUM('entrante','saliente') NOT NULL,
   message_text TEXT,
@@ -472,8 +472,8 @@ CREATE TABLE IF NOT EXISTS agent_message_log (
 -- src/jobs/archiveChatLogs.js). Un registro por (canal, contacto, dia).
 CREATE TABLE IF NOT EXISTS agent_message_log_archive (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  channel ENUM('whatsapp','telegram') NOT NULL,
-  contact VARCHAR(32) NOT NULL,
+  channel ENUM('whatsapp','telegram','web') NOT NULL,
+  contact VARCHAR(100) NOT NULL,
   user_id INT NULL,
   log_date DATE NOT NULL,
   message_count INT NOT NULL,

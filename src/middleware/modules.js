@@ -22,6 +22,7 @@ const MODULES = {
   red: 'Red (topologías y diagramas)',
   glpi_inventario: 'Inventario GLPI',
   reportes: 'Reportes',
+  asistente: 'Asistente IA (preguntas a Gemini)',
 };
 
 const CONFIGURABLE_ROLES = ['editor', 'lector'];

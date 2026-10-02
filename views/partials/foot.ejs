@@ -2,5 +2,29 @@
 <% if (typeof currentUser !== 'undefined' && currentUser) { %></div><% } %>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/js/tablas.js"></script>
+<% if (typeof currentUser !== 'undefined' && currentUser && typeof enabledModules !== 'undefined' && enabledModules.asistente) { %>
+<%# Asistente: disponible desde cualquier pantalla (public/js/asistente.js). %>
+<button type="button" class="btn btn-primary ia-abrir" data-bs-toggle="offcanvas" data-bs-target="#ia_panel" aria-controls="ia_panel">
+  <i class="bi bi-stars"></i> Preguntar a la IA
+</button>
+<div class="offcanvas offcanvas-end ia-panel" tabindex="-1" id="ia_panel" aria-labelledby="ia_titulo" data-csrf="<%= csrfToken %>">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title" id="ia_titulo"><i class="bi bi-stars"></i> Preguntar a la IA</h5>
+    <button type="button" class="btn btn-sm btn-link ms-auto me-2" id="ia_nueva">Nueva conversación</button>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body d-flex flex-column p-0">
+    <div class="ia-hilo flex-grow-1" id="ia_hilo"></div>
+    <form class="ia-form border-top" id="ia_form" autocomplete="off">
+      <div class="d-flex gap-2 align-items-end">
+        <textarea class="form-control" id="ia_pregunta" rows="2" maxlength="2000" placeholder="Ej.: stock de celulares por sede" aria-label="Pregunta"></textarea>
+        <button class="btn btn-primary" type="submit" id="ia_enviar" title="Enviar (Enter)"><i class="bi bi-send"></i></button>
+      </div>
+      <div class="form-text mb-0">Solo consulta, no modifica nada. La pregunta y los datos necesarios para responderla se envían a Google Gemini.</div>
+    </form>
+  </div>
+</div>
+<script src="/js/asistente.js"></script>
+<% } %>
 </body>
 </html>

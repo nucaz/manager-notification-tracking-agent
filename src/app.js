@@ -134,6 +134,7 @@ app.use('/historial-chat', chatHistoryRoutes);
 app.use('/permisos', permissionsRoutes);
 app.use('/mi-cuenta', accountRoutes);
 app.use('/reportes', reportRoutes);
+app.use('/asistente', require('./routes/assistant'));
 
 app.use((req, res) => {
   res.status(404).render('error', {

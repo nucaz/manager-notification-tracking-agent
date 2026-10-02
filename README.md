@@ -68,6 +68,18 @@ Aplicación web para el seguimiento de:
   (Code 128: IMEI, código interno, número, ICCID, n.º de serie o de
   inventario, a elección) y una casilla para marcar, para verificar el
   inventario físico con un lector contra lo que dice la aplicación
+- **Preguntar a la IA** (botón en todas las pantallas; usa la API key de
+  Gemini de Configuración): preguntas en lenguaje natural sobre lo que hay
+  registrado ("stock de celulares por sede", "qué vence en 60 días",
+  "cuánto se paga en chips por operadora"). La IA no escribe SQL ni toca
+  la base: elige una consulta de solo lectura del catálogo de Reportes
+  (más empleados), que ejecuta la aplicación; la tabla que ve el usuario
+  y sus cifras salen de la base, se descargan en Excel y se abren en
+  Reportes. Si se le pide, busca en internet (búsqueda de Google de
+  Gemini) y cita las fuentes. Respeta los permisos por módulo, se
+  habilita por rol en Permisos y queda registrado en Historial de chat
+  (canal web). La pregunta y los datos necesarios para responderla se
+  envían a Google
 - **Panel principal**: además de los vencimientos, cuántos celulares y
   chips hay y cuántas computadoras, monitores e impresoras tiene GLPI
   (el conteo de GLPI se renueva cada 10 minutos)
