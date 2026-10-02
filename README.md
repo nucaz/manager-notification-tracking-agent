@@ -30,7 +30,8 @@ Aplicación web para el seguimiento de:
   su chip principal. Prueba: `E2E_PERMITIR=1 node tests/celulares_chips_decomiso.e2e.js`
   **Carga por lote**: ingreso por **escaneo** de códigos de barras (lee el
   ICCID y el número de cada chip, arma la lista y aplica a todos los datos
-  del lote), **importación desde Excel** con plantilla, y **operadora
+  del lote), **importación desde Excel** con plantilla y **revisión fila
+  por fila antes de registrar** (encabezados en cualquier fila), y **operadora
   masiva** (marcar uno, varios o todos los chips del listado y asignarla).
   Al escribir o escanear un número (o ICCID) ya registrado avisa **"chip
   existente"** sin esperar a guardar. **Dar de baja** un chip (fecha y

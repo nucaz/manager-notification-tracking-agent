@@ -122,7 +122,10 @@ function readForm(body) {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { q, area, sede, status } = req.query;
+    const { area, sede, status } = req.query;
+    // El texto pegado desde Excel trae espacios o un salto de linea al
+    // final: sin limpiarlo, un numero que si existe no aparecia.
+    const q = mobileLineService.searchTerm(req.query.q);
     let sql = `
       SELECT d.*, a.holder_name, a.cargo, a.turno, a.assigned_date
       FROM mobile_devices d
@@ -130,8 +133,10 @@ router.get('/', async (req, res, next) => {
       WHERE 1=1`;
     const params = [];
     if (q) {
-      sql += ' AND (d.imei LIKE ? OR d.asset_code LIKE ? OR d.phone_number LIKE ? OR a.holder_name LIKE ?)';
-      params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+      // Tambien por los chips puestos en el equipo (segundo chip, ICCID).
+      sql += ` AND (d.imei LIKE ? OR d.asset_code LIKE ? OR d.phone_number LIKE ? OR a.holder_name LIKE ?
+        OR EXISTS (SELECT 1 FROM mobile_lines l WHERE l.device_id = d.id AND (l.phone_number LIKE ? OR l.iccid LIKE ?)))`;
+      for (let i = 0; i < 6; i++) params.push(`%${q}%`);
     }
     if (area) {
       sql += ' AND d.area = ?';
@@ -147,6 +152,16 @@ router.get('/', async (req, res, next) => {
     }
     sql += ' ORDER BY d.area, d.id';
     const [rows] = await pool.query(sql, params);
+    // Chips que coinciden con la busqueda pero no estan en ningun celular
+    // (en stock, asignados sin celular o de baja): se avisa con un enlace.
+    let chipsSueltos = 0;
+    if (q) {
+      const [[c]] = await pool.query(
+        'SELECT COUNT(*) AS n FROM mobile_lines WHERE device_id IS NULL AND (phone_number LIKE ? OR iccid LIKE ?)',
+        [`%${q}%`, `%${q}%`]
+      );
+      chipsSueltos = c.n;
+    }
     const [areaRows] = await pool.query('SELECT DISTINCT area FROM mobile_devices ORDER BY area');
     const [sedeRows] = await pool.query(
       'SELECT DISTINCT sede FROM mobile_devices WHERE sede IS NOT NULL AND sede <> "" ORDER BY sede'
@@ -157,6 +172,7 @@ router.get('/', async (req, res, next) => {
       areas: areaRows.map((r) => r.area),
       sedes: sedeRows.map((r) => r.sede),
       q: q || '',
+      chipsSueltos,
       area: area || '',
       sede: sede || '',
       status: status || '',

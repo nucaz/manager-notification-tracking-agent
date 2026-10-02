@@ -199,7 +199,7 @@ async function main() {
 
     // --- Importar desde Excel
     r = await req('GET', '/celulares/chips/importar');
-    check('Pantalla de importación con las columnas de la plantilla', r.status === 200 && r.text.includes('Descargar plantilla') && r.text.includes('Costo sin descuento'));
+    check('Pantalla de importación con las columnas de la plantilla', r.status === 200 && r.text.includes('Descargar plantilla') && r.text.includes('Costo sin descuento') && r.text.includes('Revisar el archivo'));
     r = await req('GET', '/celulares/chips/importar/plantilla');
     const tpl = new ExcelJS.Workbook();
     await tpl.xlsx.load(r.buffer);
@@ -213,17 +213,50 @@ async function main() {
     ts.addRow(['', '', '', '', '', '', '', '']); // fila vacia: se ignora
     ts.addRow(['', ICC[3], 'Entel', '', '', '', '', '']); // sin numero
     ts.addRow([N[0], '', '', '', '', '', '', '']); // ya existe
-    const form = new FormData();
-    form.append('_csrf', CSRF);
-    form.append('file', new Blob([Buffer.from(await tpl.xlsx.writeBuffer())]), 'chips.xlsx');
-    r = await req('POST', '/celulares/chips/importar', form);
+    const sendFile = async (buffer, name) => {
+      const form = new FormData();
+      form.append('_csrf', CSRF);
+      form.append('file', new Blob([buffer]), name);
+      return req('POST', '/celulares/chips/importar', form);
+    };
+    const tokenOf = (html) => (html.match(/name="token" value="([0-9a-f]+)"/) || [])[1];
+    r = await sendFile(Buffer.from(await tpl.xlsx.writeBuffer()), 'chips.xlsx');
+    check('Importar: primero muestra la revisión, sin registrar nada', r.status === 200 && r.text.includes('Revisar antes de registrar')
+      && r.text.includes('todavía no se registró nada') && !(await chip(N[5])) && !(await chip(N[6])));
+    check('Revisión: 2 listos, 1 con advertencia y 3 con error, cada fila con su motivo', r.text.includes('2 listos') && r.text.includes('1 con advertencia')
+      && r.text.includes('3 con error') && r.text.includes('está repetido en este mismo lote') && r.text.includes('ICCID ilegible')
+      && r.text.includes('Falta el número') && r.text.includes('ya existe un chip con ese número') && r.text.includes('Registrar 3 chip(s) en stock'));
+    const token = tokenOf(r.text);
+    r = await req('POST', '/celulares/chips/importar/confirmar', { token, operadora: 'Entel', plan: 'Plan relleno', notes: 'lote_e2e relleno' });
     const c5 = await chip(N[5]);
-    check('Importar Excel: 2 importados y 4 filas con error, cada una con su motivo', r.status === 200 && r.text.includes('Importados: 2')
-      && r.text.includes('Con errores: 4') && r.text.includes('está repetido en este mismo lote') && r.text.includes('Excel lo recorta a 15 cifras')
-      && r.text.includes('Falta el número') && r.text.includes('ya existe un chip con ese número'));
-    check('Importar Excel: el chip trae todos sus datos; el número escrito como número también entra', c5 && c5.operadora === 'Claro'
-      && c5.iccid === ICC[5] && Number(c5.costo_plan) === 29.9 && Number(c5.descuento_plan) === 9.9 && c5.descuento_nota === 'Promo 6 meses'
-      && (await chip(N[6])) && (await chip(N[6])).operadora === null && !(await chip(N[7])));
+    check('Confirmar: registra los 3 y lista las 3 filas con error', r.status === 200 && r.text.includes('Importados: 3') && r.text.includes('Con errores: 3'));
+    check('El chip trae todos sus datos del archivo; lo que se pide completar no pisa lo que el archivo ya traía', c5 && c5.operadora === 'Claro'
+      && c5.iccid === ICC[5] && c5.plan === 'Plan E2E' && Number(c5.costo_plan) === 29.9 && Number(c5.descuento_plan) === 9.9
+      && c5.descuento_nota === 'Promo 6 meses' && c5.notes === 'lote_e2e excel');
+    check('Las filas con datos vacíos se completan; el número escrito como número de Excel también entra', (await chip(N[6])).operadora === 'Entel'
+      && (await chip(N[6])).plan === 'Plan relleno' && (await chip(N[6])).notes === 'lote_e2e excel');
+    check('El ICCID que Excel recortó no se guarda: el chip entra sin ICCID', (await chip(N[7])) && (await chip(N[7])).iccid === null
+      && (await chip(N[7])).notes === 'lote_e2e relleno');
+    r = await post('/celulares/chips/importar/confirmar', { token });
+    check('Confirmar dos veces la misma revisión: no duplica, pide subir de nuevo', /venció o ya se registró/.test(r.errors[0] || ''));
+    await pool.query('UPDATE mobile_lines SET operadora = NULL WHERE phone_number = ?', [N[6]]);
+
+    // Archivo "libre": encabezados en la fila 2, desde la columna B, sin tildes y con una columna de serie
+    const libre = new ExcelJS.Workbook();
+    const ls = libre.addWorksheet('Hoja1');
+    ls.getCell('B2').value = 'IMEIF'; ls.getCell('C2').value = 'ICCID'; ls.getCell('D2').value = 'Numero'; ls.getCell('E2').value = 'Otra cosa';
+    ls.getCell('B3').value = 'AB0000000000001'; ls.getCell('C3').value = 8.95100000000001e+19; ls.getCell('D3').value = Number(N[11]);
+    ls.getCell('B4').value = 'AB0000000000002'; ls.getCell('C4').value = 8.95100000000001e+19; ls.getCell('D4').value = Number(N[0]);
+    r = await sendFile(Buffer.from(await libre.xlsx.writeBuffer()), 'libre.xlsx');
+    check('Archivo sin la plantilla: reconoce los encabezados en la fila 2 y sin tildes, y avisa de la columna que no usa', r.status === 200
+      && r.text.includes('encabezados en la fila 2') && r.text.includes('Columnas del archivo que no se usan: Otra cosa')
+      && r.text.includes('Serie AB0000000000001') && r.text.includes('1 con advertencia') && r.text.includes('1 con error'));
+    r = await req('POST', '/celulares/chips/importar/confirmar', { token: tokenOf(r.text) });
+    check('La columna de serie queda en las notas del chip', (await chip(N[11])) && (await chip(N[11])).notes === 'Serie AB0000000000001');
+    const sinNumero = new ExcelJS.Workbook();
+    sinNumero.addWorksheet('H').addRow(['ICCID', 'Plan']);
+    r = await post('/celulares/chips/importar', (() => { const f = new FormData(); f.append('_csrf', CSRF); f.append('file', new Blob([Buffer.from([1, 2, 3])]), 'x.xlsx'); return f; })());
+    check('Archivo dañado: avisa', /No se pudo abrir el archivo/.test(r.errors[0] || ''));
     const bad = new FormData();
     bad.append('_csrf', CSRF);
     r = await post('/celulares/chips/importar', bad);

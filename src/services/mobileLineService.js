@@ -382,13 +382,24 @@ function digits(value) {
   return String(value === null || value === undefined ? '' : value).replace(/\D/g, '');
 }
 
+// Lo que se escribe o se pega en un buscador: sin espacios alrededor (al
+// copiar una celda de Excel viene con un salto de linea o un espacio al
+// final) y, si es un numero escrito con separadores ("934 530 745"), junto.
+function searchTerm(q) {
+  const s = String(q === null || q === undefined ? '' : q).trim();
+  return /^[\d\s.-]+$/.test(s) ? s.replace(/\D/g, '') : s;
+}
+
 // Registra varios chips nuevos, en stock. `rows` = [{ row, phone_number,
 // iccid, operadora, plan, costo_plan, descuento_plan, descuento_nota,
-// notes }]; `row` es como se nombra la fila en los errores. Cada fila se
-// valida igual que el formulario de un chip; las que fallan no impiden
-// registrar las demas. Devuelve { imported, errors: [{ row, message }] }.
-async function createLinesBulk(rows, userId) {
+// notes, warning }]; `row` es como se nombra la fila en los errores. Cada
+// fila se valida igual que el formulario de un chip; las que fallan no
+// impiden registrar las demas. Con `dryRun` no guarda nada: sirve para
+// revisar un archivo antes de registrarlo. Devuelve { imported, errors:
+// [{ row, message }], checked: [{ row, data, ok, message, warning }] }.
+async function createLinesBulk(rows, userId, { dryRun = false } = {}) {
   const errors = [];
+  const checked = [];
   let imported = 0;
   const [[peru]] = await pool.query("SELECT id FROM phone_country_codes WHERE calling_code = '51' LIMIT 1");
   const seenNumber = new Set();
@@ -399,7 +410,7 @@ async function createLinesBulk(rows, userId) {
   };
   const amount = (v) => (v === null || v === undefined || String(v).trim() === '' ? null : String(v).trim().replace(',', '.'));
   for (const r of rows) {
-    const fail = (message) => errors.push({ row: r.row, message });
+    const fail = (message) => { errors.push({ row: r.row, message }); checked.push({ row: r.row, data, ok: false, message }); };
     const data = {
       phone_country_code_id: peru ? peru.id : null,
       phone_number: digits(r.phone_number) || null,
@@ -418,7 +429,13 @@ async function createLinesBulk(rows, userId) {
     if (invalid.length) { fail(`${tag}: ${invalid.join(' ')}`); continue; }
     if (seenNumber.has(data.phone_number)) { fail(`${tag}: está repetido en este mismo lote.`); continue; }
     if (data.iccid && seenIccid.has(data.iccid)) { fail(`${tag}: el ICCID ${data.iccid} está repetido en este mismo lote.`); continue; }
-    if (await numberTaken(data.phone_number)) { fail(`${tag}: ya existe un chip con ese número.`); continue; }
+    if (await numberTaken(data.phone_number)) {
+      const ex = await findExisting({ numero: data.phone_number });
+      const donde = [ex.ubicacion === 'en_celular' ? `en el celular ${ex.asset_code || ex.imei}` : null, ex.holder, ex.estado === 'de_baja' ? 'de baja' : null]
+        .filter(Boolean).join(', ');
+      fail(`${tag}: ya existe un chip con ese número${donde ? ` (${donde})` : ''}.`);
+      continue;
+    }
     const conflict = await deviceChipConflict(data.phone_number, null);
     if (conflict) { fail(conflict); continue; }
     if (data.iccid) {
@@ -427,10 +444,11 @@ async function createLinesBulk(rows, userId) {
     }
     seenNumber.add(data.phone_number);
     if (data.iccid) seenIccid.add(data.iccid);
-    await saveLine(null, data, userId);
+    if (!dryRun) await saveLine(null, data, userId);
     imported += 1;
+    checked.push({ row: r.row, data, ok: true, message: r.warning || '', warning: !!r.warning });
   }
-  return { imported, errors };
+  return { imported, errors, checked };
 }
 
 // Pone la misma operadora a varios chips (y a sus celulares, si el chip es
@@ -464,9 +482,10 @@ const BASE_SELECT = `
   LEFT JOIN mobile_line_assignments la ON la.line_id = l.id AND la.returned_date IS NULL
   LEFT JOIN employees e ON e.id = la.employee_id`;
 
-async function listLines({ q, estado, ubicacion, operadora, area, sede, costo } = {}) {
+async function listLines({ q: rawQ, estado, ubicacion, operadora, area, sede, costo } = {}) {
   let sql = `SELECT * FROM (${BASE_SELECT}) x WHERE 1=1`;
   const params = [];
+  const q = searchTerm(rawQ);
   if (q) {
     sql += ' AND (x.phone_number LIKE ? OR x.iccid LIKE ? OR x.holder LIKE ? OR x.imei LIKE ? OR x.asset_code LIKE ? OR x.plan LIKE ?)';
     for (let i = 0; i < 6; i++) params.push(`%${q}%`);
@@ -563,5 +582,5 @@ module.exports = {
   validateLineData, numberTaken, deviceChipConflict, syncDeviceChip,
   placeInDevice, removeFromDevice, assignLine, closeAssignment, saveLine, deleteLine, getLine,
   listLines, summarize, netCost, getLineDetail, linesOfDevice, linesOfEmployee,
-  createLinesBulk, setOperadora, digits, dropLine, reactivateLine, findExisting,
+  createLinesBulk, setOperadora, digits, searchTerm, dropLine, reactivateLine, findExisting,
 };

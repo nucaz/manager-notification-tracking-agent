@@ -169,6 +169,14 @@ async function main() {
     s = lineService.summarize(await lineService.listLines({ q: '9000009', costo: 'sin' }));
     check('Filtro "sin costo registrado"', s.total === 2 && s.costoTotal === 0);
 
+    // --- Buscador de Celulares: texto pegado desde Excel y chips del equipo
+    r = await req('GET', `/celulares?q=${encodeURIComponent(`${N[3]} \n`)}`);
+    check('Buscar en Celulares un número pegado con espacio y salto de línea al final: lo encuentra', r.status === 200 && r.text.includes(IMEI[0]));
+    r = await req('GET', `/celulares?q=${encodeURIComponent(`${N[3].slice(0, 3)} ${N[3].slice(3, 6)} ${N[3].slice(6)}`)}`);
+    check('Buscar un número escrito con espacios (934 530 745): lo encuentra', r.text.includes(IMEI[0]));
+    r = await req('GET', `/celulares?q=${N[2]}`);
+    check('Buscar en Celulares el número de un chip que no está en ningún celular: avisa y enlaza a Chips', r.text.includes('no están en ningún celular') && r.text.includes(`/celulares/chips?q=${N[2]}`));
+
     // --- Dos montos: sin descuento y con descuento
     r = await post(`/celulares/chips/${l4.id}/editar`, { phone_number: N[3], phone_country_code_id: String(peru.id), operadora: 'Entel',
       plan: 'Corporativo', costo_plan: '29.90', descuento_plan: '9.90', descuento_nota: 'Fidelización 18 meses', estado: 'activo' });

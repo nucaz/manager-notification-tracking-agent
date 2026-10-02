@@ -1,0 +1,94 @@
+<%- include('../partials/head', { title: title }) %>
+<% const listos = counts.ok + counts.warning; %>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="/celulares/chips/importar" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Importar chips</a>
+    <h2 class="mb-0">Revisar antes de registrar</h2>
+    <div class="text-muted small"><%= filename %> · encabezados en la fila <%= headerRow %> · todavía no se registró nada</div>
+  </div>
+</div>
+
+<div class="card p-3 mb-3">
+  <div class="d-flex flex-wrap gap-2 mb-2">
+    <span class="badge bg-success fs-6"><%= counts.ok %> listos</span>
+    <span class="badge bg-warning text-dark fs-6"><%= counts.warning %> con advertencia (se registran)</span>
+    <span class="badge bg-danger fs-6"><%= counts.error %> con error (no se registran)</span>
+  </div>
+  <% if (unknown.length) { %>
+    <div class="small text-muted mb-2">Columnas del archivo que no se usan: <%= unknown.join(', ') %>.</div>
+  <% } %>
+
+  <% if (listos) { %>
+    <form method="post" action="/celulares/chips/importar/confirmar"
+          onsubmit="return confirm('Se registrarán <%= listos %> chip(s) en stock.<%= counts.error ? ' Las ' + counts.error + ' filas con error se omiten.' : '' %> ¿Continuar?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="token" value="<%= token %>">
+      <div class="text-muted small mb-1">Completar lo que el archivo dejó vacío (opcional; no cambia lo que el archivo ya trae):</div>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-2">
+          <label class="form-label" for="fill_operadora">Operadora</label>
+          <select name="operadora" id="fill_operadora" class="form-select">
+            <option value="">— No completar —</option>
+            <% operadoras.forEach(function(o) { %><option value="<%= o %>"><%= o %></option><% }); %>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="fill_plan">Plan</label>
+          <input type="text" name="plan" id="fill_plan" class="form-control" maxlength="60">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="fill_costo">Costo sin descuento (S/)</label>
+          <input type="number" name="costo_plan" id="fill_costo" class="form-control" step="0.01" min="0">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="fill_descuento">Descuento (S/)</label>
+          <input type="number" name="descuento_plan" id="fill_descuento" class="form-control" step="0.01" min="0">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="fill_notes">Nota</label>
+          <input type="text" name="notes" id="fill_notes" class="form-control" maxlength="250">
+        </div>
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Registrar <%= listos %> chip(s) en stock</button>
+        <a href="/celulares/chips/importar" class="btn btn-outline-secondary">Cancelar y subir otro archivo</a>
+      </div>
+    </form>
+  <% } else { %>
+    <div class="alert alert-danger mb-2">Ninguna fila se puede registrar. Corrija el archivo y súbalo de nuevo.</div>
+    <a href="/celulares/chips/importar" class="btn btn-outline-secondary" style="width: fit-content;">Subir otro archivo</a>
+  <% } %>
+</div>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0" style="font-variant-numeric: tabular-nums;">
+      <thead>
+        <tr><th>Fila</th><th>Número</th><th>ICCID</th><th>Operadora</th><th>Plan</th><th class="text-end">Costo</th><th class="text-end">Descuento</th><th>Notas</th><th>Resultado</th></tr>
+      </thead>
+      <tbody>
+        <% checked.forEach(function(c) { const d = c.data; %>
+          <tr class="<%= !c.ok ? 'table-danger' : c.warning ? 'table-warning' : '' %>">
+            <td><%= c.row %></td>
+            <td class="font-monospace"><%= d.phone_number || '—' %></td>
+            <td class="font-monospace"><%= d.iccid || '—' %></td>
+            <td><%= d.operadora || '—' %></td>
+            <td><%= d.plan || '—' %></td>
+            <td class="text-end"><%= d.costo_plan || '—' %></td>
+            <td class="text-end"><%= d.descuento_plan || '—' %></td>
+            <td class="small"><%= d.notes || '—' %></td>
+            <td>
+              <% if (!c.ok) { %><span class="badge bg-danger">Error</span>
+              <% } else if (c.warning) { %><span class="badge bg-warning text-dark">Advertencia</span>
+              <% } else { %><span class="badge bg-success">Listo</span><% } %>
+              <% if (c.message) { %><div class="small"><%= c.message %></div><% } %>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

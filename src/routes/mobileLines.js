@@ -2,6 +2,8 @@
 // modulo que Celulares. La logica (y la sincronizacion con el numero del
 // celular) vive en src/services/mobileLineService.js.
 const express = require('express');
+const crypto = require('crypto');
+const { Readable } = require('stream');
 const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
@@ -153,6 +155,89 @@ const IMPORT_COLUMNS = [
   { header: 'Notas', field: 'notes' },
 ];
 
+// Como puede llamarse cada columna en el archivo (sin tildes ni
+// mayusculas). "serie" no es un campo del chip: va a las notas.
+const IMPORT_ALIASES = {
+  phone_number: ['numero', 'número', 'n', 'no', 'nro', 'numero de linea', 'linea', 'telefono', 'celular', 'numero entel'],
+  iccid: ['iccid', 'icc', 'sim', 'numero de chip'],
+  operadora: ['operadora', 'operador'],
+  plan: ['plan', 'plan tarifario'],
+  costo_plan: ['costo sin descuento', 'costo', 'cargo fijo', 'costo mensual'],
+  descuento_plan: ['descuento', 'descuento mensual'],
+  descuento_nota: ['detalle del descuento'],
+  notes: ['notas', 'nota', 'observacion', 'observaciones'],
+  serie: ['serie', 'serial', 'imeif', 'codigo', 'codigo de serie'],
+};
+const normHeader = (v) => String(v === null || v === undefined ? '' : v).normalize('NFD').replace(/[^\x20-\x7e]/g, '')
+  .replace(/[.:°º]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+function cellValue(cell) {
+  const v = cell.value;
+  if (v && typeof v === 'object' && !(v instanceof Date)) {
+    if ('result' in v) return v.result === undefined || v.result === null ? '' : v.result;
+    if (Array.isArray(v.richText)) return v.richText.map((t) => t.text).join('');
+    return cell.text || '';
+  }
+  return v === undefined || v === null ? '' : v;
+}
+
+// Lee la hoja buscando la fila de encabezados (no tiene que ser la primera
+// ni empezar en la columna A) y devuelve las filas ya con sus campos.
+async function readChipSheet(buffer, filename) {
+  const workbook = new ExcelJS.Workbook();
+  let sheet;
+  if (/\.csv$/i.test(filename || '')) sheet = await workbook.csv.read(Readable.from(buffer));
+  else { await workbook.xlsx.load(buffer); sheet = workbook.worksheets[0]; }
+  if (!sheet) return { rows: [], unknown: [], headerRow: null };
+  let headerRow = null;
+  let cols = {};
+  let unknown = [];
+  for (let r = 1; r <= Math.min(15, sheet.rowCount) && !headerRow; r++) {
+    const found = {};
+    const other = [];
+    sheet.getRow(r).eachCell((cell, c) => {
+      const h = normHeader(cellValue(cell));
+      if (!h) return;
+      const field = Object.keys(IMPORT_ALIASES).find((f) => IMPORT_ALIASES[f].map(normHeader).includes(h));
+      if (field && !found[field]) found[field] = c; else other.push(String(cellValue(cell)).trim());
+    });
+    if (found.phone_number) { headerRow = r; cols = found; unknown = other; }
+  }
+  if (!headerRow) return { rows: [], unknown: [], headerRow: null };
+  const rows = [];
+  sheet.eachRow((row, r) => {
+    if (r <= headerRow) return;
+    const item = { row: r };
+    Object.keys(cols).forEach((f) => { item[f] = cellValue(row.getCell(cols[f])); });
+    if (Object.keys(cols).every((f) => String(item[f]).trim() === '')) return; // fila vacia
+    // Excel guarda un numero con 15 cifras: un ICCID (19-20) escrito como
+    // numero ya perdio las ultimas y no se puede recuperar del archivo.
+    if (typeof item.iccid === 'number') {
+      item.iccid = '';
+      item.warning = 'ICCID ilegible: Excel lo guardó como número y perdió sus últimas cifras. Se registra sin ICCID (puede completarlo después).';
+    }
+    if (item.serie !== undefined && String(item.serie).trim() !== '') {
+      item.notes = [String(item.notes === undefined ? '' : item.notes).trim(), `Serie ${String(item.serie).trim()}`].filter(Boolean).join(' · ');
+    }
+    delete item.serie;
+    rows.push(item);
+  });
+  return { rows, unknown, headerRow };
+}
+
+// Archivos subidos que esperan la confirmacion del usuario (revision antes
+// de registrar). En memoria: son pocos, viven minutos, y si el proceso se
+// reinicia basta con volver a subir el archivo.
+const pendingImports = new Map();
+function keepImport(entry) {
+  const now = Date.now();
+  for (const [k, v] of pendingImports) if (now - v.at > 30 * 60 * 1000) pendingImports.delete(k);
+  while (pendingImports.size >= 30) pendingImports.delete(pendingImports.keys().next().value);
+  const token = crypto.randomBytes(16).toString('hex');
+  pendingImports.set(token, { ...entry, at: now });
+  return token;
+}
+
 const importView = (results) => ({
   title: 'Importar chips',
   listUrl: '/celulares/chips',
@@ -160,6 +245,8 @@ const importView = (results) => ({
   templateUrl: '/celulares/chips/importar/plantilla',
   columns: IMPORT_COLUMNS,
   results,
+  submitLabel: 'Revisar el archivo',
+  note: 'Primero verá una revisión fila por fila; nada se registra hasta que la confirme. Los encabezados pueden estar en cualquier fila y sin tildes; una columna "Serie" o "IMEIF" se guarda en las notas.',
 });
 
 router.get('/importar', canWrite, (req, res) => res.render('import', importView(null)));
@@ -184,41 +271,70 @@ router.get('/importar/plantilla', canWrite, async (req, res, next) => {
   }
 });
 
-function cell(row, header) {
-  const v = row[header];
-  if (v && typeof v === 'object' && !(v instanceof Date)) return v.text !== undefined ? v.text : v.result !== undefined ? v.result : '';
-  return v === undefined || v === null ? '' : v;
-}
-
+// Paso 1: leer el archivo y mostrar la revision. No registra nada.
 router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToken, async (req, res, next) => {
   try {
     if (!req.file) {
       req.flash('error', 'Debes seleccionar un archivo.');
       return res.redirect('/celulares/chips/importar');
     }
-    const sheetRows = await importService.parseSpreadsheet(req.file.buffer, req.file.originalname);
-    const early = [];
-    const rows = [];
-    sheetRows.forEach((raw, i) => {
-      const row = i + 2; // la fila 1 es el encabezado
-      const r = { row };
-      IMPORT_COLUMNS.forEach((c) => { r[c.field] = cell(raw, c.header); });
-      if (IMPORT_COLUMNS.every((c) => String(r[c.field]).trim() === '')) return; // fila vacia
-      if (typeof r.iccid === 'number') {
-        early.push({ row, message: `Número ${r.phone_number}: el ICCID llegó como número y Excel lo recorta a 15 cifras. Use la plantilla (la columna ICCID es de texto) o escríbalo con un apóstrofo delante.` });
-        return;
-      }
-      rows.push(r);
+    let sheet;
+    try {
+      sheet = await readChipSheet(req.file.buffer, req.file.originalname);
+    } catch (err) {
+      req.flash('error', 'No se pudo abrir el archivo: está dañado o no es un Excel (.xlsx) ni un CSV.');
+      return res.redirect('/celulares/chips/importar');
+    }
+    if (!sheet.headerRow) {
+      req.flash('error', 'No se encontró la fila de encabezados: el archivo debe tener una columna llamada "Número" (use la plantilla).');
+      return res.redirect('/celulares/chips/importar');
+    }
+    if (!sheet.rows.length) {
+      req.flash('error', 'El archivo no tiene filas con datos debajo de los encabezados.');
+      return res.redirect('/celulares/chips/importar');
+    }
+    const result = await lineService.createLinesBulk(sheet.rows, req.session.user.id, { dryRun: true });
+    const token = keepImport({ rows: sheet.rows, filename: req.file.originalname, userId: req.session.user.id });
+    res.render('mobileLines/importPreview', {
+      title: 'Revisar antes de registrar', token, filename: req.file.originalname, unknown: sheet.unknown, headerRow: sheet.headerRow,
+      checked: result.checked.sort((a, b) => a.row - b.row),
+      counts: {
+        ok: result.checked.filter((c) => c.ok && !c.warning).length, warning: result.checked.filter((c) => c.ok && c.warning).length,
+        error: result.errors.length,
+      },
+      operadoras: await catalogService.getActive('operadora'),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Paso 2: registrar lo revisado. Los datos "para completar" solo llenan lo
+// que el archivo dejo vacio. Se valida todo de nuevo: entre la revision y
+// la confirmacion alguien pudo registrar uno de esos numeros.
+router.post('/importar/confirmar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const pending = pendingImports.get(String(req.body.token || ''));
+    if (!pending || pending.userId !== req.session.user.id) {
+      req.flash('error', 'La revisión venció o ya se registró. Suba el archivo de nuevo.');
+      return res.redirect('/celulares/chips/importar');
+    }
+    pendingImports.delete(req.body.token);
+    const fill = {};
+    ['operadora', 'plan', 'costo_plan', 'descuento_plan', 'notes'].forEach((k) => { fill[k] = String(req.body[k] || '').trim(); });
+    const rows = pending.rows.map((r) => {
+      const out = { ...r };
+      Object.keys(fill).forEach((k) => { if (fill[k] && String(out[k] === undefined ? '' : out[k]).trim() === '') out[k] = fill[k]; });
+      return out;
     });
     const result = await lineService.createLinesBulk(rows, req.session.user.id);
-    const errors = [...early, ...result.errors].sort((a, b) => a.row - b.row);
     if (result.imported) {
       await auditService.log(req, {
         user: req.session.user, action: 'chips_importados', target: `${result.imported} chip(s)`,
-        detail: `Desde ${req.file.originalname}; ${errors.length} fila(s) con error`,
+        detail: `Desde ${pending.filename}; ${result.errors.length} fila(s) con error`,
       });
     }
-    res.render('import', importView({ imported: result.imported, errors }));
+    res.render('import', importView({ imported: result.imported, errors: result.errors.sort((a, b) => a.row - b.row) }));
   } catch (err) {
     next(err);
   }
@@ -231,6 +347,7 @@ router.get('/existe', async (req, res, next) => {
   try {
     const numero = lineService.digits(req.query.numero);
     const iccid = lineService.digits(req.query.iccid);
+    if (!numero && !iccid) return res.json({ existe: false });
     const exceptId = /^\d+$/.test(String(req.query.excepto || '')) ? Number(req.query.excepto) : null;
     const found = await lineService.findExisting({ numero, iccid: numero ? '' : iccid, exceptId });
     if (!found) return res.json({ existe: false });

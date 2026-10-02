@@ -71,6 +71,13 @@
   </div>
 </form>
 
+<% if (chipsSueltos) { %>
+  <div class="alert alert-info py-2">
+    <i class="bi bi-sim"></i> Además, <strong><%= chipsSueltos %> chip(s)</strong> con "<%= q %>" no están en ningún celular (en stock, asignados sin celular o de baja).
+    <a href="/celulares/chips?q=<%= encodeURIComponent(q) %>">Verlos en Chips</a>
+  </div>
+<% } %>
+
 <div class="card p-3">
   <% if (currentUser.role !== 'lector') { %>
     <form id="bulkDeleteForm" method="post" action="/celulares/eliminar-multiple"

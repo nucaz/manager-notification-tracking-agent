@@ -51,7 +51,8 @@
       <label class="form-label">Archivo (CSV o Excel)</label>
       <input type="file" name="file" class="form-control" accept=".csv,.xlsx" required>
     </div>
-    <button type="submit" class="btn btn-primary">Importar</button>
+    <button type="submit" class="btn btn-primary"><%= typeof submitLabel !== 'undefined' ? submitLabel : 'Importar' %></button>
+    <% if (typeof note !== 'undefined') { %><div class="form-text mt-2"><%= note %></div><% } %>
   </form>
 </div>
 
