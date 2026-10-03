@@ -335,12 +335,20 @@ router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => 
       errors.forEach((e) => req.flash('error', e));
       return res.redirect(`/celulares/${req.params.id}/editar`);
     }
-    const changes = await describeDeviceChanges(oldRow, data);
+    let changes = await describeDeviceChanges(oldRow, data);
     const cols = Object.keys(data);
     const values = Object.values(data);
     const setClause = cols.map((c) => `${c} = ?`).join(', ');
     await pool.query(`UPDATE mobile_devices SET ${setClause} WHERE id = ?`, [...values, req.params.id]);
     await mobileLineService.syncDeviceChip(oldRow.id, oldRow.has_chip ? oldRow.phone_number : null, req.session.user.id);
+    // Un equipo en stock o de baja no lo tiene nadie: si se cambia el estado
+    // desde aqui (en vez de "Devolver a stock"), la asignacion vigente se
+    // cierra igual. Queda en el historial; la persona deja de figurar como
+    // usuario actual (sin "persona fantasma" en listados y reportes).
+    if (['en_stock', 'de_baja'].includes(data.status) && data.status !== oldRow.status) {
+      const closed = await closeActiveAssignment(oldRow.id, data.status === 'de_baja' ? 'Cerrada al dar de baja el equipo' : 'Devuelto a stock (cambio de estado)');
+      if (closed) changes = `${changes ? `${changes}; ` : ''}se cerró la asignación de ${closed.holder_name}`;
+    }
     if (changes) {
       await auditService.log(req, {
         user: req.session.user,
@@ -355,6 +363,22 @@ router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => 
     next(err);
   }
 });
+
+// Cierra la asignacion vigente del celular (si la hay): queda en el
+// historial con fecha de devolucion de hoy. Devuelve la que cerro o null.
+async function closeActiveAssignment(deviceId, note) {
+  const [[active]] = await pool.query(
+    'SELECT id, holder_name FROM mobile_device_assignments WHERE device_id = ? AND returned_date IS NULL',
+    [deviceId]
+  );
+  if (!active) return null;
+  await pool.query(
+    `UPDATE mobile_device_assignments SET returned_date = CURDATE(),
+       observacion = TRIM(BOTH ' - ' FROM CONCAT_WS(' - ', observacion, ?)) WHERE id = ?`,
+    [note, active.id]
+  );
+  return active;
+}
 
 router.post('/:id/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
