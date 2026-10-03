@@ -16,6 +16,7 @@ const mobileModelService = require('../services/mobileModelService');
 const deviceBillingService = require('../services/deviceBillingService');
 const deviceStatsService = require('../services/deviceStatsService');
 const dashboardService = require('../services/dashboardService');
+const assignmentHistory = require('../services/assignmentHistoryService');
 const { DECOMISO_MOTIVO } = require('../config/mobileLabels');
 
 const auditService = require('../services/auditService');
@@ -352,8 +353,9 @@ router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => 
     // desde aqui (en vez de "Devolver a stock"), la asignacion vigente se
     // cierra igual. Queda en el historial; la persona deja de figurar como
     // usuario actual (sin "persona fantasma" en listados y reportes).
+    if (data.area !== oldRow.area || (data.sede || null) !== (oldRow.sede || null)) await assignmentHistory.syncPlace(oldRow.id, data.area, data.sede);
     if (['en_stock', 'de_baja'].includes(data.status) && data.status !== oldRow.status) {
-      const closed = await closeActiveAssignment(oldRow.id, data.status === 'de_baja' ? 'Cerrada al dar de baja el equipo' : 'Devuelto a stock (cambio de estado)');
+      const closed = await assignmentHistory.close(oldRow.id, data.status, data.status === 'de_baja' ? 'Cerrada al dar de baja el equipo' : 'Devuelto a stock (cambio de estado)');
       if (closed) changes = `${changes ? `${changes}; ` : ''}se cerró la asignación de ${closed.holder_name}`;
     }
     if (changes) {
@@ -370,22 +372,6 @@ router.post('/:id/editar', canWrite, verifyCsrfToken, async (req, res, next) => 
     next(err);
   }
 });
-
-// Cierra la asignacion vigente del celular (si la hay): queda en el
-// historial con fecha de devolucion de hoy. Devuelve la que cerro o null.
-async function closeActiveAssignment(deviceId, note) {
-  const [[active]] = await pool.query(
-    'SELECT id, holder_name FROM mobile_device_assignments WHERE device_id = ? AND returned_date IS NULL',
-    [deviceId]
-  );
-  if (!active) return null;
-  await pool.query(
-    `UPDATE mobile_device_assignments SET returned_date = CURDATE(),
-       observacion = TRIM(BOTH ' - ' FROM CONCAT_WS(' - ', observacion, ?)) WHERE id = ?`,
-    [note, active.id]
-  );
-  return active;
-}
 
 router.post('/:id/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
@@ -466,20 +452,19 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
     );
     const holderName = `${first_name} ${last_name}`;
 
-    await pool.query(
-      'UPDATE mobile_device_assignments SET returned_date = CURDATE() WHERE device_id = ? AND returned_date IS NULL',
-      [req.params.id]
-    );
+    await assignmentHistory.close(req.params.id, 'reasignado', `Reasignado a ${holderName}`);
     await pool.query(
       `INSERT INTO mobile_device_assignments
-        (device_id, employee_id, holder_name, cargo, turno, assigned_date, observacion, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        (device_id, employee_id, holder_name, cargo, turno, area, sede, assigned_date, observacion, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.params.id,
         employeeId,
         holderName,
         cargo || null,
         turno || null,
+        area,
+        sede || null,
         assigned_date || null,
         observacion || null,
         req.session.user.id,
@@ -636,10 +621,7 @@ router.post('/:id/devolver', canWrite, verifyCsrfToken, async (req, res, next) =
       'SELECT holder_name FROM mobile_device_assignments WHERE device_id = ? AND returned_date IS NULL',
       [req.params.id]
     );
-    await pool.query(
-      'UPDATE mobile_device_assignments SET returned_date = CURDATE() WHERE device_id = ? AND returned_date IS NULL',
-      [req.params.id]
-    );
+    await assignmentHistory.close(req.params.id, 'en_stock', null);
     await pool.query('UPDATE mobile_devices SET status = "en_stock", updated_at = NOW() WHERE id = ?', [req.params.id]);
     await auditService.log(req, {
       user: req.session.user,
@@ -934,6 +916,8 @@ router.post('/:id/incidentes', canWrite, verifyCsrfToken, async (req, res, next)
       await pool.query('UPDATE mobile_devices SET status = "en_reparacion" WHERE id = ?', [req.params.id]);
     } else if (tipo === 'baja') {
       await pool.query('UPDATE mobile_devices SET status = "de_baja" WHERE id = ?', [req.params.id]);
+      // Un equipo de baja no lo tiene nadie: la asignacion pasa al historial.
+      await assignmentHistory.close(req.params.id, 'de_baja', `Cerrada por la baja del ${fecha}`);
     }
     await touchDevice(req.params.id);
     await auditService.log(req, {
@@ -976,12 +960,7 @@ router.post('/:id/incidentes/:incidentId/resolver', canWrite, verifyCsrfToken, a
       // tenia): su asignacion se cierra con fecha de hoy.
       nuevoEstado = 'en_stock';
       if (activeAssignment) {
-        await pool.query(
-          `UPDATE mobile_device_assignments SET returned_date = CURDATE(),
-             observacion = TRIM(BOTH ' - ' FROM CONCAT_WS(' - ', observacion, 'Cerrada al resolver el decomiso'))
-           WHERE id = ?`,
-          [activeAssignment.id]
-        );
+        await assignmentHistory.close(req.params.id, 'en_decomiso', 'Cerrada al resolver el decomiso');
         extra = `; se cerró la asignación de ${activeAssignment.holder_name}`;
       }
     } else {
@@ -1208,16 +1187,19 @@ router.get('/:id', async (req, res, next) => {
        WHERE a.device_id = ? ORDER BY a.created_at DESC`,
       [req.params.id]
     );
-    const currentAssignment = assignments.find((a) => !a.returned_date) || null;
-    const history = assignments.filter((a) => a.returned_date);
-    const [attachments] = await pool.query(
-      'SELECT * FROM attachments WHERE entity_type = "mobile_device" AND entity_id = ? ORDER BY uploaded_at DESC',
-      [req.params.id]
-    );
     const [incidents] = await pool.query(
       'SELECT * FROM mobile_device_incidents WHERE device_id = ? ORDER BY fecha DESC, id DESC',
       [req.params.id]
     );
+    // Lugar, como termino y lo que paso antes y durante cada asignacion.
+    const enriched = assignmentHistory.enrich(assignments, incidents);
+    const currentAssignment = enriched.find((a) => !a.returned_date) || null;
+    const history = enriched.filter((a) => a.returned_date);
+    const [attachments] = await pool.query(
+      'SELECT * FROM attachments WHERE entity_type = "mobile_device" AND entity_id = ? ORDER BY uploaded_at DESC',
+      [req.params.id]
+    );
+
     const catalogs = await loadCatalogOptions();
     const lines = await mobileLineService.linesOfDevice(rows[0].id);
 

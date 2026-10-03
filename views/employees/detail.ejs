@@ -31,14 +31,18 @@
         <p class="text-muted mb-0">Sin asignaciones registradas.</p>
       <% } else { %>
         <table class="table table-sm">
-          <thead><tr><th>Equipo</th><th>Desde</th><th>Hasta</th><th>Observación</th></tr></thead>
+          <thead><tr><th>Equipo</th><th>Área / Sede</th><th>Desde</th><th>Hasta</th><th>Cómo terminó</th><th>Antes</th><th>Durante</th><th>Observación</th></tr></thead>
           <tbody>
             <% assignmentHistory.forEach(function(a) { %>
               <tr>
                 <td><a href="/celulares/<%= a.device_id %>"><%= a.imei %></a> <%= a.asset_code ? '(' + a.asset_code + ')' : '' %></td>
-                <td><%= a.assigned_date || '—' %></td>
-                <td><%= a.returned_date || 'Activa' %></td>
-                <td><%= a.observacion || '—' %></td>
+                <td><%= a.lugar || 'Sin dato' %></td>
+                <td class="text-nowrap"><%= a.assigned_date || '—' %></td>
+                <td class="text-nowrap"><%= a.returned_date || 'Activa' %></td>
+                <td><%= a.termino || '—' %></td>
+                <td class="small"><%= a.antes.length ? a.antes.join('; ') : 'Sin incidentes' %></td>
+                <td class="small"><%= a.durante.length ? a.durante.join('; ') : 'Sin incidentes' %></td>
+                <td class="small"><%= a.observacion || '—' %></td>
               </tr>
             <% }); %>
           </tbody>

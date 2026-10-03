@@ -274,8 +274,11 @@ CREATE TABLE IF NOT EXISTS mobile_device_assignments (
   holder_name VARCHAR(150) NOT NULL,            -- snapshot inmutable (nombres+apellidos al momento de asignar)
   cargo VARCHAR(150),
   turno VARCHAR(50),
+  area VARCHAR(100) NULL,                       -- donde estuvo el equipo durante esta asignacion
+  sede VARCHAR(100) NULL,
   assigned_date DATE,
   returned_date DATE NULL,                      -- NULL = asignacion activa
+  estado_final VARCHAR(20) NULL,                -- como termino: reasignado | en_stock | de_baja | en_decomiso
   observacion TEXT,
   created_by INT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -198,9 +198,9 @@ async function importDevices(rows, userId, { dryRun = false } = {}) {
       if (withAssignment) {
         await conn.query(
           `INSERT INTO mobile_device_assignments
-            (device_id, holder_name, cargo, turno, assigned_date, observacion, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [deviceId, holder, cargo || null, turno || null, assignedDate, obs || null, userId]
+            (device_id, holder_name, cargo, turno, area, sede, assigned_date, observacion, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [deviceId, holder, cargo || null, turno || null, data.area || null, data.sede || null, assignedDate, obs || null, userId]
         );
       }
       if (status === 'en_reparacion') {

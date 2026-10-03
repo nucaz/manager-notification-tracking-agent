@@ -117,17 +117,20 @@
         <p class="text-muted mb-0">Sin asignaciones anteriores.</p>
       <% } else { %>
         <table class="table table-sm">
-          <thead><tr><th>Usuario</th><th>DNI</th><th>Cargo</th><th>Turno</th><th>Desde</th><th>Hasta</th><th>Observación</th></tr></thead>
+          <thead><tr><th>Usuario</th><th>DNI</th><th>Cargo</th><th>Área / Sede</th><th>Desde</th><th>Hasta</th><th>Cómo terminó</th><th>Antes de la asignación</th><th>Durante</th><th>Observación</th></tr></thead>
           <tbody>
             <% history.forEach(function(h) { %>
               <tr>
                 <td><%= h.holder_name %></td>
                 <td><%= h.dni || '—' %></td>
-                <td><%= h.cargo || '—' %></td>
-                <td><%= h.turno || '—' %></td>
-                <td><%= h.assigned_date || '—' %></td>
-                <td><%= h.returned_date %></td>
-                <td><%= h.observacion || '—' %></td>
+                <td><%= h.cargo || '—' %><%= h.turno ? ' · ' + h.turno : '' %></td>
+                <td><%= h.lugar || 'Sin dato' %></td>
+                <td class="text-nowrap"><%= h.assigned_date || '—' %></td>
+                <td class="text-nowrap"><%= h.returned_date %></td>
+                <td><%= h.termino || '—' %></td>
+                <td class="small"><%= h.antes.length ? h.antes.join('; ') : 'Sin incidentes' %></td>
+                <td class="small"><%= h.durante.length ? h.durante.join('; ') : 'Sin incidentes' %></td>
+                <td class="small"><%= h.observacion || '—' %></td>
               </tr>
             <% }); %>
           </tbody>

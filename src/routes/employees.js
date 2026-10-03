@@ -1,4 +1,6 @@
 const express = require('express');
+const assignmentHistory = require('../services/assignmentHistoryService');
+const assignmentHistoryService = assignmentHistory;
 const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
@@ -222,15 +224,13 @@ router.post('/:id/asignar-celular', canWrite, verifyCsrfToken, async (req, res, 
       return res.redirect(`/empleados/${req.params.id}`);
     }
     const holderName = `${employee.first_name} ${employee.last_name}`;
-    await pool.query(
-      'UPDATE mobile_device_assignments SET returned_date = CURDATE() WHERE device_id = ? AND returned_date IS NULL',
-      [device_id]
-    );
+    await assignmentHistory.close(device_id, 'reasignado', `Reasignado a ${holderName}`);
     await pool.query(
       `INSERT INTO mobile_device_assignments
-        (device_id, employee_id, holder_name, cargo, turno, assigned_date, observacion, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [device_id, employee.id, holderName, employee.cargo || null, turno || null, assigned_date || null, observacion || null, req.session.user.id]
+        (device_id, employee_id, holder_name, cargo, turno, area, sede, assigned_date, observacion, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [device_id, employee.id, holderName, employee.cargo || null, turno || null, employee.area || device.area, employee.sede || device.sede,
+        assigned_date || null, observacion || null, req.session.user.id]
     );
     await pool.query('UPDATE mobile_devices SET status = "asignado", area = ?, sede = ? WHERE id = ?', [
       employee.area || device.area,
@@ -259,7 +259,7 @@ router.get('/:id', async (req, res, next) => {
        ORDER BY a.assigned_date DESC`,
       [req.params.id]
     );
-    const [assignmentHistory] = await pool.query(
+    const [ownAssignments] = await pool.query(
       `SELECT a.*, d.imei, d.asset_code
        FROM mobile_device_assignments a
        JOIN mobile_devices d ON d.id = a.device_id
@@ -267,6 +267,15 @@ router.get('/:id', async (req, res, next) => {
        ORDER BY a.created_at DESC`,
       [req.params.id]
     );
+    // Lo que paso antes y durante se calcula con todo el historial de cada equipo.
+    const assignmentHistory = [];
+    for (const deviceId of [...new Set(ownAssignments.map((a) => a.device_id))]) {
+      const [all] = await pool.query('SELECT * FROM mobile_device_assignments WHERE device_id = ?', [deviceId]);
+      const [inc] = await pool.query('SELECT * FROM mobile_device_incidents WHERE device_id = ? ORDER BY fecha', [deviceId]);
+      const byId = new Map(assignmentHistoryService.enrich(all, inc).map((a) => [a.id, a]));
+      ownAssignments.filter((a) => a.device_id === deviceId).forEach((a) => assignmentHistory.push({ ...byId.get(a.id), imei: a.imei, asset_code: a.asset_code }));
+    }
+    assignmentHistory.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const [incidents] = await pool.query(
       `SELECT i.*, d.imei, d.asset_code
        FROM mobile_device_incidents i
