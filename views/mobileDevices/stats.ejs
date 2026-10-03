@@ -1,0 +1,130 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  const soles = function(n) { return 'S/ ' + Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  const tabla = function(id, titulo, filas, columna) { return { id: id, titulo: titulo, filas: filas, columna: columna }; };
+  const desgloses = [
+    tabla('por_estado', 'Por estado', s.porEstado, 'Estado'), tabla('por_respaldo', 'Por respaldo de compra', s.porRespaldo, 'Respaldo'),
+    tabla('por_linea', 'Línea y recibo', s.porLinea, 'Línea'), tabla('por_operadora', 'Por operadora', s.porOperadora, 'Operadora'),
+    tabla('por_marca', 'Por marca', s.porMarca, 'Marca'), tabla('por_modelo', 'Por marca y modelo', s.porModelo, 'Modelo'),
+    tabla('por_sede', 'Por sede', s.porSede, 'Sede'), tabla('por_area', 'Por área', s.porArea, 'Área'),
+  ];
+%>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">Estadísticas de celulares</h2>
+    <p class="text-muted mb-0">Cuántos equipos hay y dónde, qué se paga por ellos según el último recibo de la operadora, y qué datos faltan.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/celulares/estadisticas/exportar.xlsx" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+    <a href="/celulares" class="btn btn-outline-secondary">Volver a Celulares</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-3" id="estadisticas_resumen">
+  <div class="col-6 col-lg-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Celulares registrados</div>
+    <div class="stat-number"><%= s.total %></div>
+    <div class="small text-muted"><%= s.chips.con %> con chip · <%= s.chips.doble %> doble SIM · <%= s.chips.sin %> sin chip</div>
+  </div></div>
+  <div class="col-6 col-lg-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Equipos en cuotas (recibo)</div>
+    <div class="stat-number text-primary"><%= soles(s.cuotas.monthly) %></div>
+    <div class="small text-muted"><%= s.cuotas.count %> equipos al mes · <%= s.cuotas.ultimas %> en su última cuota</div>
+  </div></div>
+  <div class="col-6 col-lg-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">En cuotas y sin usuario</div>
+    <div class="stat-number text-warning"><%= soles(s.cuotas.sinUsuarioMonthly) %></div>
+    <div class="small text-muted"><%= s.cuotas.sinUsuario %> equipos en stock o decomiso que se siguen pagando</div>
+  </div></div>
+  <div class="col-6 col-lg-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Cobrados y no registrados</div>
+    <div class="stat-number text-danger"><%= soles(s.unregistered.monthly) %></div>
+    <div class="small text-muted"><%= s.unregistered.count %> equipos que el recibo cobra y no están en el inventario</div>
+  </div></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card p-3 h-100">
+      <h5>Datos que faltan</h5>
+      <ul class="list-unstyled mb-2 small" id="calidad_datos">
+        <li class="d-flex justify-content-between border-bottom py-1"><span>Sin respaldo de compra (ni recibo, ni fecha de compra, ni contrato adjunto)</span><strong><%= s.quality.sinRespaldo %></strong></li>
+        <li class="d-flex justify-content-between border-bottom py-1"><span>Sin marca</span><strong><%= s.quality.sinMarca %></strong></li>
+        <li class="d-flex justify-content-between border-bottom py-1"><span>Sin modelo</span><strong><%= s.quality.sinModelo %></strong></li>
+        <li class="d-flex justify-content-between border-bottom py-1"><span>Sin código de activo</span><strong><%= s.quality.sinCodigo %></strong></li>
+        <li class="d-flex justify-content-between border-bottom py-1"><span>Sin sede</span><strong><%= s.quality.sinSede %></strong></li>
+        <li class="d-flex justify-content-between py-1"><span>Con chip y sin operadora</span><strong><%= s.quality.sinOperadora %></strong></li>
+      </ul>
+      <p class="small text-muted mb-0">En la lista de Celulares, el filtro de cada columna (<i class="bi bi-funnel"></i>) muestra cuáles son.</p>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-3 h-100" id="completar_modelos">
+      <h5>Completar marca y modelo desde el recibo</h5>
+      <% if (!s.suggestions.items.length) { %>
+        <p class="text-muted mb-0 small">No hay celulares sin marca o modelo cuyo equipo figure en un recibo con un modelo del catálogo.</p>
+      <% } else { %>
+        <p class="small mb-2"><strong><%= s.suggestions.items.length %></strong> celulares sin marca o modelo tienen su equipo en un recibo con un modelo que está en el catálogo. Se completan solo los datos vacíos.</p>
+        <form method="post" action="/celulares/estadisticas/completar-modelos" onsubmit="return confirm('Se completará la marca y/o el modelo de <%= s.suggestions.items.length %> celular(es) con lo que dice el recibo. Los datos ya cargados no se tocan. ¿Continuar?');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <% s.suggestions.items.forEach(function(i) { %><input type="hidden" name="ids" value="<%= i.id %>"><% }); %>
+          <div class="table-responsive mb-2" style="max-height: 220px;">
+            <table class="table table-sm small mb-0" data-tabla="no">
+              <thead><tr><th>Celular</th><th>En el recibo</th><th>Quedará</th></tr></thead>
+              <tbody>
+                <% s.suggestions.items.slice(0, 200).forEach(function(i) { %>
+                  <tr><td><a href="/celulares/<%= i.id %>"><%= i.asset_code || i.imei %></a></td><td><%= i.desc %></td>
+                    <td><%= i.brand || i.currentBrand %> <%= i.model || i.currentModel %></td></tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+          <% if (currentUser.role !== 'lector') { %><button class="btn btn-sm btn-primary" type="submit">Completar <%= s.suggestions.items.length %> celular(es)</button><% } %>
+        </form>
+      <% } %>
+      <% if (s.suggestions.unknown.length) { %>
+        <p class="small text-muted mt-2 mb-0"><%= s.suggestions.unknown.length %> equipo(s) del recibo tienen un modelo que no está en el catálogo (ej. "<%= s.suggestions.unknown[0].desc %>"): agréguelo en Configuración → Catálogos → Modelos y vuelva aquí.</p>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <% desgloses.forEach(function(t) { const total = t.filas.reduce(function(a, f) { return a + f[1]; }, 0); %>
+    <div class="col-md-6 col-xl-3">
+      <div class="card p-3 h-100">
+        <h6><%= t.titulo %></h6>
+        <div style="max-height: 260px; overflow-y: auto;">
+          <table class="table table-sm small mb-0" data-tabla="no" id="<%= t.id %>">
+            <tbody>
+              <% t.filas.forEach(function(f) { %>
+                <tr><td><%= f[0] %></td><td class="text-end text-nowrap"><strong><%= f[1] %></strong> <span class="text-muted"><%= total ? Math.round(f[1] * 100 / total) : 0 %>%</span></td></tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% }); %>
+</div>
+
+<div class="card p-3">
+  <h5>Cobrados por la operadora y no registrados (<%= s.unregistered.count %>)</h5>
+  <p class="small text-muted">Equipos cuyo IMEI se cobra en cuotas en el último recibo y que no existen en Celulares: regístrelos o pida a la operadora el detalle.</p>
+  <% if (s.unregistered.items.length) { %>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle">
+        <thead><tr><th>IMEI</th><th>Equipo según el recibo</th><th>Cuota</th><th class="text-end">Al mes</th><th>Recibo</th></tr></thead>
+        <tbody>
+          <% s.unregistered.items.forEach(function(c) { %>
+            <tr><td class="text-nowrap"><%= c.imei %></td><td class="small"><%= c.modelo || '—' %></td><td class="text-nowrap"><%= c.cuota || '?' %> de <%= c.total || '?' %></td>
+              <td class="text-end text-nowrap"><%= soles(c.monto) %></td><td class="small"><%= c.operadora %> <%= c.recibo %></td></tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<%- include('../partials/foot') %>

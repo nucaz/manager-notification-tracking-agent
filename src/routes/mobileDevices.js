@@ -12,6 +12,9 @@ const employeeService = require('../services/employeeService');
 const settingsService = require('../services/settingsService');
 const mobileDeviceService = require('../services/mobileDeviceService');
 const mobileLineService = require('../services/mobileLineService');
+const mobileModelService = require('../services/mobileModelService');
+const deviceBillingService = require('../services/deviceBillingService');
+const deviceStatsService = require('../services/deviceStatsService');
 const { DECOMISO_MOTIVO } = require('../config/mobileLabels');
 
 const auditService = require('../services/auditService');
@@ -53,7 +56,7 @@ async function loadCatalogOptions() {
     catalogService.getActive('sede'),
     catalogService.getActive('area'),
     catalogService.getActive('marca'),
-    catalogService.getActive('modelo'),
+    mobileModelService.list({ activeOnly: true }),
     catalogService.getActive('operadora'),
     catalogService.getActiveCountries(),
   ]);
@@ -153,7 +156,9 @@ router.get('/', async (req, res, next) => {
       params.push(status);
     }
     sql += ' ORDER BY d.area, d.id';
-    const [rows] = await pool.query(sql, params);
+    // Lo que dice el ultimo recibo de cada celular (equipo en cuotas, linea,
+    // respaldo de compra): columnas para filtrar en la tabla.
+    const rows = await deviceBillingService.decorate((await pool.query(sql, params))[0]);
     // Chips que coinciden con la busqueda pero no estan en ningun celular
     // (en stock, asignados sin celular o de baja): se avisa con un enlace.
     let chipsSueltos = 0;
@@ -692,6 +697,72 @@ router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToke
       columns: IMPORT_COLUMNS,
       results: { imported, errors },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/estadisticas', async (req, res, next) => {
+  try {
+    const s = await deviceStatsService.stats();
+    res.render('mobileDevices/stats', { title: 'Estadísticas de celulares', s });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/estadisticas/exportar.xlsx', async (req, res, next) => {
+  try {
+    const s = await deviceStatsService.stats();
+    const wb = new ExcelJS.Workbook();
+    const resumen = wb.addWorksheet('Resumen');
+    resumen.addRow(['Estadísticas de celulares']).font = { bold: true, size: 13 };
+    const add = (titulo, filas) => {
+      resumen.addRow([]);
+      resumen.addRow([titulo, 'Cantidad']).font = { bold: true };
+      filas.forEach((f) => resumen.addRow(f));
+    };
+    add('Totales', [['Celulares registrados', s.total], ['Con chip', s.chips.con], ['Doble SIM', s.chips.doble], ['Sin chip', s.chips.sin],
+      ['Equipos en cuotas (recibo)', s.cuotas.count], ['Pago mensual de cuotas (S/)', s.cuotas.monthly], ['En cuotas y sin usuario', s.cuotas.sinUsuario],
+      ['Pago mensual de esos (S/)', s.cuotas.sinUsuarioMonthly], ['Cobrados y no registrados', s.unregistered.count], ['Pago mensual de esos (S/)', s.unregistered.monthly]]);
+    add('Datos que faltan', [['Sin respaldo de compra', s.quality.sinRespaldo], ['Sin marca', s.quality.sinMarca], ['Sin modelo', s.quality.sinModelo],
+      ['Sin código de activo', s.quality.sinCodigo], ['Sin sede', s.quality.sinSede], ['Con chip y sin operadora', s.quality.sinOperadora]]);
+    [['Por estado', s.porEstado], ['Por respaldo de compra', s.porRespaldo], ['Línea y recibo', s.porLinea], ['Por operadora', s.porOperadora],
+      ['Por marca', s.porMarca], ['Por marca y modelo', s.porModelo], ['Por sede', s.porSede], ['Por área', s.porArea]].forEach(([t, f]) => add(t, f));
+    resumen.getColumn(1).width = 46;
+    resumen.getColumn(2).width = 14;
+    const detalle = wb.addWorksheet('Celulares');
+    const cols = [['imei', 'IMEI'], ['asset_code', 'Código'], ['brand', 'Marca'], ['model', 'Modelo'], ['status', 'Estado'], ['area', 'Área'], ['sede', 'Sede'],
+      ['holder_name', 'Usuario'], ['phone_number', 'Número'], ['operadora', 'Operadora'], ['equipo_recibo', 'Equipo en recibo'], ['linea_recibo', 'Línea en recibo'],
+      ['respaldo_label', 'Respaldo de compra']];
+    detalle.addRow(cols.map((c) => c[1])).font = { bold: true };
+    s.rows.forEach((d) => detalle.addRow(cols.map(([k]) => (d[k] === null || d[k] === undefined ? '' : String(d[k])))));
+    detalle.views = [{ state: 'frozen', ySplit: 1 }];
+    detalle.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cols.length } };
+    detalle.columns.forEach((c) => { c.width = 20; });
+    const fuera = wb.addWorksheet('Cobrados sin registrar');
+    fuera.addRow(['IMEI', 'Equipo según el recibo', 'Cuota', 'De', 'Al mes (S/)', 'Operadora', 'Recibo']).font = { bold: true };
+    s.unregistered.items.forEach((c) => fuera.addRow([c.imei, c.modelo || '', c.cuota, c.total, c.monto, c.operadora, c.recibo]));
+    fuera.columns.forEach((c) => { c.width = 22; });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="estadisticas_celulares_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(await wb.xlsx.writeBuffer());
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/estadisticas/completar-modelos', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const applied = await deviceStatsService.applyModelSuggestions(req.body.ids);
+    if (applied.length) {
+      await auditService.log(req, {
+        user: req.session.user, action: 'celulares_modelo_desde_recibo', target: `${applied.length} celular(es)`,
+        detail: applied.slice(0, 60).map((a) => `${a.asset_code || a.imei}: ${[a.brand, a.model].filter(Boolean).join(' ')}`).join(', '),
+      });
+    }
+    req.flash(applied.length ? 'success' : 'error', applied.length ? `Marca y/o modelo completados en ${applied.length} celular(es) con lo que dice el recibo.` : 'No había nada que completar.');
+    res.redirect('/celulares/estadisticas');
   } catch (err) {
     next(err);
   }

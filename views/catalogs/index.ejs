@@ -13,6 +13,59 @@
   <% }); %>
 </ul>
 
+<% if (tipo === 'modelo') { %>
+<div class="row g-3 mb-4" id="modelos_por_marca">
+  <div class="col-md-5">
+    <div class="card p-3">
+      <h5>Agregar modelo</h5>
+      <form method="post" action="/configuracion/catalogos/modelos/nuevo" class="row g-2">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="col-6">
+          <label class="form-label small" for="modelo_marca">Marca</label>
+          <select name="brand" id="modelo_marca" class="form-select" required>
+            <option value="">— Elegir —</option>
+            <% marcas.forEach(function(m) { %><option value="<%= m %>"><%= m %></option><% }); %>
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label small" for="modelo_nombre">Modelo</label>
+          <input type="text" name="model" id="modelo_nombre" class="form-control" maxlength="20" required placeholder="Ej. A76">
+        </div>
+        <div class="col-12"><button type="submit" class="btn btn-primary">Agregar</button></div>
+      </form>
+      <p class="small text-muted mt-2 mb-0">Cada modelo pertenece a una marca: en el formulario del celular, al elegir la marca solo se ofrecen sus modelos. Las marcas se agregan en la pestaña Marcas.</p>
+    </div>
+  </div>
+  <div class="col-md-7">
+    <div class="card p-3">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Marca</th><th>Modelo</th><th class="text-end">Celulares</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            <% models.forEach(function(m) { %>
+              <tr>
+                <td><%= m.brand %></td><td><%= m.model %></td><td class="text-end"><%= m.en_uso %></td>
+                <td><span class="badge <%= m.active ? 'bg-success' : 'bg-secondary' %>"><%= m.active ? 'Activo' : 'Inactivo' %></span></td>
+                <td class="text-end text-nowrap">
+                  <form action="/configuracion/catalogos/modelos/<%= m.id %>/activar" method="post" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="active" value="<%= m.active ? '0' : '1' %>">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary"><%= m.active ? 'Desactivar' : 'Activar' %></button>
+                  </form>
+                  <form action="/configuracion/catalogos/modelos/<%= m.id %>/eliminar" method="post" class="d-inline" onsubmit="return confirm('¿Eliminar <%= m.brand %> <%= m.model %> del catálogo?');">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+            <% if (!models.length) { %><tr><td colspan="5" class="text-muted text-center">Sin modelos.</td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<% } else { %>
 <div class="row g-3">
   <div class="col-md-5">
     <div class="card p-3">
@@ -65,6 +118,7 @@
     </div>
   </div>
 </div>
+<% } %>
 
 <hr class="my-4">
 

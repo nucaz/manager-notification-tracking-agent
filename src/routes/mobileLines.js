@@ -88,6 +88,10 @@ router.get('/', async (req, res, next) => {
          UNION SELECT e.sede FROM mobile_line_assignments a JOIN employees e ON e.id = a.employee_id WHERE a.returned_date IS NULL
        ) x WHERE sede IS NOT NULL AND sede <> '' ORDER BY sede`
     );
+    // Si cada chip figura en el ultimo recibo de su operadora (para filtrar en la tabla).
+    const billIds = await require('../services/deviceBillingService').latestBillIds();
+    const billed = new Set(billIds.length ? (await pool.query('SELECT DISTINCT phone_number FROM mobile_bill_lines WHERE bill_id IN (?)', [billIds]))[0].map((r) => r.phone_number) : []);
+    rows.forEach((r) => { r.en_recibo = billIds.length ? (billed.has(r.phone_number) ? 'Sí' : 'No') : 'Sin recibos'; });
     res.render('mobileLines/list', {
       title: 'Chips',
       items: rows,

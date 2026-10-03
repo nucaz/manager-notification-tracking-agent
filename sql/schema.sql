@@ -769,3 +769,20 @@ CREATE TABLE IF NOT EXISTS sessions (
   data MEDIUMTEXT NOT NULL,
   INDEX idx_sessions_expires (expires)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Modelos de celular, cada uno ligado a su marca (las marcas estan en
+-- catalog_items, tipo "marca"). El formulario del celular ofrece solo los
+-- modelos de la marca elegida. Ver src/services/mobileModelService.js.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mobile_models (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  brand VARCHAR(100) NOT NULL,
+  model VARCHAR(20) NOT NULL,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mobile_model_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY uniq_mobile_model (brand, model),
+  INDEX idx_mobile_model_model (model)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

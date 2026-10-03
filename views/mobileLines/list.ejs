@@ -183,7 +183,7 @@
           <% if (canMark) { %><th style="width: 2rem;"><input type="checkbox" class="form-check-input" id="mark_all" aria-label="Marcar todos"
             onchange="var on = this.checked; Array.prototype.forEach.call(document.querySelectorAll('tr:not([hidden]) .chip-mark'), function (x) { x.checked = on; }); document.getElementById('marcados').textContent = document.querySelectorAll('.chip-mark:checked').length;"></th><% } %>
           <th>Número</th><th>Operadora</th><th>Plan</th><th class="text-end">Sin descuento</th><th class="text-end">Con descuento</th><th>Estado</th><th>Ubicación</th>
-          <th>Usuario</th><th>Área</th><th>Sede</th><th>Celular</th><th></th>
+          <th>Usuario</th><th>Área</th><th>Sede</th><th>Celular</th><th>En recibo</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -204,11 +204,12 @@
             <td><%= it.area || '—' %></td>
             <td><%= it.sede || '—' %></td>
             <td class="text-nowrap"><% if (it.device_id) { %><a href="/celulares/<%= it.device_id %>"><%= it.asset_code || it.imei %></a><% if (!it.es_principal) { %> <span class="small text-muted">(2.º chip)</span><% } %><% } else { %>—<% } %></td>
+            <td><%= it.en_recibo %></td>
             <td class="text-end"><a href="/celulares/chips/<%= it.id %>" class="btn btn-sm btn-outline-secondary">Ver</a></td>
           </tr>
         <% }); %>
         <% if (items.length === 0) { %>
-          <tr><td colspan="13" class="text-center text-muted py-4"><%= activeFilters ? 'Ningún chip cumple estos filtros.' : 'No hay chips registrados.' %></td></tr>
+          <tr><td colspan="14" class="text-center text-muted py-4"><%= activeFilters ? 'Ningún chip cumple estos filtros.' : 'No hay chips registrados.' %></td></tr>
         <% } %>
       </tbody>
       <% if (items.length) { %>
@@ -219,7 +220,7 @@
             <td class="text-nowrap"><%= summary.total %> chip(s)</td><td></td><td></td>
             <td class="text-end text-nowrap"><%= soles(summary.costoTotal) %></td>
             <td class="text-end text-nowrap"><%= soles(summary.netoTotal) %></td>
-            <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+            <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
           </tr>
         </tfoot>
       <% } %>

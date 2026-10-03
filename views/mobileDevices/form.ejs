@@ -39,11 +39,11 @@
     </div>
     <div class="col-md-4">
       <label class="form-label">Modelo</label>
-      <% const modeloEsOtro = item.model && !modelos.includes(item.model); %>
+      <% const modeloEsOtro = item.model && !modelos.some(function(m) { return m.model === item.model && (!item.brand || m.brand === item.brand); }); %>
       <select name="model" id="model_select" class="form-select" onchange="document.getElementById('model_otro').hidden = this.value !== '__otro__';">
         <option value="">— Seleccionar —</option>
         <% modelos.forEach(function(m) { %>
-          <option value="<%= m %>" <%= item.model === m ? 'selected' : '' %>><%= m %></option>
+          <option value="<%= m.model %>" data-marca="<%= m.brand %>" <%= item.model === m.model && (!item.brand || item.brand === m.brand) ? 'selected' : '' %>><%= m.model %></option>
         <% }); %>
         <option value="<%= modeloEsOtro ? item.model : '__otro__' %>" <%= modeloEsOtro ? 'selected' : '' %>>
           <%= modeloEsOtro ? item.model : 'Otro (especificar)...' %>
@@ -52,7 +52,28 @@
       <input type="text" id="model_otro" class="form-control mt-2" placeholder="Especificar modelo..." maxlength="20" <%= modeloEsOtro ? '' : 'hidden' %>
         value="<%= modeloEsOtro ? item.model : '' %>"
         oninput="var o=document.querySelector('#model_select option:last-child'); o.value=this.value; o.textContent=this.value || 'Otro (especificar)...';">
-      <div class="form-text">Alfanumérico, máximo 20 caracteres.</div>
+      <div class="form-text">Se ofrecen los modelos de la marca elegida (catálogo en Configuración → Catálogos → Modelos). Alfanumérico, máximo 20 caracteres.</div>
+      <script>
+      // Al elegir la marca, el selector de modelo muestra solo los de esa marca.
+      (function () {
+        var brand = document.getElementById('brand_select');
+        var model = document.getElementById('model_select');
+        if (!brand || !model) return;
+        var sync = function () {
+          var b = brand.value === '__otro__' ? '' : brand.value;
+          Array.prototype.forEach.call(model.options, function (o) {
+            var m = o.getAttribute('data-marca');
+            if (m === null) return; // "Seleccionar" y "Otro"
+            o.hidden = !!b && m !== b;
+            o.disabled = o.hidden;
+          });
+          var sel = model.options[model.selectedIndex];
+          if (sel && sel.hidden) model.value = '';
+        };
+        brand.addEventListener('change', sync);
+        sync();
+      })();
+      </script>
     </div>
     <div class="col-md-4">
       <label class="form-label">Operadora</label>

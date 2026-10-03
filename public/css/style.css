@@ -141,3 +141,13 @@ table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: elli
 .ia-tabla-pie > span { margin-right: auto; }
 .ia-fuentes { margin-top: .5rem; font-size: .8rem; }
 @media print { .ia-abrir, .ia-panel { display: none !important; } }
+
+/* Filtros por columna (public/js/tablas.js). */
+.col-filtro { border: 0; background: transparent; color: #9aa3b5; padding: 0 .2rem; margin-left: .2rem; font-size: .8rem; line-height: 1; vertical-align: middle; cursor: pointer; }
+.col-filtro:hover, .col-filtro:focus-visible { color: #2d5be3; }
+.col-filtro.activo { color: #fff; background: #2d5be3; border-radius: 4px; }
+.col-filtro-panel { position: absolute; z-index: 1060; width: 280px; max-width: calc(100vw - 16px); background: #fff; border: 1px solid #d5dae3; border-radius: 8px; padding: .6rem; font-weight: normal; }
+.col-filtro-lista { max-height: 260px; overflow-y: auto; border: 1px solid #eef0f4; border-radius: 6px; padding: .25rem; }
+.col-filtro-opcion { display: flex; align-items: center; padding: .15rem .3rem; border-radius: 4px; cursor: pointer; font-size: .85rem; margin: 0; }
+.col-filtro-opcion:hover { background: #f1f4fa; }
+.col-filtro-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

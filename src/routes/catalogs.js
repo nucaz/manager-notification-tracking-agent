@@ -2,6 +2,7 @@ const express = require('express');
 const { requireAuth, isAdmin } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const catalogService = require('../services/catalogService');
+const mobileModelService = require('../services/mobileModelService');
 
 const router = express.Router();
 router.use(requireAuth, isAdmin, verifyCsrfToken);
@@ -10,7 +11,7 @@ const TYPES = [
   { value: 'sede', label: 'Sedes' },
   { value: 'area', label: 'Áreas' },
   { value: 'marca', label: 'Marcas' },
-  { value: 'modelo', label: 'Modelos' },
+  { value: 'modelo', label: 'Modelos (por marca)' },
   { value: 'operadora', label: 'Operadoras' },
 ];
 
@@ -19,7 +20,9 @@ router.get('/', async (req, res, next) => {
     const tipo = TYPES.some((t) => t.value === req.query.tipo) ? req.query.tipo : 'sede';
     const items = await catalogService.getAll(tipo);
     const countries = await catalogService.getAllCountries();
-    res.render('catalogs/index', { title: 'Catálogos', types: TYPES, tipo, items, countries });
+    const models = tipo === 'modelo' ? await mobileModelService.list() : [];
+    const marcas = tipo === 'modelo' ? await catalogService.getActive('marca') : [];
+    res.render('catalogs/index', { title: 'Catálogos', types: TYPES, tipo, items, countries, models, marcas });
   } catch (err) {
     next(err);
   }
@@ -40,6 +43,36 @@ router.post('/nuevo', async (req, res, next) => {
       req.flash('error', 'Ese valor ya existe en el catálogo.');
       return res.redirect(`/configuracion/catalogos?tipo=${req.body.catalog_type}`);
     }
+    next(err);
+  }
+});
+
+// --- Modelos de celular, cada uno con su marca ------------------------
+router.post('/modelos/nuevo', async (req, res) => {
+  try {
+    await mobileModelService.add(req.body.brand, req.body.model, req.session.user.id);
+    req.flash('success', `Modelo ${String(req.body.brand).trim()} ${String(req.body.model).trim()} agregado.`);
+  } catch (err) {
+    req.flash('error', err.message);
+  }
+  res.redirect('/configuracion/catalogos?tipo=modelo');
+});
+
+router.post('/modelos/:id/activar', async (req, res, next) => {
+  try {
+    await mobileModelService.setActive(req.params.id, req.body.active === '1');
+    res.redirect('/configuracion/catalogos?tipo=modelo');
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/modelos/:id/eliminar', async (req, res, next) => {
+  try {
+    await mobileModelService.remove(req.params.id);
+    req.flash('success', 'Modelo eliminado del catálogo (los celulares que lo tenían lo conservan).');
+    res.redirect('/configuracion/catalogos?tipo=modelo');
+  } catch (err) {
     next(err);
   }
 });

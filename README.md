@@ -49,6 +49,18 @@ Aplicación web para el seguimiento de:
   cuántas faltarían) y registra los que se marquen como 2.º chip, con el
   plan y el costo del recibo; si el celular ya tiene 2 chips, el número
   queda como repuesto de quien lo tiene. Prueba: `E2E_PERMITIR=1 node tests/celulares_doble_sim.e2e.js`
+  **Estadísticas de celulares** (`/celulares/estadisticas`): totales por
+  estado, área, sede, marca, modelo y operadora; equipos que se pagan **en
+  cuotas** según el recibo (y cuáles de ellos están sin usuario), equipos
+  que el recibo cobra y **no están registrados**, **respaldo de compra**
+  (recibo, fecha de compra, contrato adjunto o ninguno) y datos que faltan;
+  **completar marca y modelo desde el recibo** (solo campos vacíos y solo
+  con modelos del catálogo). El listado de celulares suma las columnas
+  Marca, Equipo en recibo, Línea en recibo y Respaldo de compra, y el de
+  chips "En recibo", para filtrarlas. **Modelos por marca**: catálogo en
+  Configuración → Catálogos → Modelos; el formulario del celular ofrece
+  solo los modelos de la marca elegida. Prueba:
+  `E2E_PERMITIR=1 node tests/celulares_estadisticas.e2e.js`
   **Uso real** (`/celulares/chips/uso`): de lo que se paga cada mes según
   el último recibo, cuánto está **en uso** (chips en un celular con
   usuario, asignados sin celular, de emergencia), cuánto está **guardado**
@@ -113,7 +125,10 @@ Aplicación web para el seguimiento de:
 - **Panel principal**: además de los vencimientos, cuántos celulares y
   chips hay y cuántas computadoras, monitores e impresoras tiene GLPI
   (el conteo de GLPI se renueva cada 10 minutos)
-- **Tablas ajustables** (en todas las pantallas): elija cuántos registros
+- **Tablas ajustables** (en todas las pantallas): **filtro en cada
+  columna** (embudo en el encabezado, como en Excel: se marcan los valores
+  a mostrar, con buscador y cantidad por valor; los filtros se combinan),
+  elija cuántos registros
   ver (10, 20, 30, 40, 50, 100 o todos) con "Anterior / Siguiente", estire
   una columna arrastrando el borde derecho de su encabezado y cámbiela de
   lugar arrastrando el encabezado. Cada persona conserva su ajuste en su
