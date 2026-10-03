@@ -1,0 +1,38 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+  <div>
+    <div class="small text-muted"><a href="/celulares/tablero">Tablero</a> › <%= d.config.title %></div>
+    <h2 class="mb-1" id="detalle_titulo"><%= d.label %></h2>
+    <p class="text-muted mb-0">
+      <%= d.groupLabel %><%= d.label === 'Todos' ? ': todos los grupos' : d.label === 'Otros' ? ': los grupos que no entran en el widget' : '' %>
+      <%= d.config.filter ? ' · solo ' + d.dataset.fields[d.config.filter.field].toLowerCase() + ' = ' + d.config.filter.value : '' %>
+      · <strong id="detalle_total"><%= d.rows.length %></strong> <%= d.dataset.label.toLowerCase() %><%= d.money ? ' · S/ ' + d.total.toFixed(2) + ' al mes' : '' %>
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="<%= excelUrl %>" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+    <a href="/celulares/tablero" class="btn btn-outline-secondary">Volver al tablero</a>
+  </div>
+</div>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle">
+      <thead><tr><% d.dataset.columns.forEach(function(c) { %><th><%= c[1] %></th><% }); %><th></th></tr></thead>
+      <tbody>
+        <% d.rows.forEach(function(r) { %>
+          <tr>
+            <% d.dataset.columns.forEach(function(c, i) { const v = r[c[0]]; %>
+              <td<%- i === 0 ? ' class="text-nowrap"' : '' %>><% if (i === 0) { %><a href="<%= r._href %>"><%= v %></a><% } else { %><%= v === null || v === undefined || v === '' ? '—' : v %><% } %></td>
+            <% }); %>
+            <td class="text-end"><a href="<%= r._href %>" class="btn btn-sm btn-outline-secondary">Ver</a></td>
+          </tr>
+        <% }); %>
+        <% if (!d.rows.length) { %><tr><td colspan="<%= d.dataset.columns.length + 1 %>" class="text-center text-muted py-4">Sin registros.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

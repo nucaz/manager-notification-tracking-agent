@@ -161,3 +161,7 @@ table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: elli
 .widget .barra-pista { background: #eef1f6; border-radius: 3px; height: .8rem; overflow: hidden; }
 .widget .barra { display: block; height: 100%; border-radius: 3px; }
 .widget .barra-valor { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.widget .widget-enlace { color: inherit; text-decoration: none; }
+.widget a.barra-fila { border-radius: 4px; padding: 0 .2rem; margin: 0 -.2rem; }
+.widget a.barra-fila:hover, .widget a.barra-fila:focus-visible { background: #eef3ff; }
+.widget a.widget-enlace:not(.barra-fila):hover, .widget a.widget-enlace:focus-visible { color: #2d5be3; text-decoration: underline; }

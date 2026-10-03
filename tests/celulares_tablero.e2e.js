@@ -141,6 +141,35 @@ async function main() {
     await post(`/celulares/tablero/widgets/${w1.id}/quitar`, {});
     check('Quien lo creó lo quita', (await q('SELECT COUNT(*) AS n FROM dashboard_widgets WHERE id = ?', [w1.id]))[0].n === 0);
 
+    // --- Clic en una cifra: la lista de lo que hay detras
+    page = await get('/celulares/tablero');
+    check('Las cifras de los widgets son enlaces a su detalle', page.includes('href="/celulares/tablero/detalle?dataset=celulares&amp;groupBy=chips')
+      && page.includes('class="barra-fila widget-enlace"'));
+    const doble = preset('Celulares por cantidad de chips');
+    const dobleItem = doble.result.items.find((i) => i.label === '2 chips (doble SIM)');
+    let det = await get(dashboard.detailUrl(doble.config, { value: '2 chips (doble SIM)' }));
+    const filas = (html) => (html.match(/<tr>\s*<td class="text-nowrap"><a href=/g) || []).length;
+    check('Clic en "2 chips (doble SIM)": lista esos celulares, con enlace a cada uno, y la misma cantidad que el widget', det.includes(IMEI[0]) && !det.includes(IMEI[1])
+      && det.includes(`href="/celulares/${d1.id}"`) && filas(det) === dobleItem.value && det.includes(`id="detalle_total">${dobleItem.value}<`));
+    det = await get(dashboard.detailUrl(doble.config));
+    check('Clic en el total: todos los registros del widget', filas(det) === doble.result.total && det.includes('todos los grupos'));
+    const areas = preset('Áreas con chips (costo mensual)');
+    det = await get(dashboard.detailUrl(areas.config, { value: AREA }));
+    check('Detalle de un widget con filtro (solo chips en uso) y monto: lista los chips del área y suma su costo', det.includes(N[0]) && det.includes(N[1]) && !det.includes(N[2])
+      && det.includes('S/ 35.00 al mes') && det.includes(`href="/celulares/chips/`));
+    const marcas = dashboard.validate({ dataset: 'celulares', groupBy: 'marca', metric: 'cantidad', top: 3 });
+    const otrosItem = dashboard.compute(marcas, await dashboard.DATASETS.celulares.rows()).items.find((i) => i.otros);
+    det = await get(dashboard.detailUrl(marcas, { otros: true }));
+    check('Clic en "Otros": los registros de los grupos que no entraron en el widget', !otrosItem || filas(det) === otrosItem.count);
+    const xl = await fetch(base + dashboard.detailUrl(doble.config, { value: '2 chips (doble SIM)' }).replace('/tablero/detalle?', '/tablero/detalle.xlsx?'), { headers: { cookie } });
+    const wbx = new (require('exceljs').Workbook)();
+    await wbx.xlsx.load(Buffer.from(await xl.arrayBuffer()));
+    let enExcel = false;
+    wbx.worksheets[0].eachRow((rw) => { if (rw.values.includes(IMEI[0])) enExcel = true; });
+    check('El detalle se descarga en Excel', xl.status === 200 && enExcel);
+    const malo = await fetch(`${base}/celulares/tablero/detalle?dataset=usuarios&groupBy=x&metric=cantidad`, { redirect: 'manual', headers: { cookie } });
+    check('Un detalle con parámetros inválidos vuelve al tablero', malo.status === 302 && malo.headers.get('location') === '/celulares/tablero');
+
     // --- Listado: columna Chips
     page = await get(`/celulares?area=${encodeURIComponent(AREA)}`);
     check('Listado de celulares: columna "Chips" para filtrar los de doble SIM', page.includes('<th data-col="chips">Chips</th>') && page.includes('<td data-col="chips">2 (doble SIM)</td>')

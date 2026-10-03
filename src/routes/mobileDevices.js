@@ -708,9 +708,42 @@ router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToke
 router.get('/tablero', async (req, res, next) => {
   try {
     const board = await dashboardService.board(req.session.user);
-    res.render('mobileDevices/board', { title: 'Tablero de celulares y chips', ...board, datasets: dashboardService.DATASETS, charts: dashboardService.CHARTS });
+    res.render('mobileDevices/board', { title: 'Tablero de celulares y chips', ...board, datasets: dashboardService.DATASETS, charts: dashboardService.CHARTS,
+      detailUrl: dashboardService.detailUrl });
   } catch (err) {
     next(err);
+  }
+});
+
+// Lo que hay detras de una cifra de un widget (clic en el grupo, el valor o el total).
+router.get('/tablero/detalle', async (req, res) => {
+  try {
+    const d = await dashboardService.detail(req.query);
+    res.render('mobileDevices/boardDetail', { title: `${d.config.title}: ${d.label}`, d, excelUrl: `${req.originalUrl.replace('/tablero/detalle?', '/tablero/detalle.xlsx?')}` });
+  } catch (err) {
+    req.flash('error', err.message);
+    res.redirect('/celulares/tablero');
+  }
+});
+
+router.get('/tablero/detalle.xlsx', async (req, res) => {
+  try {
+    const d = await dashboardService.detail(req.query);
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Detalle');
+    ws.addRow([`${d.config.title}: ${d.label}`]).font = { bold: true, size: 13 };
+    ws.addRow([`${d.rows.length} registro(s)${d.money ? ` · total S/ ${d.total.toFixed(2)}` : ''}${d.config.filter ? ` · solo ${d.dataset.fields[d.config.filter.field]} = ${d.config.filter.value}` : ''}`]);
+    ws.addRow([]);
+    ws.addRow(d.dataset.columns.map((c) => c[1])).font = { bold: true };
+    d.rows.forEach((r) => ws.addRow(d.dataset.columns.map(([k]) => (r[k] === null || r[k] === undefined ? '' : String(r[k])))));
+    ws.views = [{ state: 'frozen', ySplit: 4 }];
+    ws.columns.forEach((c) => { c.width = 20; });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="tablero_detalle_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(await wb.xlsx.writeBuffer());
+  } catch (err) {
+    req.flash('error', err.message);
+    res.redirect('/celulares/tablero');
   }
 });
 
