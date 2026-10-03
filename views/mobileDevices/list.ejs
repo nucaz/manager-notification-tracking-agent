@@ -7,6 +7,7 @@
     <a href="/celulares/recibos" class="btn btn-outline-primary"><i class="bi bi-receipt"></i> Recibos</a>
     <a href="/celulares/inventario" class="btn btn-outline-secondary"><i class="bi bi-clipboard-data"></i> Inventario mensual</a>
     <a href="/celulares/resumen" class="btn btn-outline-secondary"><i class="bi bi-bar-chart"></i> Resumen</a>
+    <a href="/celulares/tablero" class="btn btn-success"><i class="bi bi-speedometer"></i> Tablero</a>
     <a href="/celulares/estadisticas" class="btn btn-outline-success"><i class="bi bi-pie-chart"></i> Estadísticas</a>
     <div class="btn-group">
       <a href="/celulares/exportar.xlsx<%= exportQuery %>" class="btn btn-outline-success" title="Exporta todos los celulares (o los filtrados) con todos sus datos">
@@ -59,7 +60,7 @@
     <div class="dropdown-menu p-2" id="columnPicker" style="min-width:220px;">
       <div class="form-text mb-1">Elige qué columnas ver (se recuerda en este navegador).</div>
       <% [
-        ['marca', 'Marca'], ['sede', 'Sede'], ['operadora', 'Operadora'], ['numero', 'Número de línea'], ['numero2', 'Número 2 (doble SIM)'],
+        ['chips', 'Chips (doble SIM)'], ['marca', 'Marca'], ['sede', 'Sede'], ['operadora', 'Operadora'], ['numero', 'Número de línea'], ['numero2', 'Número 2 (doble SIM)'],
         ['cuota', 'Equipo en recibo (cuotas)'], ['linea_recibo', 'Línea en recibo'], ['respaldo', 'Respaldo de compra'],
         ['compra', 'Fecha de compra'], ['condicion', 'Condición'],
         ['registrado', 'Registrado'], ['actualizado', 'Últ. actualización'],
@@ -97,7 +98,7 @@
             <th><input type="checkbox" id="selectAllCheckbox" onchange="document.querySelectorAll('tr:not([hidden]) .row-check').forEach(function(cb){cb.checked = this.checked;}, this); updateBulkDeleteButton();"></th>
           <% } %>
           <th>IMEI</th><th>Código</th><th data-col="marca">Marca</th><th>Modelo</th><th>Área</th><th data-col="sede">Sede</th>
-          <th data-col="operadora">Operadora</th><th data-col="numero">Número de línea</th><th data-col="numero2">Número 2</th>
+          <th data-col="operadora">Operadora</th><th data-col="numero">Número de línea</th><th data-col="numero2">Número 2</th><th data-col="chips">Chips</th>
           <th data-col="cuota">Equipo en recibo</th><th data-col="linea_recibo">Línea en recibo</th><th data-col="respaldo">Respaldo de compra</th>
           <th data-col="compra">Fecha de compra</th><th data-col="condicion">Condición</th>
           <th>Usuario asignado</th><th>Estado</th>
@@ -119,6 +120,7 @@
             <td data-col="operadora"><%= item.operadora || '—' %></td>
             <td data-col="numero"><%= item.phone_number || '—' %></td>
             <td data-col="numero2"><%= item.numero_2 || '—' %></td>
+            <td data-col="chips"><%= item.chips >= 2 ? '2 (doble SIM)' : item.chips === 1 ? '1' : 'Sin chip' %></td>
             <td data-col="cuota" class="small text-nowrap"><%= item.equipo_recibo %></td>
             <td data-col="linea_recibo"><%= item.linea_recibo %></td>
             <td data-col="respaldo" class="small"><%= item.respaldo_label %></td>
@@ -172,7 +174,7 @@
   // Que columnas opcionales se ven en este listado - preferencia de cada
   // navegador (localStorage), no del servidor: por eso no viaja en la URL
   // ni se guarda en la base de datos.
-  var DEFAULTS = { marca: true, sede: true, operadora: true, numero: true, numero2: false, compra: false, condicion: false, cuota: true, linea_recibo: false, respaldo: true, registrado: false, actualizado: false };
+  var DEFAULTS = { chips: true, marca: true, sede: true, operadora: true, numero: true, numero2: false, compra: false, condicion: false, cuota: true, linea_recibo: false, respaldo: true, registrado: false, actualizado: false };
   var prefs = DEFAULTS;
   try {
     var saved = JSON.parse(localStorage.getItem('glpiCelularesColumnas') || 'null');

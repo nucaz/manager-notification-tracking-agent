@@ -1,0 +1,199 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  const soles = function(n) { return 'S/ ' + Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  const fmt = function(r, v) { return r.money ? soles(v) : Number(v).toLocaleString('es-PE'); };
+  const COLORS = ['#2d5be3', '#18a058', '#f0a020', '#d03050', '#7a5af5', '#0ea5b7', '#a3a3a3', '#e66a2c', '#4c6ef5', '#94a3b8', '#16a34a', '#be185d'];
+  const d = decisions;
+%>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">Tablero de celulares y chips</h2>
+    <p class="text-muted mb-0">Indicadores para decidir compras, bajas, stock y renovaciones, y widgets que cada uno puede armar.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/celulares/estadisticas" class="btn btn-outline-secondary">Estadísticas</a>
+    <a href="/celulares/chips/uso" class="btn btn-outline-secondary">Uso real de las líneas</a>
+    <a href="#nuevo_widget" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo widget</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-3" id="tablero_decisiones">
+  <div class="col-sm-6 col-xl-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Stock de equipos (sin usuario)</div>
+    <div class="stat-number"><%= d.stock.count %></div>
+    <div class="small text-muted"><%= d.stock.cobertura %> % de los asignados · <%= d.stock.pagando %> se siguen pagando en cuotas (<%= soles(d.stock.cuota) %> al mes)</div>
+    <div class="small mt-1"><strong>Decisión:</strong> <%= d.stock.cobertura > 10 ? 'hay stock de sobra: reasignar antes de comprar.' : d.stock.cobertura < 3 ? 'stock bajo: considerar compra.' : 'stock razonable.' %></div>
+  </div></div>
+  <div class="col-sm-6 col-xl-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Renovación: cuotas que terminan en 3 meses o menos</div>
+    <div class="stat-number text-primary"><%= d.renovar.count %></div>
+    <div class="small text-muted"><%= d.renovar.ultima %> en su última cuota · hoy se pagan <%= soles(d.renovar.cuota) %> al mes por ellos</div>
+    <div class="small mt-1"><strong>Decisión:</strong> negociar la renovación o quedarse con el equipo pagado.</div>
+  </div></div>
+  <div class="col-sm-6 col-xl-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Chips que se pagan y no se usan</div>
+    <div class="stat-number text-warning"><%= soles(d.guardados.costo) %></div>
+    <div class="small text-muted"><%= d.guardados.count %> chips guardados (repuesto, stock o en celulares sin usuario)</div>
+    <div class="small mt-1"><strong>Decisión:</strong> suspender o dar de baja los que no se van a usar.</div>
+  </div></div>
+  <div class="col-sm-6 col-xl-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Otros</div>
+    <div class="small"><strong><%= d.dobleSim %></strong> celulares con doble SIM</div>
+    <div class="small"><strong><%= d.reparacion %></strong> en reparación o decomiso</div>
+    <div class="small"><strong><%= d.sinRespaldo %></strong> sin respaldo de compra</div>
+  </div></div>
+</div>
+
+<% const widget = function(w) { %>
+  <div class="col-md-6 col-xl-4">
+    <div class="card p-3 h-100 widget" data-widget="<%= w.preset ? 'predefinido' : w.id %>">
+      <div class="d-flex align-items-start gap-2 mb-2">
+        <h6 class="mb-0 me-auto"><%= w.config.title %></h6>
+        <% if (!w.preset) { %>
+          <span class="badge bg-light text-dark border"><%= w.shared ? 'Compartido' : 'Solo yo' %></span>
+          <% if (w.mine || (w.shared && currentUser.role === 'admin')) { %>
+          <form method="post" action="/celulares/tablero/widgets/<%= w.id %>/quitar" onsubmit="return confirm('¿Quitar este widget del tablero?');">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn-sm btn-link text-danger p-0" type="submit" title="Quitar widget"><i class="bi bi-x-lg"></i></button>
+          </form>
+          <% } %>
+        <% } %>
+      </div>
+      <div class="small text-muted mb-2">
+        <%= datasets[w.config.dataset].metrics[w.config.metric] %><%= w.config.filter ? ' · solo ' + datasets[w.config.dataset].fields[w.config.filter.field].toLowerCase() + ' = ' + w.config.filter.value : '' %>
+        · total <%= fmt(w.result, w.result.total) %>
+      </div>
+      <% const r = w.result; const max = r.items.reduce(function(m, i) { return Math.max(m, i.value); }, 0) || 1; %>
+      <% if (!r.items.length || (r.money && !r.total)) { %>
+        <p class="text-muted small mb-0"><%= r.items.length ? 'Sin montos: estos chips no figuran en un recibo ni tienen costo registrado.' : 'Sin datos para este widget.' %></p>
+      <% } else if (w.config.chart === 'dona') { %>
+        <% let acc = 0; const total = r.items.reduce(function(t, i) { return t + i.value; }, 0) || 1;
+           const stops = r.items.map(function(i, n) { const a = acc; acc += i.value / total * 360; return COLORS[n % COLORS.length] + ' ' + a.toFixed(1) + 'deg ' + acc.toFixed(1) + 'deg'; }).join(', '); %>
+        <div class="d-flex align-items-center gap-3">
+          <div class="dona" style="background: conic-gradient(<%= stops %>);" role="img" aria-label="<%= w.config.title %>"></div>
+          <ul class="list-unstyled small mb-0 flex-grow-1">
+            <% r.items.forEach(function(i, n) { %>
+              <li class="d-flex align-items-center gap-2"><span class="punto" style="background: <%= COLORS[n % COLORS.length] %>;"></span><span class="me-auto"><%= i.label %></span>
+                <strong class="text-nowrap"><%= fmt(r, i.value) %></strong><span class="text-muted text-nowrap"><%= Math.round(i.value * 100 / total) %>%</span></li>
+            <% }); %>
+          </ul>
+        </div>
+      <% } else if (w.config.chart === 'tabla') { %>
+        <div class="table-responsive" style="max-height: 300px;">
+          <table class="table table-sm small mb-0" data-tabla="no">
+            <tbody>
+              <% r.items.forEach(function(i) { %><tr><td><%= i.label %></td><td class="text-end text-nowrap"><strong><%= fmt(r, i.value) %></strong><%= r.money ? ' · ' + i.count : '' %></td></tr><% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="barras">
+          <% r.items.forEach(function(i, n) { %>
+            <div class="barra-fila" title="<%= i.label %>: <%= fmt(r, i.value) %>">
+              <span class="barra-texto"><%= i.label %></span>
+              <span class="barra-pista"><span class="barra" style="width: <%= Math.max(2, Math.round(i.value * 100 / max)) %>%; background: <%= i.otros ? '#a3a3a3' : COLORS[0] %>;"></span></span>
+              <strong class="barra-valor"><%= fmt(r, i.value) %></strong>
+            </div>
+          <% }); %>
+        </div>
+      <% } %>
+    </div>
+  </div>
+<% }; %>
+
+<h5 class="mt-2">Widgets del tablero</h5>
+<div class="row g-3 mb-4" id="widgets_predefinidos">
+  <% presets.forEach(widget); %>
+</div>
+
+<h5>Mis widgets y los compartidos</h5>
+<div class="row g-3 mb-4" id="widgets_propios">
+  <% if (!custom.length) { %><div class="col-12"><p class="text-muted">Todavía no hay widgets propios. Arme uno abajo.</p></div><% } %>
+  <% custom.forEach(widget); %>
+</div>
+
+<div class="card p-3" id="nuevo_widget">
+  <h5>Nuevo widget</h5>
+  <form method="post" action="/celulares/tablero/widgets" class="row g-2 align-items-end" id="form_widget">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="col-md-4">
+      <label class="form-label small mb-1" for="w_titulo">Título</label>
+      <input type="text" class="form-control" id="w_titulo" name="title" maxlength="80" placeholder="Ej. Equipos A76 por sede">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-1" for="w_datos">Datos</label>
+      <select class="form-select" id="w_datos" name="dataset">
+        <% Object.entries(datasets).forEach(function(e) { %><option value="<%= e[0] %>"><%= e[1].label %></option><% }); %>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small mb-1" for="w_agrupar">Agrupar por</label>
+      <select class="form-select" id="w_agrupar" name="groupBy"></select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small mb-1" for="w_medida">Medir</label>
+      <select class="form-select" id="w_medida" name="metric"></select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small mb-1" for="w_filtro_campo">Filtrar (opcional)</label>
+      <select class="form-select" id="w_filtro_campo" name="filter_field"><option value="">Sin filtro</option></select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small mb-1" for="w_filtro_valor">Valor del filtro</label>
+      <input type="text" class="form-control" id="w_filtro_valor" name="filter_value" list="w_valores" maxlength="100">
+      <datalist id="w_valores"></datalist>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-1" for="w_grafico">Gráfico</label>
+      <select class="form-select" id="w_grafico" name="chart">
+        <% Object.entries(charts).forEach(function(e) { %><option value="<%= e[0] %>"><%= e[1] %></option><% }); %>
+      </select>
+    </div>
+    <div class="col-md-1">
+      <label class="form-label small mb-1" for="w_top">Mostrar</label>
+      <input type="number" class="form-control" id="w_top" name="top" min="3" max="50" value="10">
+    </div>
+    <div class="col-md-3">
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="w_compartir" name="shared" value="1" <%= currentUser.role === 'lector' ? 'disabled' : '' %>>
+        <label class="form-check-label small" for="w_compartir">Compartir con todos<%= currentUser.role === 'lector' ? ' (editor o admin)' : '' %></label>
+      </div>
+      <button class="btn btn-primary w-100" type="submit">Agregar al tablero</button>
+    </div>
+  </form>
+  <p class="small text-muted mt-2 mb-0">Ejemplos: <em>Celulares · Agrupar por sede · filtro Marca y modelo = ZTE A76</em> (cuántos A76 hay en cada sede);
+    <em>Celulares · Fin de las cuotas · filtro Sede = SURCO</em> (qué renovar primero); <em>Chips · Persona · Costo mensual</em> (quién concentra más gasto).</p>
+</div>
+
+<script>
+(function () {
+  var DATA = <%- JSON.stringify(Object.fromEntries(Object.entries(datasets).map(function(e) { return [e[0], { fields: e[1].fields, metrics: e[1].metrics }]; }))) %>;
+  var VALUES = <%- JSON.stringify(values).replace(/</g, '\\u003c') %>;
+  var ds = document.getElementById('w_datos');
+  var by = document.getElementById('w_agrupar');
+  var me = document.getElementById('w_medida');
+  var ff = document.getElementById('w_filtro_campo');
+  var dl = document.getElementById('w_valores');
+  var fill = function (select, map, first) {
+    select.textContent = '';
+    if (first) { var o0 = document.createElement('option'); o0.value = ''; o0.textContent = first; select.appendChild(o0); }
+    Object.keys(map).forEach(function (k) { var o = document.createElement('option'); o.value = k; o.textContent = map[k]; select.appendChild(o); });
+  };
+  var values = function () {
+    dl.textContent = '';
+    ((VALUES[ds.value] || {})[ff.value] || []).forEach(function (v) { var o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+  };
+  var sync = function () {
+    fill(by, DATA[ds.value].fields);
+    fill(me, DATA[ds.value].metrics);
+    fill(ff, DATA[ds.value].fields, 'Sin filtro');
+    values();
+  };
+  ds.addEventListener('change', sync);
+  ff.addEventListener('change', values);
+  sync();
+})();
+</script>
+
+<%- include('../partials/foot') %>

@@ -49,6 +49,18 @@ Aplicación web para el seguimiento de:
   cuántas faltarían) y registra los que se marquen como 2.º chip, con el
   plan y el costo del recibo; si el celular ya tiene 2 chips, el número
   queda como repuesto de quien lo tiene. Prueba: `E2E_PERMITIR=1 node tests/celulares_doble_sim.e2e.js`
+  **Tablero** (`/celulares/tablero`): indicadores para decidir (stock de
+  equipos sin usuario y su cobertura, cuotas que terminan en 3 meses o
+  menos para negociar la renovación, chips que se pagan sin uso, doble
+  SIM, equipos sin respaldo), widgets predefinidos (celulares por marca,
+  por cantidad de chips y por sede, fin de cuotas, chips por sede y por
+  uso real, áreas con chips, personas con más chips, stock por modelo) y
+  **widgets propios**: cada usuario elige datos (celulares o chips), por
+  qué agrupar, qué medir (cantidad, cuota o costo mensual), un filtro, el
+  gráfico (barras, dona o tabla) y si lo comparte (admin y editor). Un
+  widget es una configuración validada, nunca SQL. El listado de celulares
+  tiene la columna "Chips" para filtrar los de doble SIM. Prueba:
+  `E2E_PERMITIR=1 node tests/celulares_tablero.e2e.js`
   **Estadísticas de celulares** (`/celulares/estadisticas`): totales por
   estado, área, sede, marca, modelo y operadora; equipos que se pagan **en
   cuotas** según el recibo (y cuáles de ellos están sin usuario), equipos

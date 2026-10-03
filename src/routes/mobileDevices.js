@@ -15,6 +15,7 @@ const mobileLineService = require('../services/mobileLineService');
 const mobileModelService = require('../services/mobileModelService');
 const deviceBillingService = require('../services/deviceBillingService');
 const deviceStatsService = require('../services/deviceStatsService');
+const dashboardService = require('../services/dashboardService');
 const { DECOMISO_MOTIVO } = require('../config/mobileLabels');
 
 const auditService = require('../services/auditService');
@@ -132,7 +133,8 @@ router.get('/', async (req, res, next) => {
     let sql = `
       SELECT d.*, a.holder_name, a.cargo, a.turno, a.assigned_date,
              (SELECT GROUP_CONCAT(l.phone_number ORDER BY l.id SEPARATOR ', ') FROM mobile_lines l
-              WHERE l.device_id = d.id AND (d.phone_number IS NULL OR l.phone_number <> d.phone_number)) AS numero_2
+              WHERE l.device_id = d.id AND (d.phone_number IS NULL OR l.phone_number <> d.phone_number)) AS numero_2,
+             (SELECT COUNT(*) FROM mobile_lines l WHERE l.device_id = d.id) AS chips
       FROM mobile_devices d
       LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL
       WHERE 1=1`;
@@ -700,6 +702,38 @@ router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToke
   } catch (err) {
     next(err);
   }
+});
+
+// --- Tablero: indicadores para decidir y widgets ---------------------------
+router.get('/tablero', async (req, res, next) => {
+  try {
+    const board = await dashboardService.board(req.session.user);
+    res.render('mobileDevices/board', { title: 'Tablero de celulares y chips', ...board, datasets: dashboardService.DATASETS, charts: dashboardService.CHARTS });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/tablero/widgets', verifyCsrfToken, async (req, res) => {
+  try {
+    const b = req.body;
+    // Compartir con todos solo admin y editor; un lector arma widgets para si.
+    const shared = b.shared === '1' && req.session.user.role !== 'lector';
+    const config = await dashboardService.addWidget(req.session.user, {
+      title: b.title, dataset: b.dataset, groupBy: b.groupBy, metric: b.metric, chart: b.chart, top: b.top,
+      filter: b.filter_field ? { field: b.filter_field, value: b.filter_value } : null,
+    }, shared);
+    req.flash('success', `Widget "${config.title}" agregado${shared ? ' y compartido con todos' : ''}.`);
+  } catch (err) {
+    req.flash('error', err.message);
+  }
+  res.redirect('/celulares/tablero#widgets_propios');
+});
+
+router.post('/tablero/widgets/:id/quitar', verifyCsrfToken, async (req, res) => {
+  const ok = await dashboardService.removeWidget(req.session.user, req.params.id);
+  req.flash(ok ? 'success' : 'error', ok ? 'Widget quitado del tablero.' : 'Ese widget no se puede quitar (no es suyo).');
+  res.redirect('/celulares/tablero#widgets_propios');
 });
 
 router.get('/estadisticas', async (req, res, next) => {
