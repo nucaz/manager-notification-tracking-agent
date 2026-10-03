@@ -127,7 +127,9 @@ router.get('/', async (req, res, next) => {
     // final: sin limpiarlo, un numero que si existe no aparecia.
     const q = mobileLineService.searchTerm(req.query.q);
     let sql = `
-      SELECT d.*, a.holder_name, a.cargo, a.turno, a.assigned_date
+      SELECT d.*, a.holder_name, a.cargo, a.turno, a.assigned_date,
+             (SELECT GROUP_CONCAT(l.phone_number ORDER BY l.id SEPARATOR ', ') FROM mobile_lines l
+              WHERE l.device_id = d.id AND (d.phone_number IS NULL OR l.phone_number <> d.phone_number)) AS numero_2
       FROM mobile_devices d
       LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL
       WHERE 1=1`;
@@ -970,6 +972,60 @@ router.get('/:id/qr.png', async (req, res, next) => {
   }
 });
 
+// --- Chips del celular (doble SIM) desde su propia ficha -----------------
+const chipBack = (req) => `/celulares/${req.params.id}#chips`;
+const chipError = (req, res, next) => (err) => {
+  if (err.sqlMessage) return next(err);
+  req.flash('error', err.message);
+  res.redirect(chipBack(req));
+};
+
+router.post('/:id/chips/agregar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const r = await mobileLineService.addChipToDevice(req.params.id, req.body, req.session.user.id);
+    await auditService.log(req, {
+      user: req.session.user, action: 'chip_puesto_en_celular', target: `Chip ${r.number}`,
+      detail: `En el celular IMEI ${r.device.imei}${r.principal ? ' (chip principal)' : ' (segundo chip)'}${r.created ? '; chip registrado en ese momento' : ''}`,
+    });
+    req.flash('success', `Chip ${r.number} ${r.created ? 'registrado y ' : ''}puesto ${r.principal ? 'como número principal' : 'como 2.º chip'}.`);
+    res.redirect(chipBack(req));
+  } catch (err) {
+    chipError(req, res, next)(err);
+  }
+});
+
+router.post('/:id/chips/:lineId/principal', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const line = await mobileLineService.getLine(req.params.lineId);
+    if (!line || String(line.device_id) !== String(req.params.id)) throw new Error('Ese chip no está en este celular.');
+    const r = await mobileLineService.makePrincipal(line.id);
+    await auditService.log(req, {
+      user: req.session.user, action: 'chip_principal', target: `Chip ${line.phone_number}`,
+      detail: `Número principal del celular IMEI ${r.device.imei} (antes ${r.previous || 'sin número'})`,
+    });
+    req.flash('success', `${line.phone_number} es ahora el número principal; ${r.previous || 'el anterior'} queda como 2.º chip.`);
+    res.redirect(chipBack(req));
+  } catch (err) {
+    chipError(req, res, next)(err);
+  }
+});
+
+router.post('/:id/chips/:lineId/retirar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const line = await mobileLineService.getLine(req.params.lineId);
+    if (!line || String(line.device_id) !== String(req.params.id)) throw new Error('Ese chip no está en este celular.');
+    const device = await mobileLineService.removeFromDevice(line.id);
+    await auditService.log(req, {
+      user: req.session.user, action: 'chip_retirado_de_celular', target: `Chip ${line.phone_number}`,
+      detail: `Retirado del celular IMEI ${device ? device.imei : '—'}; queda en stock`,
+    });
+    req.flash('success', `Chip ${line.phone_number} retirado: queda en stock.`);
+    res.redirect(chipBack(req));
+  } catch (err) {
+    chipError(req, res, next)(err);
+  }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
@@ -1022,6 +1078,8 @@ router.get('/:id', async (req, res, next) => {
       attachments,
       incidents,
       lines,
+      maxChips: mobileLineService.MAX_CHIPS_PER_DEVICE,
+      operadoras: catalogs.operadoras,
       areas: catalogs.areas,
       sedes: catalogs.sedes,
       dniQuery,

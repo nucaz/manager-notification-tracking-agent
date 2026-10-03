@@ -79,7 +79,8 @@
   <div class="col-md-5">
     <% if (currentLines.length) { %>
     <div class="card p-3 mb-3">
-      <h5>Chips sin celular / de emergencia</h5>
+      <h5>Chips a su cargo sin celular (<%= currentLines.length %>)</h5>
+      <p class="small text-muted mb-1">Sin celular, de emergencia o de repuesto. Los chips puestos en sus celulares se ven en cada celular.</p>
       <ul class="list-group list-group-flush mb-0">
         <% currentLines.forEach(function(l) { %>
           <li class="list-group-item px-0">

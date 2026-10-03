@@ -41,15 +41,15 @@
       </table>
     </div>
 
-    <div class="card p-3 mb-3">
+    <div class="card p-3 mb-3" id="chips">
       <div class="d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Chips en este celular</h5>
+        <h5 class="mb-0">Chips en este celular <span class="text-muted small">(<%= lines.length %> de <%= maxChips %>)</span></h5>
         <a href="/celulares/chips" class="small">Ver todos los chips</a>
       </div>
       <% if (!lines.length) { %>
-        <p class="text-muted mb-0 mt-2">Sin chip. Para ponerle uno que está en stock, ábralo desde <a href="/celulares/chips?ubicacion=en_stock">Chips en stock</a> y use "Poner en un celular".</p>
+        <p class="text-muted mb-0 mt-2">Sin chip.</p>
       <% } else { %>
-        <table class="table table-sm mb-0 mt-2">
+        <table class="table table-sm mb-0 mt-2" data-tabla="no">
           <thead><tr><th>Número</th><th>Operadora</th><th>Plan</th><th>Estado</th><th></th></tr></thead>
           <tbody>
             <% lines.forEach(function(l) { %>
@@ -58,11 +58,56 @@
                 <td><%= l.operadora || '—' %></td>
                 <td><%= l.plan || '—' %><%= l.costo_plan !== null ? ' · S/ ' + (Number(l.costo_plan) - (Number(l.descuento_plan) || 0)).toFixed(2) + (Number(l.descuento_plan) ? ' (sin descuento S/ ' + Number(l.costo_plan).toFixed(2) + ')' : '') : '' %></td>
                 <td><span class="badge <%= mobileLabels.lineEstado(l.estado).badge %>"><%= mobileLabels.lineEstado(l.estado).label %></span></td>
-                <td class="text-end"><a href="/celulares/chips/<%= l.id %>" class="btn btn-sm btn-outline-secondary">Ver chip</a></td>
+                <td class="text-end text-nowrap">
+                  <% if (currentUser.role !== 'lector') { %>
+                    <% if (!l.es_principal) { %>
+                    <form action="/celulares/<%= item.id %>/chips/<%= l.id %>/principal" method="post" class="d-inline">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-sm btn-outline-primary" type="submit" title="Que este número pase a ser el principal del celular">Hacer principal</button>
+                    </form>
+                    <% } %>
+                    <form action="/celulares/<%= item.id %>/chips/<%= l.id %>/retirar" method="post" class="d-inline"
+                          onsubmit="return confirm('¿Retirar el chip <%= l.phone_number %> de este celular? Queda en stock.');">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">Retirar</button>
+                    </form>
+                  <% } %>
+                  <a href="/celulares/chips/<%= l.id %>" class="btn btn-sm btn-outline-secondary">Ver chip</a>
+                </td>
               </tr>
             <% }); %>
           </tbody>
         </table>
+      <% } %>
+      <% if (currentUser.role !== 'lector' && item.status !== 'de_baja') { %>
+        <% if (lines.length < maxChips) { %>
+        <hr>
+        <h6 class="mb-1"><%= lines.length ? 'Agregar 2.º chip (doble SIM)' : 'Agregar chip' %></h6>
+        <form action="/celulares/<%= item.id %>/chips/agregar" method="post" class="row g-2 align-items-end" id="form_agregar_chip">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="col-sm-4">
+            <label class="form-label small mb-1" for="chip_numero">Número *</label>
+            <input type="text" class="form-control form-control-sm" id="chip_numero" name="numero" required inputmode="numeric" maxlength="15" placeholder="912345678">
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label small mb-1" for="chip_operadora">Operadora (si el chip es nuevo)</label>
+            <select class="form-select form-select-sm" id="chip_operadora" name="operadora">
+              <option value="">—</option>
+              <% operadoras.forEach(function(o) { %><option value="<%= o %>"><%= o %></option><% }); %>
+            </select>
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label small mb-1" for="chip_iccid">ICCID (opcional)</label>
+            <input type="text" class="form-control form-control-sm" id="chip_iccid" name="iccid" inputmode="numeric" maxlength="22">
+          </div>
+          <div class="col-12 d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-sim"></i> Poner en este celular</button>
+            <span class="form-text m-0">Si el número ya está registrado como chip en stock, se toma ese; si no existe, se registra en el momento.<%= lines.length ? ' Queda como 2.º chip; luego puede hacerlo principal.' : ' Será el número principal.' %></span>
+          </div>
+        </form>
+        <% } else { %>
+        <p class="small text-muted mt-2 mb-0">Tiene los <%= maxChips %> chips que admite un celular doble SIM. Para entregarle a la persona chips extra, asígneselos desde Chips como <strong>repuesto</strong>.</p>
+        <% } %>
       <% } %>
     </div>
 

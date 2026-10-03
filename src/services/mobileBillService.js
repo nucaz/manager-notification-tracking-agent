@@ -564,6 +564,6 @@ async function buildWorkbook(bill, rec) {
 }
 
 module.exports = {
-  RESULTS, BillFormatError, recurringDiscount,
+  RESULTS, BillFormatError, recurringDiscount, discountNote,
   importBill, listBills, getBill, deleteBill, storedPath, reconcile, createMissingLines, syncPlans, monthlyEvolution, buildWorkbook,
 };

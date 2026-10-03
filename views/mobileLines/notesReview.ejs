@@ -1,0 +1,133 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  const U = mobileLabels.LINE_UBICACION;
+  const usable = items.filter(function(i) { return i.action; });
+  const enRecibo = usable.filter(function(i) { return i.billed && i.billed.missing; });
+%>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+  <div>
+    <h2 class="mb-1">2.º chip desde las notas</h2>
+    <p class="text-muted mb-0">Números de celular anotados a mano en las notas de los equipos (ej. "N° 2 (uso WhatsApp)"), cruzados con los chips registrados y con el último recibo de cada operadora.</p>
+  </div>
+  <a href="/celulares/chips" class="btn btn-outline-secondary">Volver a Chips</a>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <div class="card p-3 h-100">
+      <h5>Inventario real de líneas</h5>
+      <% if (!bills.length) { %>
+        <p class="text-muted mb-0">Todavía no hay recibos cargados para comparar.</p>
+      <% } else { %>
+        <div class="table-responsive">
+          <table class="table table-sm mb-2" data-tabla="no" id="tabla_inventario_real">
+            <thead><tr><th>Último recibo</th><th class="text-end">Líneas facturadas</th><th class="text-end">Registradas</th><th class="text-end">Faltantes</th>
+              <th class="text-end">Halladas en notas</th><th class="text-end">Faltarían</th></tr></thead>
+            <tbody>
+              <% bills.forEach(function(b) {
+                   const hallados = enRecibo.filter(function(i) { return i.billed.operadora === b.bill.operadora; }).length; %>
+                <tr>
+                  <td><a href="/celulares/recibos/<%= b.bill.id %>"><%= b.bill.operadora %> · <%= b.bill.recibo_nro %></a><div class="small text-muted">emitido el <%= b.bill.fecha_emision %></div></td>
+                  <td class="text-end"><%= b.total %></td>
+                  <td class="text-end"><%= b.registered %></td>
+                  <td class="text-end"><strong><%= b.missing %></strong></td>
+                  <td class="text-end"><%= hallados %></td>
+                  <td class="text-end"><strong><%= b.missing - hallados %></strong></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <p class="small text-muted mb-0">"Faltantes": se facturan y no existen como chip. "Halladas en notas": de esas, las que figuran en las notas de un celular y se pueden registrar aquí como su 2.º chip. Las que sigan faltando se registran en stock desde el recibo.</p>
+      <% } %>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-3 h-100">
+      <h5>Chips registrados hoy: <%= summary.total %></h5>
+      <ul class="list-unstyled mb-0 small">
+        <% Object.keys(U).forEach(function(k) { %>
+          <li class="d-flex justify-content-between border-bottom py-1"><span><%= U[k].label %></span><span class="badge <%= U[k].badge %>"><%= summary.porUbicacion[k] || 0 %></span></li>
+        <% }); %>
+        <li class="d-flex justify-content-between py-1"><span>De baja (incluidos arriba)</span><span class="badge bg-danger"><%= summary.porEstado.de_baja || 0 %></span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<% if (result) { %>
+  <div class="card p-3 mb-3" id="resultado_notas">
+    <h6>Resultado</h6>
+    <% if (result.done.length) { %>
+      <p class="mb-1 small">Registrados como 2.º chip (<%= result.done.length %>): <%= result.done.map(function(d) { return d.number + ' en ' + d.device; }).join(', ') %>.</p>
+    <% } %>
+    <% if (result.failed.length) { %>
+      <ul class="small text-danger mb-0">
+        <% result.failed.forEach(function(f) { %><li><%= f.number %> (<%= f.device %>): <%= f.error %></li><% }); %>
+      </ul>
+    <% } %>
+  </div>
+<% } %>
+
+<div class="card p-3">
+  <% if (!items.length) { %>
+    <p class="text-muted mb-0">No hay números anotados en las notas de los celulares que no estén ya registrados como su chip.</p>
+  <% } else { %>
+    <form method="post" action="/celulares/chips/desde-notas" id="form_notas"
+          onsubmit="var n = this.querySelectorAll('.nota-item:checked').length; if (!n) { alert('Marque al menos un número.'); return false; } return confirm('Se registrarán ' + n + ' número(s) como 2.º chip de su celular. Los que no existen se crean con la operadora, el plan y el costo del recibo (si figuran en él). Las notas del celular se conservan. ¿Continuar?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <span><strong><%= items.length %></strong> número(s) hallados · <strong><%= usable.length %></strong> se pueden registrar · <strong><%= enRecibo.length %></strong> figuran como faltantes en el recibo</span>
+        <span class="ms-auto d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('.nota-item').forEach(function (c) { c.checked = true; }); contar();">Marcar todos</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('.nota-item').forEach(function (c) { c.checked = false; }); contar();">Desmarcar todo</button>
+          <button class="btn btn-sm btn-primary" type="submit">Registrar <span id="notas_marcadas">0</span> como 2.º chip</button>
+        </span>
+      </div>
+      <p class="small text-muted">Vienen marcados los que figuran en el recibo (son chips que se pagan). Los que no figuran en ningún recibo quedan sin marcar: revíselos (pueden ser de otra operadora o estar de baja).</p>
+      <div class="table-responsive">
+        <%# Sin paginar a proposito: las marcas que vienen puestas no deben perderse al cambiar de pagina. %>
+        <table class="table table-hover table-sm align-middle" data-tabla="no">
+          <thead><tr><th></th><th>Número en la nota</th><th>Celular</th><th>Área / Sede</th><th>Nota</th><th>En el recibo</th><th>Qué se hará</th></tr></thead>
+          <tbody>
+            <% items.forEach(function(i) { %>
+              <tr>
+                <td><% if (i.action) { %><input type="checkbox" class="form-check-input nota-item" name="items" value="<%= i.key %>" <%= i.billed && i.billed.missing ? 'checked' : '' %> onchange="contar()" aria-label="Registrar <%= i.number %>"><% } %></td>
+                <td class="text-nowrap"><strong><%= i.number %></strong></td>
+                <td class="text-nowrap"><a href="/celulares/<%= i.device.id %>"><%= i.device.asset_code || i.device.imei %></a>
+                  <div class="small text-muted"><%= i.device.model || '' %><%= i.device.phone_number ? ' · principal ' + i.device.phone_number : ' · sin número' %></div></td>
+                <td class="small"><%= i.device.area %><%= i.device.sede ? ' / ' + i.device.sede : '' %></td>
+                <td class="small" style="max-width: 22rem;"><%= i.device.notes %></td>
+                <td class="small text-nowrap">
+                  <% if (i.billed) { %>
+                    <span class="badge <%= i.billed.missing ? 'bg-warning text-dark' : 'bg-success' %>"><%= i.billed.missing ? 'Faltante' : 'Registrado' %></span>
+                    <div><%= i.billed.operadora %> <%= i.billed.recibo %></div>
+                    <div class="text-muted"><%= i.billed.plan || '' %><%= i.billed.cargo !== null && i.billed.cargo !== undefined ? ' · S/ ' + Number(i.billed.cargo).toFixed(2) : '' %></div>
+                  <% } else { %>
+                    <span class="badge bg-light text-dark border">No figura</span>
+                  <% } %>
+                </td>
+                <td class="small">
+                  <% if (i.action === 'crear') { %>Registrar el chip y ponerlo como 2.º chip
+                  <% } else if (i.action === 'poner') { %>El chip ya existe (en stock): ponerlo como 2.º chip
+                  <% } else { %><span class="text-muted"><%= i.reason %></span><% } %>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </form>
+  <% } %>
+</div>
+
+<script>
+function contar() {
+  var el = document.getElementById('notas_marcadas');
+  if (el) el.textContent = document.querySelectorAll('.nota-item:checked').length;
+}
+contar();
+</script>
+
+<%- include('../partials/foot') %>

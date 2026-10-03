@@ -15,8 +15,12 @@ const pool = require('../db/pool');
 const employeeService = require('./employeeService');
 
 const ESTADOS = ['activo', 'suspendido', 'de_baja'];
-const USOS = ['personal', 'emergencia'];
-const UBICACIONES = ['en_celular', 'personal', 'emergencia', 'en_stock'];
+const USOS = ['personal', 'emergencia', 'repuesto'];
+const UBICACIONES = ['en_celular', 'personal', 'emergencia', 'repuesto', 'en_stock'];
+// Un celular admite como maximo dos chips (doble SIM). Los chips extra que
+// tenga una persona se le asignan como "repuesto".
+const MAX_CHIPS_PER_DEVICE = 2;
+const TOO_MANY = 'Ese celular ya tiene 2 chips (el máximo de un equipo doble SIM). Retire uno primero, o asigne este chip a la persona como repuesto.';
 
 async function validateLineData(data) {
   const errors = [];
@@ -80,8 +84,10 @@ async function deviceChipConflict(number, deviceId) {
       return `El número ${number} está asignado a ${line.holder_name} (${line.uso === 'emergencia' ? 'número de emergencia' : 'sin celular'}). Devuélvalo desde Chips antes de ponerlo en un equipo.`;
     }
     if (line.estado === 'de_baja') return `El chip ${number} está dado de baja.`;
+    if (String(line.device_id || '') !== String(deviceId || '') && deviceId && (await otherChips(deviceId, number)) >= MAX_CHIPS_PER_DEVICE) return TOO_MANY;
     return null;
   }
+  if (deviceId && (await otherChips(deviceId, number)) >= MAX_CHIPS_PER_DEVICE) return TOO_MANY;
   // Datos anteriores al registro de chips: otro celular con ese numero.
   const [[dev]] = await pool.query(
     'SELECT imei FROM mobile_devices WHERE phone_number = ? AND has_chip = 1 AND id <> ? LIMIT 1',
@@ -163,6 +169,70 @@ async function closeAssignment(lineId, note, conn = pool) {
   return active;
 }
 
+// Cuantos chips tiene puestos un celular.
+async function chipsInDevice(deviceId, conn = pool) {
+  const [[r]] = await conn.query('SELECT COUNT(*) AS n FROM mobile_lines WHERE device_id = ?', [deviceId]);
+  return Number(r.n);
+}
+
+// Chips del celular que seguirian puestos si `number` pasa a ser su
+// principal (el principal actual sale del equipo al cambiarlo).
+async function otherChips(deviceId, number) {
+  const [[r]] = await pool.query(
+    `SELECT COUNT(*) AS n FROM mobile_lines l JOIN mobile_devices d ON d.id = l.device_id
+     WHERE l.device_id = ? AND l.phone_number <> ? AND (d.phone_number IS NULL OR l.phone_number <> d.phone_number)`,
+    [deviceId, number]
+  );
+  return Number(r.n);
+}
+
+// El 2.o chip de un celular pasa a ser su numero principal (el anterior
+// principal sigue puesto, como 2.o chip).
+async function makePrincipal(lineId) {
+  const line = await getLine(lineId);
+  if (!line) throw new Error('Chip no encontrado.');
+  if (!line.device_id) throw new Error('El chip no está en ningún celular.');
+  const [[device]] = await pool.query('SELECT id, imei, phone_number FROM mobile_devices WHERE id = ?', [line.device_id]);
+  if (device.phone_number === line.phone_number) throw new Error('Ese chip ya es el número principal del celular.');
+  await pool.query(
+    `UPDATE mobile_devices SET phone_number = ?, phone_country_code_id = ?, operadora = COALESCE(?, operadora), has_chip = 1, updated_at = NOW()
+     WHERE id = ?`,
+    [line.phone_number, line.phone_country_code_id, line.operadora, device.id]
+  );
+  return { device, previous: device.phone_number };
+}
+
+// Agrega un chip a un celular desde la ficha del celular: si el numero ya
+// existe como chip (en stock) se pone; si no existe, se registra y se pone.
+async function addChipToDevice(deviceId, input, userId) {
+  const number = digits(input.numero);
+  if (!/^\d{6,15}$/.test(number)) throw new Error('Escriba el número del chip (solo dígitos, ej. 912345678).');
+  const [[device]] = await pool.query('SELECT id, imei, status FROM mobile_devices WHERE id = ?', [deviceId]);
+  if (!device) throw new Error('Celular no encontrado.');
+  if ((await chipsInDevice(device.id)) >= MAX_CHIPS_PER_DEVICE) throw new Error(TOO_MANY);
+  let [[line]] = await pool.query('SELECT id FROM mobile_lines WHERE phone_number = ?', [number]);
+  let created = false;
+  if (!line) {
+    const iccid = digits(input.iccid);
+    if (iccid && !/^\d{18,22}$/.test(iccid)) throw new Error('El ICCID debe tener entre 18 y 22 dígitos.');
+    const [[peru]] = await pool.query("SELECT id, mobile_length FROM phone_country_codes WHERE calling_code = '51' LIMIT 1");
+    const [res] = await pool.query(
+      'INSERT INTO mobile_lines (phone_country_code_id, phone_number, iccid, operadora, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+      [peru && number.length === peru.mobile_length ? peru.id : null, number, iccid || null, String(input.operadora || '').trim().slice(0, 50) || null,
+        input.notes ? String(input.notes).slice(0, 250) : null, userId || null]
+    );
+    line = { id: res.insertId };
+    created = true;
+  }
+  try {
+    const placed = await placeInDevice(line.id, device.imei);
+    return { ...placed, lineId: line.id, created, number };
+  } catch (err) {
+    if (created) await pool.query('DELETE FROM mobile_lines WHERE id = ?', [line.id]); // no deja un chip a medias
+    throw err;
+  }
+}
+
 // Pone el chip en un celular. Devuelve { device, principal } o lanza Error
 // con un mensaje para el usuario.
 async function placeInDevice(lineId, deviceRef) {
@@ -177,6 +247,7 @@ async function placeInDevice(lineId, deviceRef) {
   if (!device) throw new Error(`No se encontró un celular con IMEI o código "${ref}".`);
   if (device.status === 'de_baja') throw new Error('Ese celular está dado de baja.');
   if (String(line.device_id) === String(device.id)) throw new Error('El chip ya está en ese celular.');
+  if ((await chipsInDevice(device.id)) >= MAX_CHIPS_PER_DEVICE) throw new Error(TOO_MANY);
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -230,7 +301,7 @@ async function assignLine(lineId, input, userId) {
   const { dni, first_name: first, last_name: last, area, sede, cargo, uso, assigned_date: fecha, observacion } = input;
   if (!dni || !first || !last) throw new Error('DNI, nombres y apellidos son obligatorios.');
   if (!/^\d{8}$/.test(dni)) throw new Error('El DNI debe tener exactamente 8 dígitos numéricos.');
-  if (!USOS.includes(uso)) throw new Error('Indique el uso: sin celular (personal) o número de emergencia.');
+  if (!USOS.includes(uso)) throw new Error('Indique el uso: sin celular (personal), número de emergencia o repuesto.');
   if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new Error('La fecha de entrega no es válida.');
   if (observacion && observacion.length > 250) throw new Error('La observación no puede superar los 250 caracteres.');
   const employeeId = await employeeService.upsert({ dni, first_name: first, last_name: last, area, sede, cargo }, userId);
@@ -578,7 +649,8 @@ async function linesOfEmployee(employeeId) {
 }
 
 module.exports = {
-  ESTADOS, USOS, UBICACIONES,
+  ESTADOS, USOS, UBICACIONES, MAX_CHIPS_PER_DEVICE,
+  chipsInDevice, makePrincipal, addChipToDevice,
   validateLineData, numberTaken, deviceChipConflict, syncDeviceChip,
   placeInDevice, removeFromDevice, assignLine, closeAssignment, saveLine, deleteLine, getLine,
   listLines, summarize, netCost, getLineDetail, linesOfDevice, linesOfEmployee,

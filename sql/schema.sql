@@ -362,7 +362,7 @@ CREATE TABLE IF NOT EXISTS mobile_line_assignments (
   line_id INT NOT NULL,
   employee_id INT NULL,
   holder_name VARCHAR(150) NOT NULL,
-  uso ENUM('personal','emergencia') NOT NULL DEFAULT 'personal',
+  uso ENUM('personal','emergencia','repuesto') NOT NULL DEFAULT 'personal', -- repuesto: chip extra que guarda la persona (mas alla de los 2 que admite un celular)
   assigned_date DATE NULL,
   returned_date DATE NULL,
   observacion VARCHAR(250) NULL,

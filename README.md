@@ -37,6 +37,17 @@ Aplicación web para el seguimiento de:
   existente"** sin esperar a guardar. **Dar de baja** un chip (fecha y
   motivo, reversible): sale de su celular y deja de sumar en lo que se paga.
   Prueba: `E2E_PERMITIR=1 node tests/celulares_chips_lote.e2e.js`
+  **Doble SIM**: desde la ficha del celular se agrega el 2.º chip (lo toma
+  de stock o lo registra en el momento), se elige cuál es el principal y
+  se retira cualquiera; un celular admite como máximo **2 chips**. El
+  segundo número sale en el listado ("Número 2"), el Excel, Reportes y el
+  PDF. Los chips extra que guarda una persona se le asignan como
+  **repuesto** (sin tope). **2.º chip desde notas** busca los números
+  anotados a mano en las notas de los celulares ("N° 2 (uso WhatsApp)"),
+  los cruza con los chips registrados y con el último recibo de cada
+  operadora (inventario real: facturadas, registradas, faltantes y
+  cuántas faltarían) y registra los que se marquen como 2.º chip, con el
+  plan y el costo del recibo. Prueba: `E2E_PERMITIR=1 node tests/celulares_doble_sim.e2e.js`
   **Recibos** (`/celulares/recibos`): se sube el recibo de la operadora
   (hoy Entel: el PDF del recibo o su Excel de detalle; se leen sin IA) y la
   app lo cruza contra el inventario en tres sentidos — número facturado →

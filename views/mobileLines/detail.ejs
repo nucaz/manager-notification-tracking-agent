@@ -96,7 +96,7 @@
                 <tr>
                   <td><%= h.holder_name %></td>
                   <td><%= h.dni || '—' %></td>
-                  <td><%= h.uso === 'emergencia' ? 'Emergencia' : 'Sin celular' %></td>
+                  <td><%= h.uso === 'emergencia' ? 'Emergencia' : h.uso === 'repuesto' ? 'Repuesto' : 'Sin celular' %></td>
                   <td><%= h.assigned_date || '—' %></td>
                   <td><%= h.returned_date || 'actual' %></td>
                   <td><%= h.observacion || '—' %></td>
@@ -128,7 +128,7 @@
       <% } else if (item.line_holder) { %>
         <p class="mb-2">
           Asignado a <strong><%= item.line_holder %></strong>
-          como <strong><%= item.uso === 'emergencia' ? 'número de emergencia' : 'chip sin celular (lo usa en su propio equipo)' %></strong>
+          como <strong><%= item.uso === 'emergencia' ? 'número de emergencia' : item.uso === 'repuesto' ? 'chip de repuesto (lo guarda la persona)' : 'chip sin celular (lo usa en su propio equipo)' %></strong>
           <%= item.line_assigned_date ? 'desde el ' + item.line_assigned_date : '' %>.
           <span class="text-muted small d-block"><%= item.area || '' %><%= item.sede ? ' · ' + item.sede : '' %></span>
         </p>
@@ -174,7 +174,11 @@
                 <input class="form-check-input" type="radio" name="uso" id="uso_emergencia" value="emergencia">
                 <label class="form-check-label" for="uso_emergencia">Número de emergencia</label>
               </div>
-              <div class="form-text">Emergencia: número de respaldo por si se bloquea el principal; la persona puede tener además un celular con chip.</div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="uso" id="uso_repuesto" value="repuesto">
+                <label class="form-check-label" for="uso_repuesto">Repuesto (lo guarda la persona)</label>
+              </div>
+              <div class="form-text">Emergencia: número de respaldo por si se bloquea el principal. Repuesto: chip extra que la persona guarda, más allá de los 2 que admite su celular. En los dos casos la persona puede tener además un celular con chip.</div>
             </div>
             <div class="row g-2">
               <div class="col-sm-4"><label class="form-label small" for="a_dni">DNI *</label>

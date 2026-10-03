@@ -13,6 +13,7 @@ const catalogService = require('../services/catalogService');
 const employeeService = require('../services/employeeService');
 const auditService = require('../services/auditService');
 const lineService = require('../services/mobileLineService');
+const notesService = require('../services/mobileLineNotesService');
 const importService = require('../services/importService');
 const { importUploader } = require('../services/uploadService');
 const labels = require('../config/mobileLabels');
@@ -371,6 +372,41 @@ const scanView = async (extra) => ({
   ...extra,
 });
 
+// Segundas lineas anotadas en las notas de los celulares: revision antes de
+// registrarlas como 2.o chip, cruzadas con el ultimo recibo de cada operadora.
+router.get('/desde-notas', canWrite, async (req, res, next) => {
+  try {
+    const data = await notesService.candidates();
+    const summary = lineService.summarize(await lineService.listLines({}));
+    res.render('mobileLines/notesReview', { title: 'Segundas líneas anotadas en celulares', ...data, summary, result: req.session.notesResult || null });
+    delete req.session.notesResult;
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/desde-notas', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const { done, failed } = await notesService.register(req.body.items, req.session.user.id);
+    if (done.length) {
+      const facturados = done.filter((i) => i.billed && i.billed.missing).length;
+      await auditService.log(req, {
+        user: req.session.user, action: 'chips_desde_notas', target: `${done.length} chip(s) como 2.º chip`,
+        detail: `${facturados} figuraban como faltantes en el recibo; ${failed.length} no se pudieron registrar`,
+      });
+    }
+    req.session.notesResult = {
+      done: done.map((i) => ({ number: i.number, device: i.device.asset_code || i.device.imei, billed: !!(i.billed && i.billed.missing) })),
+      failed: failed.map((f) => ({ number: f.item.number, device: f.item.device.asset_code || f.item.device.imei, error: f.error })),
+    };
+    if (!done.length && !failed.length) req.flash('error', 'No marcó ningún número para registrar.');
+    else req.flash(done.length ? 'success' : 'error', `${done.length} chip(s) registrados como 2.º chip de su celular${failed.length ? `; ${failed.length} no se pudieron registrar (ver abajo)` : ''}.`);
+    res.redirect('/celulares/chips/desde-notas');
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/escanear', canWrite, async (req, res, next) => {
   try {
     res.render('mobileLines/scan', await scanView());
@@ -622,7 +658,7 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
   try {
     const line = await lineService.getLine(req.params.id);
     const r = await lineService.assignLine(req.params.id, req.body, req.session.user.id);
-    const uso = req.body.uso === 'emergencia' ? 'número de emergencia' : 'uso sin celular';
+    const uso = { emergencia: 'número de emergencia', repuesto: 'chip de repuesto' }[req.body.uso] || 'uso sin celular';
     await auditService.log(req, {
       user: req.session.user, action: 'chip_asignado', target: lineLabel(line),
       detail: `Asignado a ${r.holderName} (DNI ${req.body.dni}) como ${uso}${r.previous ? `; antes lo tenía ${r.previous.holder_name}` : ''}`,

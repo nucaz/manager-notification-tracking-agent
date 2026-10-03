@@ -34,6 +34,7 @@ const LINE_UBICACION = {
   en_celular: { label: 'En un celular', badge: 'bg-primary' },
   personal: { label: 'Asignado sin celular', badge: 'bg-info text-dark' },
   emergencia: { label: 'Número de emergencia', badge: 'bg-warning text-dark' },
+  repuesto: { label: 'Repuesto (lo guarda una persona)', badge: 'bg-light text-dark border' },
   en_stock: { label: 'En stock', badge: 'bg-secondary' },
 };
 

@@ -58,7 +58,7 @@
     <div class="dropdown-menu p-2" id="columnPicker" style="min-width:220px;">
       <div class="form-text mb-1">Elige qué columnas ver (se recuerda en este navegador).</div>
       <% [
-        ['sede', 'Sede'], ['operadora', 'Operadora'], ['numero', 'Número de línea'],
+        ['sede', 'Sede'], ['operadora', 'Operadora'], ['numero', 'Número de línea'], ['numero2', 'Número 2 (doble SIM)'],
         ['compra', 'Fecha de compra'], ['condicion', 'Condición'],
         ['registrado', 'Registrado'], ['actualizado', 'Últ. actualización'],
       ].forEach(function(c) { %>
@@ -95,7 +95,7 @@
             <th><input type="checkbox" id="selectAllCheckbox" onchange="document.querySelectorAll('tr:not([hidden]) .row-check').forEach(function(cb){cb.checked = this.checked;}, this); updateBulkDeleteButton();"></th>
           <% } %>
           <th>IMEI</th><th>Código</th><th>Modelo</th><th>Área</th><th data-col="sede">Sede</th>
-          <th data-col="operadora">Operadora</th><th data-col="numero">Número de línea</th>
+          <th data-col="operadora">Operadora</th><th data-col="numero">Número de línea</th><th data-col="numero2">Número 2</th>
           <th data-col="compra">Fecha de compra</th><th data-col="condicion">Condición</th>
           <th>Usuario asignado</th><th>Estado</th>
           <th data-col="registrado">Registrado</th><th data-col="actualizado">Últ. actualización</th><th></th>
@@ -114,6 +114,7 @@
             <td data-col="sede"><%= item.sede || '—' %></td>
             <td data-col="operadora"><%= item.operadora || '—' %></td>
             <td data-col="numero"><%= item.phone_number || '—' %></td>
+            <td data-col="numero2"><%= item.numero_2 || '—' %></td>
             <td data-col="compra"><%= item.purchase_date || '—' %></td>
             <td data-col="condicion"><%= item.condicion === 'nuevo' ? 'Nuevo' : item.condicion === 'usado' ? 'Usado' : '—' %></td>
             <td><%= item.holder_name || '—' %></td>

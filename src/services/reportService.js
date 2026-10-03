@@ -67,25 +67,28 @@ const celulares = {
   module: 'celulares',
   columns: [
     { key: 'asset_code', label: 'Código' }, { key: 'imei', label: 'IMEI' }, { key: 'brand', label: 'Marca' }, { key: 'model', label: 'Modelo' },
-    { key: 'phone_number', label: 'Número' }, { key: 'operadora', label: 'Operadora' }, { key: 'estado', label: 'Estado' },
-    { key: 'area', label: 'Área' }, { key: 'sede', label: 'Sede' }, { key: 'holder_name', label: 'Asignado a' }, { key: 'cargo', label: 'Cargo' },
+    { key: 'phone_number', label: 'Número' }, { key: 'numero_2', label: 'Número 2 (doble SIM)' }, { key: 'operadora', label: 'Operadora' },
+    { key: 'estado', label: 'Estado' }, { key: 'area', label: 'Área' }, { key: 'sede', label: 'Sede' }, { key: 'holder_name', label: 'Asignado a' }, { key: 'cargo', label: 'Cargo' },
     { key: 'condicion', label: 'Condición' }, { key: 'purchase_date', label: 'Fecha de compra' },
   ],
   print: [
-    { key: 'asset_code', label: 'Código', w: 0.75 }, { key: 'equipo', label: 'Equipo', w: 1.15 }, { key: 'holder_name', label: 'Asignado a', w: 1.55 },
-    { key: 'lugar', label: 'Área / Sede', w: 1.4 }, { key: 'estado', label: 'Estado', w: 0.8 },
+    { key: 'asset_code', label: 'Código', w: 0.75 }, { key: 'equipo', label: 'Equipo', w: 1.05 }, { key: 'numeros', label: 'Número(s)', w: 0.95 },
+    { key: 'holder_name', label: 'Asignado a', w: 1.4 }, { key: 'lugar', label: 'Área / Sede', w: 1.3 }, { key: 'estado', label: 'Estado', w: 0.75 },
   ],
-  barcodes: [{ key: 'imei', label: 'IMEI' }, { key: 'asset_code', label: 'Código interno' }, { key: 'phone_number', label: 'Número' }],
+  barcodes: [{ key: 'imei', label: 'IMEI' }, { key: 'asset_code', label: 'Código interno' }, { key: 'phone_number', label: 'Número' }, { key: 'numero_2', label: 'Número 2' }],
   selects: [{ key: 'estado', label: 'Estado' }, { key: 'sede', label: 'Sede' }, { key: 'area', label: 'Área' }, { key: 'operadora', label: 'Operadora' }],
   groupBy: [{ key: 'estado', label: 'Por estado' }, { key: 'sede', label: 'Por sede' }],
   async load() {
     const [rows] = await pool.query(`
-      SELECT d.*, a.holder_name, a.cargo
+      SELECT d.*, a.holder_name, a.cargo,
+             (SELECT GROUP_CONCAT(l.phone_number ORDER BY l.id SEPARATOR ', ') FROM mobile_lines l
+              WHERE l.device_id = d.id AND (d.phone_number IS NULL OR l.phone_number <> d.phone_number)) AS numero_2
       FROM mobile_devices d
       LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL
       ORDER BY d.sede IS NULL, d.sede, d.area, d.asset_code, d.id`);
     return rows.map((d) => ({
       ...d, estado: mobileLabels.deviceStatus(d.status).label, equipo: join(d.brand, d.model), lugar: stacked(d.area, d.sede),
+      numeros: stacked(d.phone_number, d.numero_2),
     }));
   },
 };

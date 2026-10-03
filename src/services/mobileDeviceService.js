@@ -283,7 +283,7 @@ const EXPORT_HEADERS = [
   'IMEI', 'Número', 'Tiene chip', 'Código', 'Marca', 'Modelo', 'Fecha de compra', 'Condición',
   'Área', 'Sede', 'Usuario asignado', 'Cargo', 'Turno', 'Fecha de entrega', 'Observación', 'Estado', 'Operadora',
   'País', 'Código de país', 'Observación de la asignación', 'Incidentes (total)', 'Fecha de alta',
-  'Última actualización',
+  'Última actualización', 'Número 2 (doble SIM)',
 ];
 
 // Mismos filtros que el listado de /celulares (q, area, sede, status).
@@ -291,7 +291,9 @@ async function fetchDevicesForExport({ q, area, sede, status } = {}) {
   let sql = `
     SELECT d.*, c.country_name, c.calling_code,
            a.holder_name, a.cargo, a.turno, a.assigned_date, a.observacion AS assignment_obs,
-           (SELECT COUNT(*) FROM mobile_device_incidents i WHERE i.device_id = d.id) AS incident_count
+           (SELECT COUNT(*) FROM mobile_device_incidents i WHERE i.device_id = d.id) AS incident_count,
+           (SELECT GROUP_CONCAT(l.phone_number ORDER BY l.id SEPARATOR ', ') FROM mobile_lines l
+            WHERE l.device_id = d.id AND (d.phone_number IS NULL OR l.phone_number <> d.phone_number)) AS numero_2
     FROM mobile_devices d
     LEFT JOIN phone_country_codes c ON c.id = d.phone_country_code_id
     LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL
@@ -330,6 +332,7 @@ async function fetchDevicesForExport({ q, area, sede, status } = {}) {
     d.incident_count,
     d.created_at || '',
     d.updated_at || '',
+    d.numero_2 || '',
   ]);
 }
 
