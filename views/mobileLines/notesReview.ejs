@@ -111,6 +111,7 @@
                 <td class="small">
                   <% if (i.action === 'crear') { %>Registrar el chip y ponerlo como 2.º chip
                   <% } else if (i.action === 'poner') { %>El chip ya existe (en stock): ponerlo como 2.º chip
+                  <% } else if (i.action === 'repuesto') { %>El celular ya tiene 2 chips: <%= i.chip ? '' : 'registrarlo y ' %>asignarlo como <strong>repuesto</strong> a <%= i.device.holder %>
                   <% } else { %><span class="text-muted"><%= i.reason %></span><% } %>
                 </td>
               </tr>

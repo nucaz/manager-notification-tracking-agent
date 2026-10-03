@@ -6,6 +6,8 @@ const flash = require('connect-flash');
 const rateLimit = require('express-rate-limit');
 const env = require('./config/env');
 const { ensureCsrfToken } = require('./middleware/csrf');
+const { MariaDbSessionStore } = require('./services/sessionStore');
+const { SESSION_IDLE_MS, refreshSessionUser } = require('./middleware/sessionUser');
 const mobileLabels = require('./config/mobileLabels');
 
 const authRoutes = require('./routes/auth');
@@ -77,18 +79,24 @@ app.use(rateLimit({
 app.use(
   session({
     secret: env.sessionSecret,
+    store: new MariaDbSessionStore(),
     resave: false,
     saveUninitialized: false,
+    // Cada solicitud alarga la sesion: vence por INACTIVIDAD, no a una hora
+    // fija desde el ingreso. "Mantener la sesion iniciada" (login) la lleva
+    // a 30 dias; sin eso, 12 horas sin usar la aplicacion.
+    rolling: true,
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      maxAge: 1000 * 60 * 60 * 8, // 8 horas
+      maxAge: SESSION_IDLE_MS,
       secure: env.nodeEnv === 'production' && env.appBaseUrl.startsWith('https'),
     },
   })
 );
 app.use(flash());
 app.use(ensureCsrfToken);
+app.use(refreshSessionUser);
 
 // Variables disponibles en todas las vistas
 app.use(async (req, res, next) => {

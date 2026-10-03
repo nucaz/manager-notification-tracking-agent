@@ -757,3 +757,15 @@ INSERT IGNORE INTO phone_country_codes (country_name, calling_code, mobile_lengt
   ('España', '34', 9),
   ('Estados Unidos', '1', 10),
   ('Brasil', '55', 11);
+
+-- ---------------------------------------------------------------------
+-- Sesiones de inicio de sesion (src/services/sessionStore.js). Guardadas
+-- aqui sobreviven a un reinicio o despliegue de la aplicacion. Cada fila
+-- vence con su cookie; las vencidas se borran solas.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sessions (
+  sid VARCHAR(128) NOT NULL PRIMARY KEY,
+  expires DATETIME NOT NULL,
+  data MEDIUMTEXT NOT NULL,
+  INDEX idx_sessions_expires (expires)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

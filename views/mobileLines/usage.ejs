@@ -1,0 +1,124 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  const soles = function(n) { return 'S/ ' + Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  const guardados = ['guardado_repuesto', 'guardado_celular', 'guardado_stock'];
+  const enUso = ['uso_celular', 'uso_personal', 'uso_emergencia'];
+%>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">Uso real de las líneas</h2>
+    <p class="text-muted mb-0">De lo que se paga cada mes, cuánto se usa y cuánto está guardado. Montos del último recibo de cada operadora<%= bills.length ? ' (' + bills.map(function(b) { return b.operadora + ' ' + b.fecha_emision; }).join(', ') + ')' : '' %>; si un chip no figura en el recibo, su costo registrado.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/celulares/chips/uso/exportar.xlsx" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+    <a href="/celulares/chips" class="btn btn-outline-secondary">Volver a Chips</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-3" id="uso_resumen">
+  <div class="col-6 col-lg-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Se paga al mes (último recibo)</div>
+    <div class="stat-number"><%= soles(totals.billedMonthly) %></div>
+    <div class="small text-muted"><%= totals.billedLines %> líneas facturadas</div>
+  </div></div>
+  <div class="col-6 col-lg-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">En uso</div>
+    <div class="stat-number text-success"><%= soles(totals.uso.monthly) %></div>
+    <div class="small text-muted"><%= totals.uso.count %> chips · <%= totals.pct.uso %> %</div>
+  </div></div>
+  <div class="col-6 col-lg-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Guardado: se paga y no se usa</div>
+    <div class="stat-number text-warning"><%= soles(totals.guardado.monthly) %></div>
+    <div class="small text-muted"><%= totals.guardado.count %> chips en custodia · <%= totals.pct.guardado %> %</div>
+  </div></div>
+  <div class="col-6 col-lg-3"><div class="card stat-card p-3 h-100">
+    <div class="text-muted small">Facturado y sin registrar</div>
+    <div class="stat-number text-danger"><%= soles(totals.unlocated.monthly) %></div>
+    <div class="small text-muted"><%= totals.unlocated.count %> líneas que no están en el inventario · <%= totals.pct.unlocated %> %</div>
+  </div></div>
+</div>
+
+<div class="alert alert-light border small">
+  <strong>Cómo leerlo.</strong> <em>En uso</em>: chips en un celular que tiene usuario, asignados a una persona para su propio equipo o de emergencia.
+  <em>Guardado</em>: chips de repuesto (los guarda una persona), puestos en un celular que está en stock, o en stock: <strong>se pagan pero nadie los usa</strong>.
+  <em>Facturado y sin registrar</em>: el recibo los cobra y no existen en el inventario.
+  <% if (totals.guardado.withoutCost || totals.uso.withoutCost) { %>Hay <%= totals.guardado.withoutCost + totals.uso.withoutCost %> chip(s) sin costo conocido (no figuran en el recibo ni tienen costo registrado): no suman.<% } %>
+</div>
+
+<div class="card p-3 mb-3">
+  <h5>Detalle</h5>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0" data-tabla="no" id="uso_detalle">
+      <thead><tr><th>Grupo</th><th>Dónde está</th><th class="text-end">Chips</th><th class="text-end">Al mes</th><th class="text-end">Sin costo</th><th></th></tr></thead>
+      <tbody>
+        <% Object.values(categories).forEach(function(c) { %>
+          <tr class="<%= c.group === 'guardado' ? 'table-warning' : '' %>">
+            <td><%= c.group === 'uso' ? 'En uso' : c.group === 'guardado' ? 'Guardado' : 'De baja' %></td>
+            <td><%= c.label %></td>
+            <td class="text-end"><%= c.count %></td>
+            <td class="text-end text-nowrap"><%= c.group === 'baja' ? '—' : soles(c.monthly) %></td>
+            <td class="text-end"><%= c.withoutCost || '—' %></td>
+            <td class="text-end"><% if (c.ubicacion) { %><a href="/celulares/chips?ubicacion=<%= c.ubicacion %>" class="small">Ver chips</a><% } %></td>
+          </tr>
+        <% }); %>
+        <tr class="table-danger">
+          <td>Sin registrar</td><td>Facturado y no está en el inventario</td><td class="text-end"><%= totals.unlocated.count %></td>
+          <td class="text-end text-nowrap"><%= soles(totals.unlocated.monthly) %></td><td class="text-end">—</td>
+          <td class="text-end"><% if (bills.length) { %><a href="/celulares/recibos/<%= bills[0].id %>" class="small">Ver en el recibo</a><% } %></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card p-3 mb-3">
+  <h5>Guardados: se pagan y no se usan (<%= totals.guardado.count %>)</h5>
+  <% const lista = []; guardados.forEach(function(k) { categories[k].items.forEach(function(i) { lista.push(Object.assign({ tipo: categories[k].label, key: k }, i)); }); }); %>
+  <% if (!lista.length) { %>
+    <p class="text-muted mb-0">No hay chips guardados.</p>
+  <% } else { %>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle">
+        <thead><tr><th>Número</th><th>Dónde está</th><th>Quién lo guarda</th><th>Operadora</th><th>Plan</th><th class="text-end">Al mes</th></tr></thead>
+        <tbody>
+          <% lista.sort(function(a, b) { return (b.monthly || 0) - (a.monthly || 0); }).forEach(function(i) { %>
+            <tr>
+              <td class="text-nowrap"><a href="/celulares/chips/<%= i.id %>"><%= i.number %></a></td>
+              <td class="small"><%= i.tipo %><%= i.device ? ' · ' + i.device : '' %></td>
+              <td class="small"><%= i.key === 'guardado_repuesto' ? (i.holder || '—') : (i.key === 'guardado_celular' ? 'Celular en ' + (i.deviceStatus === 'en_decomiso' ? 'decomiso' : 'stock') : 'Stock de TI') %></td>
+              <td><%= i.operadora || '—' %></td>
+              <td class="small"><%= i.plan || '—' %></td>
+              <td class="text-end text-nowrap"><%= i.monthly === null || i.monthly === undefined ? 'sin costo' : soles(i.monthly) %><%= i.fromBill ? '' : ' *' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <p class="small text-muted mb-0">* Costo registrado en el chip (no figura en el último recibo).</p>
+  <% } %>
+</div>
+
+<div class="card p-3">
+  <h5>Registrados que no figuran en el último recibo (<%= notBilled.length %>)</h5>
+  <p class="small text-muted">Pueden ser de otra operadora, estar suspendidos o ya no facturarse. Conviene confirmar con la operadora.</p>
+  <% if (notBilled.length) { %>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle">
+        <thead><tr><th>Número</th><th>Dónde está</th><th>Celular</th><th>Persona</th><th>Operadora</th><th class="text-end">Costo registrado</th></tr></thead>
+        <tbody>
+          <% notBilled.forEach(function(i) { %>
+            <tr>
+              <td class="text-nowrap"><a href="/celulares/chips/<%= i.id %>"><%= i.number %></a></td>
+              <td class="small"><%= i.category %></td><td><%= i.device || '—' %></td><td class="small"><%= i.holder || '—' %></td>
+              <td><%= i.operadora || '—' %></td>
+              <td class="text-end text-nowrap"><%= i.monthly === null || i.monthly === undefined ? 'sin costo' : soles(i.monthly) %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<%- include('../partials/foot') %>

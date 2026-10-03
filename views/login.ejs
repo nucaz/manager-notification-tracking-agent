@@ -39,6 +39,11 @@
         <input type="text" name="captcha" id="captcha" class="form-control text-uppercase" required autocomplete="off" autocapitalize="characters"
                spellcheck="false" maxlength="<%= captchaLength %>" placeholder="Los <%= captchaLength %> caracteres de la imagen">
       </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" name="recordar" value="1" id="recordar" checked>
+        <label class="form-check-label" for="recordar">Mantener la sesión iniciada en este equipo</label>
+        <div class="form-text">Durante 30 días mientras la use. Desmárquelo en un equipo compartido: entonces se cierra tras 12 horas sin uso.</div>
+      </div>
       <button type="submit" class="btn btn-primary w-100">Ingresar</button>
     </form>
   </div>

@@ -7,6 +7,7 @@ const auditService = require('../services/auditService');
 const trustedDeviceService = require('../services/trustedDeviceService');
 const backupCodesService = require('../services/backupCodesService');
 const { requireAuth } = require('../middleware/auth');
+const { SESSION_IDLE_MS, SESSION_REMEMBER_MS } = require('../middleware/sessionUser');
 const { verifyCsrfToken } = require('../middleware/csrf');
 
 const router = express.Router();
@@ -41,20 +42,23 @@ async function loadPendingUser(req) {
 // 'backup_code' (recuperacion) - solo para el detalle del log de
 // auditoria. backupCodes: si viene (solo en el enrolamiento inicial), se
 // muestran una vez despues de completar el login.
-function completeLogin(req, res, user, { via = '2fa_verify', backupCodes = null } = {}) {
+function completeLogin(req, res, user, { via = '2fa_verify', backupCodes = null, remember } = {}) {
   const sessionUser = {
     id: user.id,
     full_name: user.full_name,
     email: user.email,
     role: user.role,
   };
+  const keep = remember === undefined ? !!req.session.rememberMe : !!remember;
   req.session.regenerate((err) => {
     if (err) {
       req.flash('error', 'Ocurrio un error al iniciar sesion.');
       return res.redirect('/login');
     }
+    req.session.cookie.maxAge = keep ? SESSION_REMEMBER_MS : SESSION_IDLE_MS;
     req.session.user = sessionUser;
-    auditService.log(req, { user: sessionUser, action: 'login', detail: via });
+    req.session.userCheckedAt = Date.now();
+    auditService.log(req, { user: sessionUser, action: 'login', detail: `${via}${keep ? ', sesión mantenida 30 días' : ''}` });
     if (backupCodes) {
       req.session.newBackupCodes = { codes: backupCodes, nextUrl: '/' };
       return res.redirect('/2fa/codigos-respaldo');

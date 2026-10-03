@@ -18,6 +18,7 @@ const pool = require('../db/pool');
 const { daysUntil, statusFromDays } = require('./expirationService');
 const mobileLabels = require('../config/mobileLabels');
 const mobileLineService = require('./mobileLineService');
+const chipUsageService = require('./chipUsageService');
 const glpiClient = require('./glpiClient');
 const devopsSidecarClient = require('./devopsSidecarClient');
 
@@ -99,7 +100,8 @@ const chips = {
   module: 'celulares',
   columns: [
     { key: 'phone_number', label: 'Número' }, { key: 'operadora', label: 'Operadora' }, { key: 'iccid', label: 'ICCID' }, { key: 'plan', label: 'Plan' },
-    { key: 'estado_label', label: 'Estado' }, { key: 'ubicacion_label', label: 'Ubicación' }, { key: 'asset_code', label: 'Celular (código)' },
+    { key: 'estado_label', label: 'Estado' }, { key: 'ubicacion_label', label: 'Ubicación' }, { key: 'uso_real', label: 'Uso real' },
+    { key: 'asset_code', label: 'Celular (código)' },
     { key: 'imei', label: 'Celular (IMEI)' }, { key: 'holder', label: 'Titular' }, { key: 'area', label: 'Área' }, { key: 'sede', label: 'Sede' },
     { key: 'costo', label: 'Costo del plan' }, { key: 'descuento', label: 'Descuento' }, { key: 'neto', label: 'Se paga' },
   ],
@@ -108,14 +110,15 @@ const chips = {
     { key: 'donde', label: 'Celular / Titular', w: 1.55 }, { key: 'lugar', label: 'Área / Sede', w: 1.5 }, { key: 'estado_label', label: 'Estado', w: 0.9 },
   ],
   barcodes: [{ key: 'phone_number', label: 'Número' }, { key: 'iccid', label: 'ICCID' }],
-  selects: [{ key: 'estado_label', label: 'Estado' }, { key: 'operadora', label: 'Operadora' }, { key: 'ubicacion_label', label: 'Ubicación' },
+  selects: [{ key: 'uso_real', label: 'Uso real' }, { key: 'estado_label', label: 'Estado' }, { key: 'operadora', label: 'Operadora' }, { key: 'ubicacion_label', label: 'Ubicación' },
     { key: 'sede', label: 'Sede' }],
-  groupBy: [{ key: 'operadora', label: 'Por operadora' }, { key: 'estado_label', label: 'Por estado' }, { key: 'ubicacion_label', label: 'Por ubicación' }],
+  groupBy: [{ key: 'uso_real', label: 'Por uso real' }, { key: 'operadora', label: 'Por operadora' }, { key: 'estado_label', label: 'Por estado' }, { key: 'ubicacion_label', label: 'Por ubicación' }],
   async load() {
     const rows = await mobileLineService.listLines({});
     return rows.map((l) => ({
       ...l, estado_label: mobileLabels.lineEstado(l.estado).label, ubicacion_label: mobileLabels.lineUbicacion(l.ubicacion).label,
       donde: stacked(l.asset_code, l.holder), lugar: stacked(l.area, l.sede),
+      uso_real: chipUsageService.GROUPS[chipUsageService.CATEGORIES[chipUsageService.categoryOf(l)].group].split(':')[0],
       costo: money(l.costo_plan), descuento: money(l.descuento_plan), neto: money(mobileLineService.netCost(l)),
     }));
   },

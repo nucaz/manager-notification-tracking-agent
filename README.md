@@ -47,7 +47,15 @@ Aplicación web para el seguimiento de:
   los cruza con los chips registrados y con el último recibo de cada
   operadora (inventario real: facturadas, registradas, faltantes y
   cuántas faltarían) y registra los que se marquen como 2.º chip, con el
-  plan y el costo del recibo. Prueba: `E2E_PERMITIR=1 node tests/celulares_doble_sim.e2e.js`
+  plan y el costo del recibo; si el celular ya tiene 2 chips, el número
+  queda como repuesto de quien lo tiene. Prueba: `E2E_PERMITIR=1 node tests/celulares_doble_sim.e2e.js`
+  **Uso real** (`/celulares/chips/uso`): de lo que se paga cada mes según
+  el último recibo, cuánto está **en uso** (chips en un celular con
+  usuario, asignados sin celular, de emergencia), cuánto está **guardado**
+  y se paga sin usarse (repuestos, chips en celulares en stock, chips en
+  stock), cuánto se **factura sin estar registrado** y qué chips
+  registrados no figuran en el recibo; con detalle y Excel. Prueba:
+  `E2E_PERMITIR=1 node tests/celulares_uso_real.e2e.js`
   **Recibos** (`/celulares/recibos`): se sube el recibo de la operadora
   (hoy Entel: el PDF del recibo o su Excel de detalle; se leen sin IA) y la
   app lo cruza contra el inventario en tres sentidos — número facturado →
@@ -96,7 +104,7 @@ Aplicación web para el seguimiento de:
 - **Un solo usuario para las dos aplicaciones**: a DevOps Sidecar se entra
   desde el menú DevOps con el mismo usuario (ver 11.1)
 - **Captcha en el inicio de sesión**, propio y sin servicios externos, más
-  un tope de solicitudes por equipo contra scripts (ver 7.6)
+  un tope de solicitudes por equipo contra scripts (ver 7.7)
 - **Mantenimiento de base de datos** (solo admin): estado de tablas e
   índices, Analizar / Optimizar, y retención de históricos a 3 meses con
   borrado a demanda (ver 10.4)
@@ -510,7 +518,18 @@ base de datos, solo existe en pantalla en el momento de generarlo.
 Si se te acaban los códigos (o los perdiste junto con el celular),
 recurre a los pasos de arriba (otro admin, o el comando por terminal).
 
-### 7.6 Captcha y límite de solicitudes
+### 7.6 Duración de la sesión
+
+La sesión se guarda en la base de datos (tabla `sessions`): un reinicio o
+una actualización de la aplicación ya no cierra la sesión de nadie. Vence
+por **inactividad**, no a una hora fija: con **"Mantener la sesión
+iniciada en este equipo"** (marcado por defecto al ingresar) dura 30 días
+mientras se use; sin marcarlo, se cierra tras 12 horas sin uso (para
+equipos compartidos). Cada pocos minutos se vuelve a leer el usuario: si
+un administrador lo desactiva o se bloquea, su sesión abierta se cierra
+en ese momento, y un cambio de rol se aplica sin volver a ingresar.
+
+### 7.7 Captcha y límite de solicitudes
 
 El formulario de inicio de sesión pide un **código de verificación**: 5
 caracteres dibujados como trazos deformados, sin texto en la página que un

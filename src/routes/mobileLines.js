@@ -14,6 +14,7 @@ const employeeService = require('../services/employeeService');
 const auditService = require('../services/auditService');
 const lineService = require('../services/mobileLineService');
 const notesService = require('../services/mobileLineNotesService');
+const chipUsageService = require('../services/chipUsageService');
 const importService = require('../services/importService');
 const { importUploader } = require('../services/uploadService');
 const labels = require('../config/mobileLabels');
@@ -370,6 +371,50 @@ const scanView = async (extra) => ({
   operadoras: await catalogService.getActive('operadora'),
   lote: {}, pendientes: [], errores: [], registrados: null,
   ...extra,
+});
+
+// Uso real de las lineas: cuanto se paga y se usa, cuanto se paga y esta
+// guardado (repuesto, stock, celulares en stock) y cuanto se factura sin
+// estar en el inventario.
+router.get('/uso', async (req, res, next) => {
+  try {
+    res.render('mobileLines/usage', { title: 'Uso real de las líneas', ...(await chipUsageService.usage()) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/uso/exportar.xlsx', async (req, res, next) => {
+  try {
+    const u = await chipUsageService.usage();
+    const wb = new ExcelJS.Workbook();
+    const resumen = wb.addWorksheet('Resumen');
+    resumen.addRow(['Uso real de las líneas']).font = { bold: true, size: 13 };
+    resumen.addRow([]);
+    resumen.addRow(['Grupo', 'Detalle', 'Chips', 'Al mes (S/)', 'Sin costo conocido']).font = { bold: true };
+    Object.values(u.categories).forEach((c) => resumen.addRow([u.groups[c.group], c.label, c.count, c.monthly, c.withoutCost]));
+    resumen.addRow(['Facturado y no registrado', 'Se paga y no está en el inventario', u.totals.unlocated.count, u.totals.unlocated.monthly, 0]);
+    resumen.addRow([]);
+    resumen.addRow(['Total del último recibo', '', u.totals.billedLines, u.totals.billedMonthly]).font = { bold: true };
+    resumen.columns.forEach((c, i) => { c.width = [34, 44, 10, 14, 18][i]; });
+    const sheet = (name, rows, columns) => {
+      const ws = wb.addWorksheet(name);
+      ws.addRow(columns.map((c) => c[1])).font = { bold: true };
+      rows.forEach((r) => ws.addRow(columns.map((c) => (r[c[0]] === null || r[c[0]] === undefined ? '' : r[c[0]]))));
+      ws.columns.forEach((c) => { c.width = 22; });
+    };
+    const cols = [['number', 'Número'], ['operadora', 'Operadora'], ['plan', 'Plan'], ['monthly', 'Al mes (S/)'], ['holder', 'Persona'], ['device', 'Celular'], ['area', 'Área'], ['sede', 'Sede']];
+    sheet('Guardados', ['guardado_repuesto', 'guardado_celular', 'guardado_stock'].flatMap((k) => u.categories[k].items.map((i) => ({ ...i, tipo: u.categories[k].label }))),
+      [['tipo', 'Dónde está'], ...cols]);
+    sheet('En uso', ['uso_celular', 'uso_personal', 'uso_emergencia'].flatMap((k) => u.categories[k].items.map((i) => ({ ...i, tipo: u.categories[k].label }))), [['tipo', 'Uso'], ...cols]);
+    sheet('Facturado sin registrar', u.unlocated, [['number', 'Número'], ['operadora', 'Operadora'], ['recibo', 'Recibo'], ['plan', 'Plan'], ['monthly', 'Al mes (S/)']]);
+    sheet('Registrado sin recibo', u.notBilled, [['category', 'Dónde está'], ...cols]);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="uso_real_lineas_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(await wb.xlsx.writeBuffer());
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Segundas lineas anotadas en las notas de los celulares: revision antes de

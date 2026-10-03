@@ -47,8 +47,11 @@ async function latestBills() {
 async function candidates() {
   const [devices] = await pool.query(`
     SELECT d.id, d.imei, d.asset_code, d.model, d.area, d.sede, d.status, d.phone_number, d.notes,
-           (SELECT COUNT(*) FROM mobile_lines l WHERE l.device_id = d.id) AS chips
-    FROM mobile_devices d WHERE d.notes REGEXP '9' ORDER BY d.area, d.asset_code, d.id`);
+           (SELECT COUNT(*) FROM mobile_lines l WHERE l.device_id = d.id) AS chips,
+           a.holder_name AS holder, a.employee_id AS holder_employee_id
+    FROM mobile_devices d
+    LEFT JOIN mobile_device_assignments a ON a.device_id = d.id AND a.returned_date IS NULL
+    WHERE d.notes REGEXP '9' ORDER BY d.area, d.asset_code, d.id`);
   const found = [];
   devices.forEach((d) => numbersIn(d.notes).forEach((number) => { if (number !== d.phone_number) found.push({ device: d, number }); }));
   if (!found.length) return { items: [], ...(await latestBills()) };
@@ -76,9 +79,12 @@ async function candidates() {
     else if (chip && chip.holder_name) reason = `Está asignado a ${chip.holder_name}.`;
     else if (chip && chip.estado === 'de_baja') reason = 'El chip está dado de baja.';
     else if (device.status === 'de_baja') reason = 'El celular está dado de baja.';
-    else if (Number(device.chips) >= mobileLineService.MAX_CHIPS_PER_DEVICE) reason = 'El celular ya tiene 2 chips.';
     else if (seen.get(number) > 1) reason = 'El mismo número está anotado en más de un celular: revise cuál lo tiene.';
-    else action = chip ? 'poner' : 'crear';
+    else if (Number(device.chips) >= mobileLineService.MAX_CHIPS_PER_DEVICE) {
+      // Un 3.er chip no entra en el celular: queda como repuesto de quien lo tiene.
+      if (device.holder) action = 'repuesto';
+      else reason = 'El celular ya tiene 2 chips y no está asignado a nadie: regístrelo en stock desde Chips.';
+    } else action = chip ? 'poner' : 'crear';
     return {
       key: `${device.id}:${number}`, device, number, chip: chip || null, action, reason,
       billed: billed ? { operadora: billed.bill.operadora, recibo: billed.bill.recibo_nro, fecha: billed.bill.fecha_emision, plan: billed.line.plan, cargo: billed.line.cargo_fijo,
@@ -88,7 +94,19 @@ async function candidates() {
   return { items, ...billing };
 }
 
+// El chip queda asignado como repuesto a quien tiene el celular.
+async function assignAsSpare(lineId, device, userId) {
+  const [[open]] = await pool.query('SELECT id FROM mobile_line_assignments WHERE line_id = ? AND returned_date IS NULL', [lineId]);
+  if (open) throw new Error('El chip ya está asignado a una persona.');
+  await pool.query(
+    `INSERT INTO mobile_line_assignments (line_id, employee_id, holder_name, uso, assigned_date, observacion, created_by)
+     VALUES (?, ?, ?, 'repuesto', CURDATE(), ?, ?)`,
+    [lineId, device.holder_employee_id || null, device.holder, `3.er chip anotado en el celular ${device.asset_code || device.imei}, que ya tiene 2`, userId || null]
+  );
+}
+
 // Registra como 2.o chip los numeros elegidos (claves "idCelular:numero").
+// Si el celular ya tiene 2 chips, el numero queda como repuesto de quien lo tiene.
 // Todo se vuelve a calcular aqui: solo se aplica lo que sigue siendo posible.
 async function register(keys, userId) {
   const wanted = new Set((Array.isArray(keys) ? keys : [keys]).filter(Boolean).map(String));
@@ -99,6 +117,7 @@ async function register(keys, userId) {
     if (!item.action) { failed.push({ item, error: item.reason }); continue; }
     try {
       let lineId = item.chip && item.chip.id;
+      const created = !lineId;
       if (!lineId) {
         const billed = lineOf.get(item.number);
         const [[peru]] = await pool.query("SELECT id, mobile_length FROM phone_country_codes WHERE calling_code = '51' LIMIT 1");
@@ -112,14 +131,13 @@ async function register(keys, userId) {
             billed ? mobileBillService.discountNote(billed.bill, billed.line) : null, note, userId || null]
         );
         lineId = res.insertId;
-        try {
-          await mobileLineService.placeInDevice(lineId, item.device.imei);
-        } catch (err) {
-          await pool.query('DELETE FROM mobile_lines WHERE id = ?', [lineId]);
-          throw err;
-        }
-      } else {
-        await mobileLineService.placeInDevice(lineId, item.device.imei);
+      }
+      try {
+        if (item.action === 'repuesto') await assignAsSpare(lineId, item.device, userId);
+        else await mobileLineService.placeInDevice(lineId, item.device.imei);
+      } catch (err) {
+        if (created) await pool.query('DELETE FROM mobile_lines WHERE id = ?', [lineId]);
+        throw err;
       }
       done.push(item);
     } catch (err) {

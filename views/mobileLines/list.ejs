@@ -26,6 +26,7 @@
     <% if (currentUser.role !== 'lector') { %>
       <a href="/celulares/chips/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar Excel</a>
       <a href="/celulares/chips/escanear" class="btn btn-outline-primary"><i class="bi bi-upc-scan"></i> Ingresar por escaneo</a>
+      <a href="/celulares/chips/uso" class="btn btn-outline-success" title="Cuánto se paga y se usa, y cuánto se paga y está guardado"><i class="bi bi-pie-chart"></i> Uso real</a>
       <a href="/celulares/chips/desde-notas" class="btn btn-outline-secondary" title="Números anotados en las notas de los celulares (ej. &quot;N° 2 uso WhatsApp&quot;), para registrarlos como 2.º chip"><i class="bi bi-sim"></i> 2.º chip desde notas</a>
       <a href="/celulares/chips/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo chip</a>
     <% } %>

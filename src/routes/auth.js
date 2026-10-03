@@ -93,9 +93,10 @@ router.post('/login', loginLimiter, verifyCsrfToken, async (req, res) => {
 
     // "Confiar en este navegador": si este equipo ya paso el 2FA antes
     // (cookie vigente), se completa el login de una vez sin pedir codigo.
+    const remember = req.body.recordar === '1';
     const trusted = await trustedDeviceService.isTrusted(req, user.id);
     if (trusted) {
-      return completeLogin(req, res, user, { via: 'trusted_device' });
+      return completeLogin(req, res, user, { via: 'trusted_device', remember });
     }
 
     req.session.regenerate((err) => {
@@ -104,6 +105,7 @@ router.post('/login', loginLimiter, verifyCsrfToken, async (req, res) => {
         return res.redirect('/login');
       }
       req.session.pendingUserId = user.id;
+      req.session.rememberMe = remember; // se aplica al completar el 2FA
       res.redirect(user.otp_enabled ? '/2fa/verificar' : '/2fa/configurar');
     });
   } catch (err) {
