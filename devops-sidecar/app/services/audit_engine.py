@@ -59,11 +59,10 @@ async def run_audit_for_repo(db: Session, repo: models.Repo) -> models.AuditRepo
         prompt = build_prompt(repo.name, diff_for_prompt, truncated)
 
         try:
-            ai_report = await ai_client.generate(prompt)
-            provider_used = settings.ai_provider
+            ai_report, provider_used = await ai_client.generate_detailed(prompt, ai_client.USO_AUDITORIA)
         except ai_client.AIClientError as e:
             ai_report = f"_No se pudo generar el análisis con IA: {e}_"
-            provider_used = f"{settings.ai_provider} (error)"
+            provider_used = "IA (error)"
             logger.error("Fallo la IA auditando %s: %s", repo.name, e)
 
         alert_block = ""

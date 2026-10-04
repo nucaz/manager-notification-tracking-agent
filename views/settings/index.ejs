@@ -139,24 +139,9 @@
       </div>
 
       <div class="card p-3 mb-3">
-        <h5>Extracción de facturas con IA (Gemini)</h5>
-        <div class="mb-2">
-          <label class="form-label">API key de Gemini</label>
-          <input type="password" name="gemini_api_key" class="form-control"
-            placeholder="<%= settings.gemini_api_key ? '•••••••• (configurado — deja en blanco para no cambiar)' : 'AIza...' %>">
-          <div class="form-text">
-            Genera tu API key en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
-            El uso tiene costo según el volumen de facturas procesadas (facturación de Google Cloud/AI Studio).
-          </div>
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Modelo</label>
-          <input type="text" name="gemini_model" class="form-control" value="<%= settings.gemini_model %>" placeholder="gemini-2.5-flash">
-          <div class="form-text">
-            Modelo "flash" recomendado por costo/velocidad para leer facturas. Si Google libera un modelo
-            más nuevo (o el actual deja de estar disponible), cámbialo aquí sin necesidad de tocar código.
-          </div>
-        </div>
+        <h5>Inteligencia artificial</h5>
+        <p class="mb-2 small text-muted">Modelos locales (Ollama) y en la nube (Gemini, Claude) para el asistente, el chatbot, la lectura de facturas y DevOps Sidecar: una sola configuración para las dos aplicaciones.</p>
+        <div><a class="btn btn-outline-primary btn-sm" href="/configuracion/ia"><i class="bi bi-stars"></i> Configurar proveedores y modelos</a></div>
       </div>
 
       <div class="card p-3 mb-3">
@@ -275,11 +260,6 @@
       <h6>Probar conexión con GLPI</h6>
       <button type="submit" class="btn btn-outline-secondary btn-sm">Probar ahora</button>
     </form>
-    <form action="/configuracion/probar-gemini" method="post" class="card p-3 mb-2">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <h6>Verificar API key de Gemini</h6>
-      <button type="submit" class="btn btn-outline-secondary btn-sm">Verificar ahora</button>
-    </form>
     <form action="/configuracion/probar-whatsapp" method="post" class="card p-3 mb-2">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <h6>Probar conexión con WhatsApp</h6>
@@ -318,7 +298,7 @@
   <p class="text-muted">
     El respaldo incluye <strong>todos los datos y toda la configuración</strong>
     (licencias, dominios, celulares, empleados, usuarios, y también lo que
-    ves en esta página: GLPI, SMTP, Gemini, WhatsApp, Telegram — todo vive
+    ves en esta página: GLPI, SMTP, IA, WhatsApp, Telegram — todo vive
     en la base de datos) más los archivos adjuntos y diagramas de red.
     Útil para migrar la app a otro servidor.
   </p>

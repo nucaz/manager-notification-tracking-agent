@@ -1,6 +1,7 @@
 // Prueba de extremo a extremo del asistente ("Preguntar a la IA").
 //
-// Gemini se SIMULA con un servidor local que sigue un guion (qué
+// Gemini se SIMULA con un servidor local (un proveedor de prueba en
+// ai_providers, asignado al asistente solo en memoria) que sigue un guion (qué
 // herramienta pide en cada paso) y guarda lo que la aplicación le envía:
 // así se comprueba que los datos salen de la base y no de la IA, sin
 // gastar la API real. Los celulares y chips de prueba sí se escriben en la
@@ -37,7 +38,7 @@ function fakeGemini() {
   g.use(express.json({ limit: '5mb' }));
   g.post(/^\/models\/([^/]+):generateContent$/, (req, res) => {
     seen.model = req.params[0];
-    if (req.query.key !== 'clave-de-prueba') return res.status(400).json({ error: { message: 'API key not valid' } });
+    if (req.headers['x-goog-api-key'] !== 'clave-de-prueba') return res.status(400).json({ error: { message: 'API key not valid' } });
     if ((req.body.tools || []).some((t) => t.google_search)) {
       seen.search = req.body;
       return res.json({ candidates: [{
@@ -60,11 +61,16 @@ const lastToolResponse = () => {
 
 async function main() {
   const gemini = fakeGemini().listen(0);
-  process.env.GEMINI_API_BASE_URL = `http://127.0.0.1:${gemini.address().port}`; // antes de cargar geminiClient
   const pool = require(path.join(ROOT, 'src/db/pool'));
   const settingsService = require(path.join(ROOT, 'src/services/settingsService'));
+  const cryptoService = require(path.join(ROOT, 'src/services/cryptoService'));
   const mobileLabels = require(path.join(ROOT, 'src/config/mobileLabels'));
-  let cfg = { gemini_api_key: 'clave-de-prueba', gemini_model: 'gemini-prueba' };
+  await pool.query("DELETE FROM ai_providers WHERE label LIKE 'PRUEBA-IA%'");
+  const [prov] = await pool.query('INSERT INTO ai_providers SET ?', [{ label: 'PRUEBA-IA Gemini', kind: 'gemini', location: 'nube',
+    base_url: `http://127.0.0.1:${gemini.address().port}`, model: 'gemini-prueba', api_key: cryptoService.encrypt('clave-de-prueba'),
+    supports_tools: 1, supports_vision: 1, supports_web: 1, timeout_seconds: 30 }]);
+  const setKey = (k) => pool.query('UPDATE ai_providers SET api_key = ? WHERE id = ?', [k ? cryptoService.encrypt(k) : null, prov.insertId]);
+  const cfg = { ai_uso_asistente: String(prov.insertId), ai_elegir_por_pregunta: 'true' };
   settingsService.getAll = async () => cfg; // configuracion en memoria, sin tocar la guardada
   const assistantService = require(path.join(ROOT, 'src/services/assistantService'));
 
@@ -256,14 +262,14 @@ async function main() {
     check('Pregunta vacía: 400', r.status === 400);
 
     // --- Errores de Gemini
-    cfg = { ...cfg, gemini_api_key: 'otra' };
+    await setKey('otra');
     r = await preguntar('¿Cuántos celulares hay? [e2e]');
     check('Gemini rechaza la API key: el error se muestra tal cual, sin la clave', r.status === 502 && r.json.error.includes('HTTP 400') && r.json.error.includes('API key not valid')
       && !r.json.error.includes('otra'));
-    cfg = { ...cfg, gemini_api_key: '' };
+    await setKey('');
     r = await preguntar('¿Cuántos celulares hay? [e2e]');
-    check('Sin API key de Gemini: dice dónde configurarla', r.status === 502 && r.json.error.includes('API key de Gemini no esta configurada'));
-    cfg = { ...cfg, gemini_api_key: 'clave-de-prueba' };
+    check('Sin API key de Gemini: dice dónde configurarla', r.status === 502 && r.json.error.includes('falta la API key (Configuración > Inteligencia artificial)'));
+    await setKey('clave-de-prueba');
 
     // --- Historial y pantalla
     const [logs] = await pool.query("SELECT direction, contact, message_text FROM agent_message_log WHERE id > ? AND channel = 'web' ORDER BY id", [logStart.id]);
@@ -285,6 +291,7 @@ async function main() {
     server.close();
     gemini.close();
     await cleanup();
+    await pool.query("DELETE FROM ai_providers WHERE label LIKE 'PRUEBA-IA%'");
     await pool.query("DELETE FROM agent_message_log WHERE id > ? AND channel = 'web'", [logStart.id]);
     const [[left]] = await pool.query('SELECT (SELECT COUNT(*) FROM mobile_devices WHERE imei IN (?)) + (SELECT COUNT(*) FROM mobile_lines WHERE phone_number IN (?)) AS n', [IMEI, N]);
     check('Limpieza: no quedan datos de prueba', left.n === 0);

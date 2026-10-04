@@ -5,7 +5,7 @@ const pool = require('../db/pool');
 const { requireAuth, canWrite } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const { uploader, DIRS } = require('../services/uploadService');
-const geminiClient = require('../services/geminiClient');
+const invoiceExtractor = require('../services/invoiceExtractor');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -99,7 +99,8 @@ router.get('/descargar/:id', async (req, res, next) => {
   }
 });
 
-// Extrae datos de una factura/recibo ya adjunto usando IA (Gemini)
+// Extrae datos de una factura/recibo ya adjunto usando IA (el proveedor de
+// "Lectura de facturas", ver src/services/invoiceExtractor.js)
 router.post('/:id/extraer', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
     const [rows] = await pool.query('SELECT * FROM attachments WHERE id = ?', [req.params.id]);
@@ -118,7 +119,7 @@ router.post('/:id/extraer', canWrite, verifyCsrfToken, async (req, res, next) =>
 
     try {
       const buffer = await fs.promises.readFile(filePath);
-      const data = await geminiClient.extractInvoiceData(buffer, attachment.mime_type);
+      const data = await invoiceExtractor.extractInvoiceData(buffer, attachment.mime_type);
       await pool.query(
         `UPDATE attachments SET
            extraction_status = 'completado', extraction_error = NULL,
@@ -133,7 +134,7 @@ router.post('/:id/extraer', canWrite, verifyCsrfToken, async (req, res, next) =>
           data.fecha_vencimiento, data.local, attachment.id,
         ]
       );
-      req.flash('success', 'Datos extraídos con IA correctamente. Revisa y aplica al registro si están correctos.');
+      req.flash('success', `Datos extraídos con IA (${data._provider.label}). Revisa y aplica al registro si están correctos.`);
     } catch (err) {
       await pool.query(
         `UPDATE attachments SET extraction_status = 'error', extraction_error = ? WHERE id = ?`,

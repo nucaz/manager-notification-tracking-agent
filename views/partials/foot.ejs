@@ -20,7 +20,11 @@
         <textarea class="form-control" id="ia_pregunta" rows="2" maxlength="2000" placeholder="Ej.: stock de celulares por sede" aria-label="Pregunta"></textarea>
         <button class="btn btn-primary" type="submit" id="ia_enviar" title="Enviar (Enter)"><i class="bi bi-send"></i></button>
       </div>
-      <div class="form-text mb-0">Consulta y busca con libertad, pero no crea ni cambia datos. La pregunta y los datos necesarios para responderla se envían a Google Gemini.</div>
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-2" id="ia_modelo_box" hidden>
+        <label class="small text-muted mb-0" for="ia_modelo">Responder con</label>
+        <select class="form-select form-select-sm w-auto" id="ia_modelo"></select>
+      </div>
+      <div class="form-text mb-0">Consulta y busca con libertad, pero no crea ni cambia datos. <span id="ia_privacidad"></span></div>
     </form>
   </div>
 </div>

@@ -146,7 +146,7 @@ Datos de esta pantalla:
 
 Pregunta del usuario: "{payload.pregunta}\""""
     try:
-        respuesta = await ai_client.generate(prompt)
+        respuesta, proveedor = await ai_client.generate_detailed(prompt, ai_client.USO_TEXTOS)
     except ai_client.AIClientError as e:
         raise HTTPException(status_code=502, detail=f"No se pudo consultar la IA: {e}")
-    return {"respuesta": respuesta}
+    return {"respuesta": respuesta, "proveedor": proveedor}

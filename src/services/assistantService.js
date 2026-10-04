@@ -12,11 +12,16 @@
 //     filtros, agrupacion, sumas, orden y tope. La consulta la ejecuta la
 //     aplicacion; los numeros que ve el usuario salen de aqui, no de la
 //     IA, y la tabla se le muestra completa.
-//   - buscar_en_internet: una busqueda de Google hecha por Gemini.
+//   - buscar_en_internet: una busqueda de Google hecha por Gemini (solo se
+//     ofrece si hay un proveedor activo con busqueda).
 // Solo se ofrecen los datos que el usuario puede abrir.
+//
+// El modelo es el asignado al asistente en Configuracion > Inteligencia
+// artificial (por defecto el servidor local), o el que la persona elija
+// para esa pregunta. Ver src/services/aiService.js.
 const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
-const geminiClient = require('./geminiClient');
+const aiService = require('./aiService');
 const reportService = require('./reportService');
 const mobileLabels = require('../config/mobileLabels');
 
@@ -254,58 +259,55 @@ async function runQuery(sets, raw, cache = new Map(), { limit = SCREEN_ROWS } = 
 // Google activada (no se puede combinar con las otras herramientas en la
 // misma llamada).
 async function webSearch(query) {
-  const data = await geminiClient.generate({
-    contents: [{ role: 'user', parts: [{ text: `Busca en internet y responde en español, con datos concretos y actuales (modelos, versiones, fechas, precios si se piden), sin relleno:\n\n${query}` }] }],
-    tools: [{ google_search: {} }],
-  });
-  const candidate = (data.candidates || [])[0] || {};
-  const answer = ((candidate.content || {}).parts || []).map((p) => p.text || '').join('').trim();
-  const chunks = ((candidate.groundingMetadata || {}).groundingChunks || []).map((c) => c.web).filter((w) => w && /^https?:\/\//i.test(w.uri || ''));
-  const seen = new Set();
-  const sources = chunks.filter((w) => !seen.has(w.uri) && seen.add(w.uri)).slice(0, 8).map((w) => ({ title: text(w.title || w.uri).slice(0, 120), url: w.uri }));
-  return { answer, sources };
+  const found = await aiService.webSearch(query);
+  return { answer: found.answer, sources: found.sources };
 }
 
-function toolDeclarations(sets) {
-  const names = { type: 'ARRAY', items: { type: 'STRING' } };
-  return [{
+// Esquema JSON comun; cada proveedor lo traduce a su formato (ai/providers.js).
+function toolDeclarations(sets, web = true) {
+  const names = { type: 'array', items: { type: 'string' } };
+  const tools = [{
     name: 'consultar_datos',
     description: 'Consulta los datos reales de la aplicación (solo lectura). Devuelve el total de registros y, según se pida, un resumen agrupado (cantidades y sumas) o un listado de filas. La tabla completa se le muestra al usuario automáticamente y puede abrirla como reporte, en Excel o en PDF.',
     parameters: {
-      type: 'OBJECT',
+      type: 'object',
       properties: {
-        reporte: { type: 'STRING', enum: Object.keys(sets), description: 'Qué datos consultar.' },
+        reporte: { type: 'string', enum: Object.keys(sets), description: 'Qué datos consultar.' },
         filtros: {
-          type: 'ARRAY',
+          type: 'array',
           description: 'Condiciones que deben cumplirse todas.',
           items: {
-            type: 'OBJECT',
+            type: 'object',
             properties: {
-              columna: { type: 'STRING', description: 'Clave de la columna.' },
-              modo: { type: 'STRING', enum: MODES, description: 'igual (predeterminado; no distingue mayúsculas ni acentos), contiene, distinto, vacio, no_vacio, menor_que, mayor_que (números o fechas AAAA-MM-DD).' },
-              valor: { type: 'STRING' },
+              columna: { type: 'string', description: 'Clave de la columna.' },
+              modo: { type: 'string', enum: MODES, description: 'igual (predeterminado; no distingue mayúsculas ni acentos), contiene, distinto, vacio, no_vacio, menor_que, mayor_que (números o fechas AAAA-MM-DD).' },
+              valor: { type: 'string' },
             },
             required: ['columna'],
           },
         },
-        buscar: { type: 'STRING', description: 'Texto a buscar en cualquier columna.' },
+        buscar: { type: 'string', description: 'Texto a buscar en cualquier columna.' },
         agrupar_por: { ...names, description: 'Claves de columna para contar por grupo (ej. ["sede"] o ["area","estado"]). Úselo para "cuántos hay por...".' },
         sumar: { ...names, description: 'Claves de columnas numéricas a sumar (ej. costos).' },
         columnas: { ...names, description: 'Para listados: qué columnas mostrar.' },
-        ordenar_por: { type: 'STRING', description: 'Columna por la que ordenar. En resúmenes también vale "cantidad" o el título de una suma.' },
-        descendente: { type: 'BOOLEAN', description: 'true = de mayor a menor.' },
-        limite: { type: 'INTEGER', description: 'Quedarse solo con los primeros N (para "los 10 más...").' },
+        ordenar_por: { type: 'string', description: 'Columna por la que ordenar. En resúmenes también vale "cantidad" o el título de una suma.' },
+        descendente: { type: 'boolean', description: 'true = de mayor a menor.' },
+        limite: { type: 'integer', description: 'Quedarse solo con los primeros N (para "los 10 más...").' },
       },
       required: ['reporte'],
     },
-  }, {
-    name: 'buscar_en_internet',
-    description: 'Busca en internet (Google): características de un modelo de equipo, una tecnología, versiones, fin de soporte, precios de referencia, noticias, documentación, cómo hacer algo. Úsela con libertad cuando la respuesta dependa de información actual o externa.',
-    parameters: { type: 'OBJECT', properties: { consulta: { type: 'STRING', description: 'Qué buscar, con el modelo o tecnología exactos.' } }, required: ['consulta'] },
   }];
+  if (web) {
+    tools.push({
+      name: 'buscar_en_internet',
+      description: 'Busca en internet (Google): características de un modelo de equipo, una tecnología, versiones, fin de soporte, precios de referencia, noticias, documentación, cómo hacer algo. Úsela con libertad cuando la respuesta dependa de información actual o externa.',
+      parameters: { type: 'object', properties: { consulta: { type: 'string', description: 'Qué buscar, con el modelo o tecnología exactos.' } }, required: ['consulta'] },
+    });
+  }
+  return tools;
 }
 
-function systemPrompt(sets, page, user) {
+function systemPrompt(sets, page, user, web = true) {
   const catalog = Object.entries(sets).map(([key, d]) => `- ${key} — ${d.label}. Columnas: ${d.columns.map((c) => `${c.key} (${c.label})`).join(', ')}.`).join('\n');
   return `Eres el asistente de una aplicación interna de gestión de TI (licencias, dominios, contratos ISP, servidores, certificados, celulares y chips, recibos de operadoras, inventario de GLPI, empleados, repositorios). Conversas en español con ${user.full_name || 'un usuario'} (rol ${user.role}), con naturalidad y sin rodeos.
 
@@ -315,7 +317,8 @@ Qué puedes hacer, con libertad:
 - Conversar, explicar, comparar, recomendar y razonar sobre cualquier tema que el usuario plantee (tecnología, gestión de TI, redacción, cálculos, lo que necesite). No te limites a esta aplicación.
 - Consultar los datos de la aplicación con consultar_datos tantas veces como haga falta, cruzando varios reportes si la pregunta lo pide, y sacar conclusiones propias (tendencias, anomalías, lo que conviene revisar).
 - Armar reportes: cada consulta produce una tabla que el usuario ve debajo de tu respuesta y puede abrir como reporte temporal, descargar en Excel o en PDF. Si pide "un reporte de...", haz la consulta que lo produce y dile que lo abra con esos botones.
-- Buscar en internet con buscar_en_internet cuando ayude: modelos, tecnologías, precios, fin de soporte, documentación, novedades. Puedes combinar: consultar qué hay y luego buscar sobre eso.
+${web ? '- Buscar en internet con buscar_en_internet cuando ayude: modelos, tecnologías, precios, fin de soporte, documentación, novedades. Puedes combinar: consultar qué hay y luego buscar sobre eso.'
+    : '- En esta configuración no tienes búsqueda en internet: lo que sepas de afuera dilo como conocimiento general, que puede no estar al día.'}
 
 Lo único que no puedes hacer:
 - Crear, cambiar o borrar datos de la aplicación. No tienes ninguna herramienta para eso. Si te lo piden, dilo y explica en qué pantalla lo hace el usuario.
@@ -330,44 +333,44 @@ Datos disponibles para este usuario:
 ${catalog}`;
 }
 
-// { question, history: [{ q, a }], page, user, enabledModules }
-//   -> { answer, tables: [...], sources: [...] }
-async function ask({ question, history = [], page = '', user, enabledModules }) {
+// { question, history: [{ q, a }], page, user, enabledModules, providerId }
+//   -> { answer, tables: [...], sources: [...], provider: { label, location, model }, notice }
+async function ask({ question, history = [], page = '', user, enabledModules, providerId = null }) {
   const sets = datasets(user, enabledModules);
   const cache = new Map();
   const tables = [];
   const sources = [];
-  const contents = [];
+  const messages = [];
   history.slice(-6).forEach((turn) => {
     if (!turn || !turn.q || !turn.a) return;
-    contents.push({ role: 'user', parts: [{ text: text(turn.q).slice(0, 2000) }] });
-    contents.push({ role: 'model', parts: [{ text: text(turn.a).slice(0, 2000) }] });
+    messages.push({ role: 'user', text: text(turn.q).slice(0, 2000) });
+    messages.push({ role: 'assistant', text: text(turn.a).slice(0, 2000) });
   });
-  contents.push({ role: 'user', parts: [{ text: text(question).slice(0, 2000) }] });
-  const body = {
-    systemInstruction: { parts: [{ text: systemPrompt(sets, text(page).slice(0, 80), user) }] },
-    tools: [{ functionDeclarations: toolDeclarations(sets) }],
-    generationConfig: { temperature: 0.4 },
-  };
+  messages.push({ role: 'user', text: text(question).slice(0, 2000) });
+  const web = !!(await aiService.webSearchProvider());
+  const req = { system: systemPrompt(sets, text(page).slice(0, 80), user, web), tools: toolDeclarations(sets, web), temperature: 0.4 };
 
   let answer = '';
+  let provider = null;  // el de la primera respuesta; los pasos siguientes siguen con el mismo
+  let info = null;
+  let notice = null;
   for (let step = 0; step < MAX_STEPS; step++) {
-    const data = await geminiClient.generate({ ...body, contents });
-    const candidate = (data.candidates || [])[0];
-    const parts = (candidate && candidate.content && candidate.content.parts) || [];
-    const calls = parts.filter((p) => p.functionCall);
-    if (!calls.length) {
-      answer = parts.map((p) => p.text || '').join('').trim();
-      if (!answer && candidate && candidate.finishReason && candidate.finishReason !== 'STOP') {
-        answer = `La IA no completó la respuesta (motivo: ${candidate.finishReason}). Intente reformular la pregunta.`;
+    const r = await aiService.chat('asistente', { ...req, messages }, provider ? { provider } : { providerId });
+    provider = r.resolved;
+    info = r.provider;
+    if (r.fellBackFrom) notice = `No respondió el proveedor elegido (${r.fellBackFrom}); respondió ${info.label}.`;
+    if (!r.calls.length) {
+      answer = r.text;
+      if (!answer && r.finish && !['STOP', 'stop', 'end_turn'].includes(r.finish)) {
+        answer = `La IA no completó la respuesta (motivo: ${r.finish}). Intente reformular la pregunta.`;
       }
       break;
     }
-    // El turno de la IA se devuelve tal cual (trae firmas que la API exige de vuelta).
-    contents.push({ role: 'model', parts });
+    // El turno de la IA se devuelve tal cual (Gemini exige de vuelta sus firmas).
+    messages.push({ role: 'assistant', text: r.text, calls: r.calls, raw: r.raw });
     const responses = [];
-    for (const part of calls) {
-      const { name, args } = part.functionCall;
+    for (const call of r.calls) {
+      const { name, args } = call;
       let response;
       try {
         if (name === 'consultar_datos') {
@@ -389,9 +392,9 @@ async function ask({ question, history = [], page = '', user, enabledModules }) 
       } catch (err) {
         response = { error: err.message };
       }
-      responses.push({ functionResponse: { name, response } });
+      responses.push({ id: call.id, name, response });
     }
-    contents.push({ role: 'user', parts: responses });
+    messages.push({ role: 'tool', results: responses });
   }
   if (!answer) answer = tables.length ? 'Esto es lo que encontré en los datos:' : 'No pude completar la respuesta. Intente con una pregunta más concreta.';
 
@@ -401,6 +404,8 @@ async function ask({ question, history = [], page = '', user, enabledModules }) 
     answer,
     tables: useful.map((t) => ({ title: t.title, columns: t.columns, rows: t.rows, total: t.total, lines: t.lines, shown: t.shown, grouped: t.grouped, reportUrl: t.reportUrl, spec: t.spec })),
     sources: sources.slice(0, 8),
+    provider: info ? { label: info.label, location: info.location, model: info.model } : null,
+    notice,
   };
 }
 

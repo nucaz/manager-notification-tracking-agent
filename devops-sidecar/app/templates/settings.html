@@ -1,13 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Configuración{% endblock %}
 {% block content %}
-<h2 class="mb-3">Configuración de IA</h2>
+<h2 class="mb-3">Configuración</h2>
 {% if saved %}<div class="alert alert-success">Guardado. Los cambios ya están activos, sin reiniciar el contenedor.</div>{% endif %}
 {% if restored %}<div class="alert alert-success">Restaurado. Se guardó un snapshot de seguridad de como estaba antes en <code>{{ snapshot }}</code>. Si algo se ve raro (repos, scheduler), reinicia el contenedor.</div>{% endif %}
 {% if restore_error == 'confirmacion' %}<div class="alert alert-danger">Debes escribir exactamente "{{ 'RESTAURAR SIDECAR' }}" para confirmar la restauración.</div>{% endif %}
 {% if restore_error == 'invalido' %}<div class="alert alert-danger">El archivo no es un respaldo válido de este módulo (o está corrupto/incompleto).</div>{% endif %}
 
+{% if shared_enabled %}
+<div class="card p-3 mb-3 {{ 'border-success' if shared_status else 'border-warning' }}">
+  <h5>Configuración única con la aplicación principal</h5>
+  {% if shared_status %}
+  <p class="mb-2">La IA de este módulo se configura en la aplicación principal, en <strong>Configuración &gt; Inteligencia artificial</strong>{% if request.state.main_app_url %} (<a href="{{ request.state.main_app_url }}/configuracion/ia">abrir</a>){% endif %}. Ahora se usa:</p>
+  <ul class="mb-2">
+    {% for uso, p in shared_status.items() %}
+    <li>{{ uso_labels.get(uso, uso) }}: {% if p %}<strong>{{ p.label }}</strong> · <code>{{ p.model }}</code> ({{ 'local' if p.location == 'local' else 'nube' }}){% else %}<span class="text-danger">sin proveedor activo</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="mb-2 text-warning">La aplicación principal no responde ahora: mientras tanto se usa la configuración de emergencia de abajo.</p>
+  {% endif %}
+  <div class="form-text">La configuración de abajo solo se usa si la aplicación principal no responde.</div>
+</div>
+{% endif %}
+
 <div class="card p-3 mb-3">
+  {% if shared_enabled %}<h6>Configuración de emergencia (si la aplicación principal no responde)</h6>{% endif %}
   <form id="settingsForm" method="post" action="/configuracion">
     <div class="mb-3">
       <label class="form-label">Proveedor de IA activo (el que usa la auditoría diaria)</label>

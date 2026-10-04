@@ -51,6 +51,10 @@ app.use(
   whatsappWebhookRoutes
 );
 
+// IA para DevOps Sidecar (red interna, pase firmado): con su propio parser
+// porque el diff de una auditoria supera el limite del parser global.
+app.use('/interno/ia', require('./routes/internalAi'));
+
 // Cabeceras de seguridad basicas en toda respuesta.
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -156,6 +160,7 @@ app.use('/adjuntos', attachmentRoutes);
 app.use('/red', networkRoutes);
 app.use('/glpi', glpiRoutes);
 app.use('/configuracion/catalogos', catalogRoutes);
+app.use('/configuracion/ia', require('./routes/aiSettings'));
 app.use('/configuracion', settingsRoutes);
 app.use('/usuarios', usersRoutes);
 app.use('/auditoria', auditRoutes);

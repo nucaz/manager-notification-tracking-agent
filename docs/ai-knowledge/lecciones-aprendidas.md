@@ -337,3 +337,47 @@ para comprobar qué se le envía y qué se hace con lo que responde. No
 detecta una clave inválida ni el saldo agotado (`HTTP 400`, `HTTP 402`),
 que fue justo lo que falló al probar con la API real. Decirlo así al
 reportar: "probado con simulador; con la API real no respondió por X".
+
+## 27. Una sola configuración de IA, no una por aplicación
+
+La app principal y DevOps Sidecar tenían cada una su API key y su modelo.
+Cambiar de modelo o renovar una clave obligaba a hacerlo dos veces, y se
+desincronizaban (en producción la app tenía un nombre de modelo inválido,
+"Gemini 3 Flash-Lite", mientras el sidecar ya usaba Ollama). Ahora la
+configuración vive en la app (`ai_providers` + `ai_uso_*`) y el sidecar
+le pide que genere (`/interno/ia/generar`, pase "app-ai"). Las claves
+quedan en un solo lugar. El sidecar conserva lo suyo solo como emergencia.
+
+## 28. Ollama corta en silencio los textos largos
+
+Ollama usa un contexto chico por defecto (`num_ctx`) y, si el texto no
+cabe, descarta el principio sin avisar: la auditoría de un diff grande
+"funciona", pero la IA solo ve el final. Cada proveedor Ollama lleva su
+`context_tokens`; "Probar" muestra el máximo que admite el modelo.
+
+## 29. Un modelo local no lee un PDF; su texto sí
+
+Gemini y Claude reciben el PDF tal cual. Ollama solo acepta imágenes (y
+solo si el modelo tiene visión). Para facturas con un modelo local se
+extrae el texto del PDF en el servidor (pdf.js, el mismo de los recibos)
+y se le manda eso. Un PDF escaneado no tiene texto: se dice, no se inventa.
+
+## 30. Herramientas: nativas cuando hay, emuladas cuando no
+
+El asistente depende de que la IA pida `consultar_datos`. Gemini, Claude,
+y en Ollama los modelos con capacidad "tools" (gemma4) lo hacen nativo.
+Para un modelo sin herramientas se emulan: se describen en las
+instrucciones y se le pide un JSON (`herramienta`/`argumentos` o
+`respuesta`). Las cifras igual salen de la aplicación, no del modelo.
+
+## 31. La API key va en una cabecera, no en la URL
+
+Gemini acepta `?key=` en la URL, pero la URL aparece en mensajes de error
+de axios y en logs de proxies. Se usa la cabecera `x-goog-api-key`, y los
+errores de red se reescriben sin la URL.
+
+## 32. El respaldo a la nube debe ser una decisión, no un efecto
+
+Si el servidor local se cae, pasar sola a Gemini sacaría datos de la
+empresa justo cuando alguien eligió "local" por privacidad. El respaldo
+existe pero viene vacío; cuando actúa, la respuesta lo avisa.

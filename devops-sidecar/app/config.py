@@ -32,12 +32,17 @@ class Settings(BaseSettings):
     # URL de la aplicacion principal, para devolver ahi a quien llega sin
     # sesion. Opcional: normalmente se aprende sola del primer ingreso.
     main_app_url: str = ""
+    # Direccion de la aplicacion principal DENTRO de la red de Docker. Con
+    # acceso unico (SSO_SHARED_SECRET), la IA se configura alla (Configuracion
+    # > Inteligencia artificial) y este modulo le pide que genere por el; la
+    # configuracion de IA de abajo queda solo de emergencia, si no responde.
+    main_app_internal_url: str = "http://app:3000"
     # Clave Fernet (urlsafe-base64 de 32 bytes) para cifrar en BD las
     # API keys de IA guardadas desde el dashboard (ver crypto_service.py).
     # Vacio = quedan en texto plano (compatibilidad hacia atras).
     credentials_enc_key: str = ""
 
-    # --- Proveedor de IA para el motor de auditoria ---
+    # --- Proveedor de IA local (solo si la aplicacion principal no responde) ---
     ai_provider: str = "gemini"  # "gemini" | "claude" | "ollama"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-pro"

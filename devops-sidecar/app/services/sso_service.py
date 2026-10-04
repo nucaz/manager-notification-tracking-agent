@@ -11,6 +11,8 @@ La carga lleva siempre `aud` (para que sirve el pase) y `exp` (vence):
   - sidecar-session  la sesion de este modulo (cookie)
   - sidecar-origin   de que aplicacion principal vino (para volver a ella)
   - sidecar-api      llamadas de la aplicacion principal a esta API
+  - app-ai           este modulo pide a la aplicacion principal que genere
+                     con la IA configurada alla (configuracion unica)
 
 El mismo formato lo implementa src/services/ssoService.js (Node): si se
 cambia algo aqui, hay que cambiarlo alla.
@@ -92,6 +94,11 @@ def session_token(payload: dict) -> str:
         "aud": "sidecar-session", "exp": int(time.time()) + SESSION_SECONDS,
         "sub": payload.get("sub"), "name": payload.get("name"), "role": payload.get("role"),
     })
+
+
+def app_ai_pass() -> str:
+    """Pase corto para pedir a la aplicacion principal que genere con su IA."""
+    return sign({"aud": "app-ai", "exp": int(time.time()) + 60, "sub": "devops-sidecar"})
 
 
 def origin_token(app_url: str) -> str:

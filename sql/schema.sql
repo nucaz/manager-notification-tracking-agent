@@ -805,3 +805,32 @@ CREATE TABLE IF NOT EXISTS dashboard_widgets (
   CONSTRAINT fk_dashboard_widget_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_dashboard_widget_user (user_id, shared)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Configuracion unica de IA, compartida con DevOps Sidecar: proveedores
+-- locales (Ollama) y en la nube (Gemini, Claude, compatibles con OpenAI).
+-- Que proveedor usa cada funcion va en `settings` (claves ai_uso_*); el
+-- proveedor inicial lo agrega la migracion 0025. Ver src/services/aiService.js.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ai_providers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  label VARCHAR(80) NOT NULL,
+  kind VARCHAR(20) NOT NULL,                    -- ollama | gemini | anthropic | openai
+  location VARCHAR(10) NOT NULL DEFAULT 'nube', -- local (los datos no salen de la empresa) | nube
+  base_url VARCHAR(255) NULL,                   -- vacio = la direccion publica del proveedor
+  model VARCHAR(150) NOT NULL,
+  api_key TEXT NULL,                            -- cifrada (enc:v1:, ver cryptoService.js)
+  supports_tools TINYINT(1) NOT NULL DEFAULT 0, -- llamada a herramientas nativa
+  supports_vision TINYINT(1) NOT NULL DEFAULT 0,-- lee imagenes (y PDF en Gemini/Claude)
+  supports_web TINYINT(1) NOT NULL DEFAULT 0,   -- busqueda en internet integrada (Gemini)
+  context_tokens INT NULL,                      -- Ollama: num_ctx (vacio = el del servidor)
+  timeout_seconds INT NOT NULL DEFAULT 120,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  last_test_at DATETIME NULL,
+  last_test_ok TINYINT(1) NULL,
+  last_test_message VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_ai_provider_label (label),
+  INDEX idx_ai_provider_active (active, location)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

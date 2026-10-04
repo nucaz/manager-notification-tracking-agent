@@ -36,6 +36,21 @@ function servicePass() {
   return sign({ aud: 'sidecar-api', exp: now() + SERVICE_SECONDS, sub: 'aplicacion-principal' });
 }
 
+// Verifica un pase firmado por el sidecar (mismo formato). Carga si la
+// firma es valida, no vencio y es para `audience`; si no, null.
+//   - app-ai  el sidecar pide a esta aplicacion que genere con la IA configurada
+function verify(token, audience) {
+  if (!enabled() || typeof token !== 'string' || token.split('.').length !== 3) return null;
+  const [version, body, signature] = token.split('.');
+  if (version !== 'v1') return null;
+  const expected = crypto.createHmac('sha256', env.ssoSharedSecret).update(`v1.${body}`).digest('base64url');
+  if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  let payload;
+  try { payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch (_) { return null; }
+  if (!payload || payload.aud !== audience || typeof payload.exp !== 'number' || payload.exp < now()) return null;
+  return payload;
+}
+
 // Direccion del sidecar tal como la ve el navegador. SIDECAR_PUBLIC_URL
 // admite {host} (el nombre o IP por el que se entro a esta aplicacion).
 function sidecarPublicUrl(req) {
@@ -43,4 +58,4 @@ function sidecarPublicUrl(req) {
   return template.replace('{host}', req.hostname).replace(/\/$/, '');
 }
 
-module.exports = { enabled, userPass, servicePass, sidecarPublicUrl, _sign: sign };
+module.exports = { enabled, userPass, servicePass, verify, sidecarPublicUrl, _sign: sign };

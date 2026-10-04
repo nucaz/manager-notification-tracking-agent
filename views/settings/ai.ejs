@@ -1,0 +1,170 @@
+<%- include('../partials/head', { title: title }) %>
+<%
+  const byId = Object.fromEntries(providers.map(function (p) { return [p.id, p]; }));
+  const where = function (p) { return p.location === 'local' ? 'Local' : 'Nube'; };
+  const optionLabel = function (p) { return p.label + ' — ' + p.model + ' (' + where(p) + ')' + (p.active ? '' : ' [inactivo]'); };
+  const form = editing || (adding ? { kind: 'ollama', location: 'local', active: 1, timeout_seconds: 300, context_tokens: 16384, supports_tools: 1 } : null);
+%>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="mb-0">Inteligencia artificial</h2>
+  <a href="/configuracion" class="btn btn-outline-secondary">Volver a Configuración</a>
+</div>
+<p class="text-muted mb-3">Una sola configuración para esta aplicación y para DevOps Sidecar. Un proveedor <strong>local</strong> (Ollama en un servidor de la empresa) no envía datos fuera de la red; uno en la <strong>nube</strong> (Gemini, Claude) envía la pregunta y los datos necesarios a ese servicio. Para cambiar de modelo, edite el proveedor: no hace falta tocar código.</p>
+
+<form method="post" action="/configuracion/ia/usos" class="card p-3 mb-3" id="form_usos">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <h5>Qué modelo usa cada función</h5>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-2" data-tabla="no">
+      <thead><tr><th>Función</th><th style="min-width: 400px;">Proveedor</th></tr></thead>
+      <tbody>
+        <% Object.entries(USES).forEach(function (e) { const key = e[0]; const u = e[1]; const current = uses.assigned[key]; const p = byId[current]; %>
+          <tr>
+            <td><label for="uso_<%= key %>" class="fw-semibold"><%= u.label %></label><div class="small text-muted"><%= u.help %></div></td>
+            <td>
+              <select class="form-select form-select-sm" name="ai_uso_<%= key %>" id="uso_<%= key %>">
+                <option value="">(el primer proveedor activo)</option>
+                <% providers.forEach(function (o) { %><option value="<%= o.id %>" <%= current === o.id ? 'selected' : '' %>><%= optionLabel(o) %></option><% }); %>
+              </select>
+              <% if (p && key === 'asistente' && !p.supports_tools) { %><div class="small text-muted mt-1">Este modelo no tiene herramientas nativas: se emulan pidiéndole JSON (funciona, puede ser menos preciso).</div><% } %>
+              <% if (p && key === 'facturas' && p.kind === 'ollama' && !p.supports_vision) { %><div class="small text-warning mt-1">Sin visión: leerá solo PDF con texto, no imágenes ni PDF escaneados.</div><% } %>
+            </td>
+          </tr>
+        <% }); %>
+        <tr>
+          <td><label for="ai_respaldo" class="fw-semibold">Respaldo</label><div class="small text-muted">Si el proveedor asignado no responde (apagado, lento, sin saldo), se intenta con este. Si el respaldo está en la nube, en ese caso los datos salen de la empresa.</div></td>
+          <td>
+            <select class="form-select form-select-sm" name="ai_respaldo" id="ai_respaldo">
+              <option value="">Sin respaldo</option>
+              <% providers.forEach(function (o) { %><option value="<%= o.id %>" <%= uses.fallback === o.id ? 'selected' : '' %>><%= optionLabel(o) %></option><% }); %>
+            </select>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="form-check mb-2">
+    <input type="checkbox" class="form-check-input" name="ai_elegir_por_pregunta" id="ai_elegir_por_pregunta" <%= uses.choosePerQuestion ? 'checked' : '' %>>
+    <label class="form-check-label" for="ai_elegir_por_pregunta">En "Preguntar a la IA", cada persona puede elegir el modelo para cada pregunta (local o nube)</label>
+  </div>
+  <div><button class="btn btn-primary" type="submit">Guardar asignación</button></div>
+</form>
+
+<div class="card p-3 mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">Proveedores</h5>
+    <a class="btn btn-sm btn-outline-primary" href="/configuracion/ia?nuevo=1#form_proveedor"><i class="bi bi-plus-lg"></i> Agregar proveedor</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0" data-tabla="no">
+      <thead><tr><th>Nombre</th><th>Modelo</th><th>Sabe hacer</th><th>Última prueba</th><th class="text-end">Acciones</th></tr></thead>
+      <tbody>
+        <% if (!providers.length) { %><tr><td colspan="5" class="text-muted">No hay proveedores. Agregue el servidor Ollama de la empresa o una API en la nube.</td></tr><% } %>
+        <% providers.forEach(function (p) { %>
+          <tr id="p<%= p.id %>" class="<%= p.active ? '' : 'text-muted' %>">
+            <td>
+              <span class="badge <%= p.location === 'local' ? 'text-bg-success' : 'text-bg-info' %>"><%= where(p) %></span>
+              <strong><%= p.label %></strong><%= p.active ? '' : ' (inactivo)' %>
+              <div class="small text-muted"><%= KINDS[p.kind] ? KINDS[p.kind].label : p.kind %><%= p.base_url ? ' · ' + p.base_url : '' %></div>
+            </td>
+            <td><code><%= p.model %></code><% if (p.context_tokens) { %><div class="small text-muted">Contexto <%= Number(p.context_tokens).toLocaleString('es') %> tokens</div><% } %></td>
+            <td class="small">
+              <%= p.supports_tools ? 'Herramientas' : 'Herramientas (emuladas)' %><%= p.supports_vision ? ' · Imágenes' : '' %><%= p.supports_web ? ' · Internet' : '' %>
+            </td>
+            <td class="small">
+              <% if (p.last_test_at) { %>
+                <span class="<%= p.last_test_ok ? 'text-success' : 'text-danger' %>"><%= p.last_test_ok ? 'OK' : 'Falló' %></span>
+                <span class="text-muted"><%= new Date(p.last_test_at).toLocaleString('es-PE') %></span>
+                <div class="text-muted text-break"><%= p.last_test_message %></div>
+              <% } else { %><span class="text-muted">Sin probar</span><% } %>
+            </td>
+            <td class="text-end text-nowrap">
+              <form method="post" action="/configuracion/ia/proveedores/<%= p.id %>/probar" class="d-inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn btn-sm btn-outline-secondary" type="submit" title="Envía una pregunta corta y detecta qué sabe hacer el modelo">Probar</button>
+              </form>
+              <a class="btn btn-sm btn-outline-primary" href="/configuracion/ia?editar=<%= p.id %>#form_proveedor">Editar</a>
+              <form method="post" action="/configuracion/ia/proveedores/<%= p.id %>/eliminar" class="d-inline" onsubmit="return confirm('¿Eliminar este proveedor?');">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<% if (form) { %>
+<form method="post" action="/configuracion/ia/proveedores<%= editing ? '/' + editing.id : '' %>" class="card p-3 mb-3 border-primary" id="form_proveedor" autocomplete="off">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <input type="hidden" name="id" value="<%= editing ? editing.id : '' %>">
+  <h5><%= editing ? 'Editar "' + editing.label + '"' : 'Agregar proveedor' %></h5>
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label" for="ia_kind">Tipo</label>
+      <select class="form-select" name="kind" id="ia_kind">
+        <% Object.entries(KINDS).forEach(function (k) { %><option value="<%= k[0] %>" data-base="<%= k[1].base %>" data-location="<%= k[1].location %>" <%= form.kind === k[0] ? 'selected' : '' %>><%= k[1].label %></option><% }); %>
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="ia_label">Nombre</label>
+      <input class="form-control" name="label" id="ia_label" maxlength="80" required value="<%= form.label || '' %>" placeholder="Ej. Servidor local (Ollama)">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="ia_location">Dónde corre</label>
+      <select class="form-select" name="location" id="ia_location">
+        <option value="local" <%= form.location === 'local' ? 'selected' : '' %>>Local (los datos no salen de la empresa)</option>
+        <option value="nube" <%= form.location === 'nube' ? 'selected' : '' %>>Nube (los datos se envían al proveedor)</option>
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="ia_base_url">Dirección</label>
+      <input class="form-control" name="base_url" id="ia_base_url" maxlength="255" value="<%= form.base_url || '' %>">
+      <div class="form-text" id="ia_base_help">Ollama: http://IP-del-servidor:11434. En la nube puede quedar vacío.</div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="ia_api_key">API key</label>
+      <input type="password" class="form-control" name="api_key" id="ia_api_key" autocomplete="new-password"
+        placeholder="<%= editing && editing.has_key ? '•••••••• (configurada — deje en blanco para no cambiar)' : 'No hace falta para Ollama' %>">
+      <% if (editing && editing.has_key) { %>
+        <div class="form-check mt-1"><input type="checkbox" class="form-check-input" name="clear_api_key" id="ia_clear_key"><label class="form-check-label small" for="ia_clear_key">Quitar la API key guardada</label></div>
+      <% } %>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="ia_model">Modelo</label>
+      <div class="input-group">
+        <input class="form-control" name="model" id="ia_model" list="ia_modelos" required maxlength="150" value="<%= form.model || '' %>" placeholder="Ej. gemma4:26b o gemini-2.5-flash">
+        <button class="btn btn-outline-secondary" type="button" id="ia_cargar">Cargar modelos</button>
+      </div>
+      <datalist id="ia_modelos"></datalist>
+      <div class="form-text" id="ia_modelos_info">"Cargar modelos" consulta al proveedor qué modelos tiene (en Ollama, los descargados).</div>
+    </div>
+    <div class="col-md-3" id="ia_ctx_box">
+      <label class="form-label" for="ia_ctx">Contexto (tokens)</label>
+      <input type="number" class="form-control" name="context_tokens" id="ia_ctx" min="0" max="1048576" step="1024" value="<%= form.context_tokens || '' %>">
+      <div class="form-text">Ollama usa poco por defecto y corta textos largos. Más contexto usa más memoria.</div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="ia_timeout">Espera máxima (s)</label>
+      <input type="number" class="form-control" name="timeout_seconds" id="ia_timeout" min="10" max="1800" value="<%= form.timeout_seconds || '' %>">
+    </div>
+    <div class="col-12">
+      <div class="form-check form-check-inline"><input type="checkbox" class="form-check-input" name="supports_tools" id="ia_tools" <%= form.supports_tools ? 'checked' : '' %>><label class="form-check-label" for="ia_tools">Herramientas nativas</label></div>
+      <div class="form-check form-check-inline"><input type="checkbox" class="form-check-input" name="supports_vision" id="ia_vision" <%= form.supports_vision ? 'checked' : '' %>><label class="form-check-label" for="ia_vision">Lee imágenes</label></div>
+      <div class="form-check form-check-inline" id="ia_web_box"><input type="checkbox" class="form-check-input" name="supports_web" id="ia_web" <%= form.supports_web ? 'checked' : '' %>><label class="form-check-label" for="ia_web">Búsqueda en internet</label></div>
+      <div class="form-check form-check-inline"><input type="checkbox" class="form-check-input" name="active" id="ia_active" <%= form.active ? 'checked' : '' %>><label class="form-check-label" for="ia_active">Activo</label></div>
+      <div class="form-text">"Probar" detecta herramientas e imágenes en Ollama y marca estas casillas solo.</div>
+    </div>
+  </div>
+  <div class="mt-3">
+    <button class="btn btn-primary" type="submit">Guardar proveedor</button>
+    <a class="btn btn-link" href="/configuracion/ia">Cancelar</a>
+  </div>
+</form>
+<script src="/js/ia-config.js"></script>
+<% } %>
+
+<%- include('../partials/foot') %>

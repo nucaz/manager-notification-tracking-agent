@@ -9,7 +9,7 @@
 // recibe una respuesta generica de "sin acceso", sin tocar ninguna
 // herramienta ni exponer que existe un asistente con datos de la empresa.
 const pool = require('../db/pool');
-const geminiClient = require('./geminiClient');
+const aiService = require('./aiService');
 const employeeService = require('./employeeService');
 const { daysUntil, statusFromDays } = require('./expirationService');
 const devopsSidecarClient = require('./devopsSidecarClient');
@@ -352,7 +352,7 @@ Responde EN ESPAÑOL, breve y directo, basándote SOLO en este resumen general r
 ${contexto}
 
 Pregunta del usuario: "${question}"`;
-  return geminiClient.askText(prompt);
+  return (await aiService.generateText('chatbot', prompt)).text;
 }
 
 function buildPrompt(question) {
@@ -373,8 +373,8 @@ Pregunta del usuario: "${question}"`;
 }
 
 async function interpretQuestion(question) {
-  const text = await geminiClient.askText(buildPrompt(question));
-  const parsed = geminiClient.extractJson(text);
+  const { text } = await aiService.generateText('chatbot', buildPrompt(question), { json: true, temperature: 0 });
+  const parsed = aiService.extractJson(text);
   return { tool: parsed.tool || 'desconocido', args: parsed.args || {} };
 }
 

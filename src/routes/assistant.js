@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const assistantService = require('../services/assistantService');
+const aiService = require('../services/aiService');
 const reportService = require('../services/reportService');
 const { buildPdf } = require('../services/reportPdf');
 
@@ -25,7 +26,7 @@ router.use((req, res, next) => {
   next();
 });
 
-// Cada pregunta es una o varias llamadas a Gemini: se limita por usuario.
+// Cada pregunta es una o varias llamadas a la IA: se limita por usuario.
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 12,
@@ -48,12 +49,22 @@ router.post('/preguntar', limiter, async (req, res) => {
       page: String(req.body.page || ''),
       user,
       enabledModules: res.locals.enabledModules,
+      providerId: Number(req.body.provider_id) || null,
     });
-    await assistantService.log(user, 'saliente', result.answer);
+    await assistantService.log(user, 'saliente', result.provider ? `[${result.provider.label} · ${result.provider.model}] ${result.answer}` : result.answer);
     res.json({ ok: true, ...result });
   } catch (err) {
     await assistantService.log(user, 'saliente', `Error: ${err.message}`);
     res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+// Modelos que la persona puede elegir para una pregunta (selector del panel).
+router.post('/modelos', async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await aiService.choices()) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 

@@ -3,7 +3,7 @@ name: asistente-ia-solo-lectura
 description: 'Usar al tocar el asistente "Preguntar a la IA" de la app principal (src/services/assistantService.js): sumar datos que pueda consultar, cambiar sus instrucciones, sus herramientas, los reportes temporales o la búsqueda en internet. Ejemplos - "que el asistente también vea X", "que la IA pueda hacer Y", "el asistente responde mal sobre Z", "agrega una herramienta al asistente".'
 ---
 
-# Asistente con Gemini: libertad para leer, ninguna herramienta para escribir
+# Asistente: libertad para leer, ninguna herramienta para escribir
 
 ## La regla que sostiene todo
 
@@ -33,8 +33,14 @@ usuario y un diseño de confirmación humana.
   permisos de quien la pide. Nada se guarda.
 - `buscar_en_internet`: una llamada **aparte** a Gemini con
   `tools: [{ google_search: {} }]` (no se puede combinar con las otras
-  herramientas en la misma llamada). Las fuentes llegan al navegador solo
-  si son `http(s)`.
+  herramientas en la misma llamada). Solo se ofrece si hay un proveedor
+  activo con búsqueda (`aiService.webSearchProvider()`); si no, tampoco se
+  promete en las instrucciones. Las fuentes llegan al navegador solo si
+  son `http(s)`.
+- **El modelo no está fijo**: lo da `aiService` (ver el skill
+  `ia-configuracion-unica`). El bucle trabaja con mensajes neutros
+  (`user` / `assistant` con `calls` y `raw` / `tool` con `results`) y las
+  herramientas en JSON Schema en minúsculas; cada proveedor lo traduce.
 
 ## Al sumar un conjunto de datos
 
@@ -47,16 +53,20 @@ usuario y un diseño de confirmación humana.
    memoria sobre lo cargado.
 4. Suma el caso a `tests/asistente.e2e.js`.
 
-## Detalles de la API de Gemini que ya costaron
+## Detalles que ya costaron
 
 - REST directo con `axios` (convención del repo: sin SDK).
 - **El turno de la IA se devuelve tal cual** en la llamada siguiente
-  (`contents.push({ role: 'model', parts })`): trae firmas
-  (`thoughtSignature`) que la API exige de vuelta.
+  (`messages.push({ role: 'assistant', ..., raw: r.raw })`): Gemini trae
+  firmas (`thoughtSignature`) que exige de vuelta; `ai/providers.js` usa
+  `raw` cuando es de su mismo tipo.
+- Los pasos siguientes de una pregunta van al **mismo** proveedor que
+  respondió el primero (`{ provider: r.resolved }`), aunque haya sido el
+  respaldo.
 - Tope de pasos (`MAX_STEPS`): una IA que no deja de pedir datos se corta
   y se muestra lo encontrado.
-- El mensaje de error de `axios` puede incluir la URL con la API key:
-  `geminiClient.generate` no lo propaga.
+- La API key va en cabecera (nunca en la URL) y los errores de red se
+  reescriben sin la URL (`ai/providers.js`, `http()`).
 - Límite de uso por usuario (12 por minuto) y registro en
   `agent_message_log` como canal `web`.
 
@@ -69,8 +79,9 @@ saltos de línea. Los enlaces de fuentes se crean solo si empiezan con
 
 ## Cómo probarlo
 
-Con un Gemini **simulado** (`GEMINI_API_BASE_URL` apuntando a un servidor
-local que sigue un guion): se comprueba qué le envía la aplicación a la
+Con un Gemini **simulado** (un proveedor de prueba en `ai_providers` con
+`base_url` apuntando a un servidor local que sigue un guion,
+`tests/asistente.e2e.js`) y un Ollama simulado (`tests/ia_config.e2e.js`): se comprueba qué le envía la aplicación a la
 IA y qué le devuelve, sin gastar la API. Antes de darlo por bueno en
 producción, una pregunta real: los errores de clave o de saldo
 (`HTTP 400 API key not valid`, `HTTP 402`) solo aparecen ahí.

@@ -23,7 +23,9 @@ principal — solo el repositorio de Git y el despliegue.
   despliegue (éxito o fallo) y lo guarda con su payload completo.
 - **Auditoría semántica diaria con IA** (18:00 por defecto): por cada
   repo, extrae `git log --since=1.day.ago -p` y le pide a Gemini/Claude/
-  Ollama (configurable) un reporte en Markdown con desarrolladores del
+  Ollama (configurable; con acceso único, el modelo se elige en la
+  aplicación principal, Configuración > Inteligencia artificial, y este
+  módulo le pide que genere por él) un reporte en Markdown con desarrolladores del
   día, análisis de impacto en la lógica de negocio, y alertas DevSecOps.
   Además corre un **escaneo de secretos determinístico** (regex, sin IA)
   sobre el mismo diff — no depende solo de que la IA "se dé cuenta".
@@ -340,7 +342,7 @@ devops-sidecar/
     scheduler.py              APScheduler: sync por repo + auditoria diaria + backup semanal
     services/
       git_service.py          Clonar/sincronizar, extraer diffs y stats de commits
-      ai_client.py              Gemini/Claude/Ollama intercambiables (REST directo)
+      ai_client.py              IA de la aplicación principal (configuración única); Gemini/Claude/Ollama directo solo de emergencia
       secret_scanner.py          Escaneo de secretos por regex (sin IA)
       audit_engine.py             Orquesta el reporte diario de un repo
       backup_service.py            Diff diario + mirror semanal + retención

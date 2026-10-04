@@ -111,11 +111,12 @@ Aplicación web para el seguimiento de:
   (Code 128: IMEI, código interno, número, ICCID, n.º de serie o de
   inventario, a elección) y una casilla para marcar, para verificar el
   inventario físico con un lector contra lo que dice la aplicación
-- **Preguntar a la IA** (botón en todas las pantallas; usa la API key de
-  Gemini de Configuración): conversa con libertad, responde sobre lo que
+- **Preguntar a la IA** (botón en todas las pantallas; por defecto responde
+  el modelo local de la empresa, y cada pregunta puede ir a otro modelo,
+  local o en la nube, ver sección 5): conversa con libertad, responde sobre lo que
   hay registrado ("stock de celulares por sede", "qué vence en 60 días",
   "los 10 planes más caros"), cruza datos y busca en internet (búsqueda de
-  Google de Gemini, con fuentes). Cada consulta produce una tabla que se
+  Google de Gemini, con fuentes, si hay un proveedor Gemini activo). Cada consulta produce una tabla que se
   abre como **reporte temporal** a pantalla completa y se descarga en
   Excel o PDF (con código de barras en listados de inventario); no se
   guarda. Puede leer todo lo que el usuario puede abrir (reportes,
@@ -147,7 +148,7 @@ Aplicación web para el seguimiento de:
   navegador, por pantalla; "Restablecer columnas" lo deshace. "Marcar
   todos" alcanza solo a las filas que se ven
 - **Adjuntos**: contratos, adendas y facturas vinculados a cada registro
-- **Extracción de facturas con IA (Gemini)**: al adjuntar una factura/recibo
+- **Extracción de facturas con IA** (modelo local o en la nube): al adjuntar una factura/recibo
   (PDF o imagen), un botón "Extraer datos con IA" lee el documento y
   propone monto, moneda, concepto, proveedor, N° de factura, RUC, fechas de
   emisión/vencimiento y local/sede — que puedes revisar y aplicar al
@@ -385,20 +386,53 @@ escribe un valor nuevo solo si quieres reemplazarlo.
   corre todos los días a las 08:00 (hora del contenedor/servidor) y evita
   reenviar el mismo aviso dos veces gracias a un registro interno.
 
-## 5. Extracción de facturas con IA (Gemini)
+## 5. Inteligencia artificial (configuración única)
 
-Desde **Configuración** (solo `admin`):
+En **Configuración > Inteligencia artificial** (solo `admin`) se configura
+la IA de **las dos aplicaciones**: esta y DevOps Sidecar. El sidecar no
+guarda API keys ni elige modelo: le pide a esta aplicación que genere por
+él (`POST /interno/ia/generar`, con un pase firmado con
+`SSO_SHARED_SECRET`). Su propia configuración de IA queda solo de
+emergencia, si esta aplicación no responde.
 
-1. Genera una API key en [Google AI Studio](https://aistudio.google.com/apikey)
-   y pégala en el campo "API key de Gemini". El uso tiene costo según el
-   volumen de documentos procesados — es la facturación normal de la API
-   de Gemini, ajena a esta app.
-2. El campo "Modelo" viene precargado con `gemini-2.5-flash` (rápido y
-   económico para lectura de documentos). Google renueva sus modelos
-   "flash" con cierta frecuencia — si en el futuro aparece uno más nuevo o
-   el actual deja de estar disponible, solo hay que cambiar el nombre acá,
-   sin tocar código.
-3. Usa "Verificar API key" para confirmar que quedó bien configurada.
+**Proveedores.** Cada uno tiene tipo, dirección, modelo y (si hace falta)
+API key, que se guarda cifrada:
+
+- **Ollama** (local): un servidor de la empresa, por ejemplo
+  `http://172.16.1.22:11434` con `gemma4:26b`. Los datos no salen de la
+  red. Para cambiar de modelo: `ollama pull <modelo>` en el servidor,
+  "Editar" el proveedor, "Cargar modelos" y elegirlo. **Contexto
+  (tokens)**: Ollama usa poco por defecto y corta en silencio los textos
+  largos (una auditoría con el diff del día); aquí se fija `num_ctx`
+  (16 384 por defecto; más contexto usa más memoria de la GPU).
+- **Google Gemini**, **Anthropic Claude** o una API **compatible con
+  OpenAI** (OpenAI, LM Studio, vLLM...) en la nube: la pregunta y los datos
+  necesarios se envían a ese servicio.
+
+"**Probar**" envía una pregunta corta, mide cuánto tarda y, en Ollama,
+detecta si el modelo tiene herramientas y visión. Un modelo sin
+herramientas igual sirve para el asistente: se le piden en JSON
+(herramientas emuladas).
+
+**Qué modelo usa cada función:** asistente, chatbot de WhatsApp/Telegram,
+lectura de facturas, auditoría diaria de DevOps y asistente/resúmenes de
+DevOps. Por defecto todas usan el servidor local. Opcional: un
+**respaldo** (si el asignado no responde se intenta con ese; si es de la
+nube, en ese caso los datos salen de la empresa; por defecto no hay) y
+dejar que cada persona elija el modelo **para cada pregunta** en el panel
+"Preguntar a la IA" (se recuerda la última elección y se avisa si los
+datos salen a la nube). Cada respuesta dice qué modelo respondió.
+
+**Búsqueda en internet:** solo la tiene Gemini. Si hay un proveedor Gemini
+activo, el asistente puede buscar aunque responda el modelo local (solo el
+texto de la búsqueda va a Google).
+
+### Lectura de facturas
+
+Con Gemini o Claude el PDF o la imagen se envían tal cual. Con un modelo
+local se envía el **texto** del PDF (extraído en el servidor); una imagen
+necesita un modelo con visión, y un PDF escaneado (sin texto), un
+proveedor que lea PDF.
 
 **Cómo se usa:** sube una factura/recibo (PDF, PNG, JPG o WEBP) como
 adjunto de tipo "Factura" en el detalle de una licencia, dominio o
@@ -419,7 +453,7 @@ lectura de correo sobre tu tenant `ad.depilzone.com.pe`, coordinarlo con
 tu administrador de M365 y mantener esa integración corriendo (webhooks o
 sondeo periódico del buzón). Si más adelante quieres ese nivel de
 automatización, es una ampliación natural sobre esta misma base: el
-`src/services/geminiClient.js` ya queda listo para reutilizarse detrás de
+`src/services/invoiceExtractor.js` ya queda listo para reutilizarse detrás de
 cualquier origen de archivos.
 
 ## 6. Roles de usuario
@@ -596,7 +630,7 @@ cuenta ni al 2FA, que siguen igual.
   ⚠️ Esta funcionalidad se construyó siguiendo al pie de la letra la
   documentación oficial de la API de GLPI, pero **no se pudo probar contra
   un servidor GLPI real** (no había uno accesible desde el entorno donde
-  se desarrolló — mismo caso que `geminiClient.js`, ver sección 5). Si al
+  se desarrolló — mismo caso que `invoiceExtractor.js`, ver sección 5). Si al
   usarla contra tu GLPI real algo no calza (por ejemplo, el nombre de un
   campo cambió entre versiones de GLPI), avísame para ajustarlo.
 
@@ -730,7 +764,7 @@ tengas, probamos la conexión real.
 ## 10. Copias de seguridad y migración a otro servidor
 
 Toda la app vive en tres sitios: la **base de datos** (datos + configuración
-completa: GLPI, SMTP, Gemini, WhatsApp, Telegram — todo lo que se edita
+completa: GLPI, SMTP, proveedores de IA, WhatsApp, Telegram — todo lo que se edita
 desde Configuración se guarda en la tabla `settings`, así que un dump de
 la BD ya incluye la configuración, no hace falta copiarla aparte), el
 **volumen de archivos** `uploads_data` (adjuntos y diagramas de red), y el
@@ -830,7 +864,7 @@ docker compose restart app
 - Inicia sesión con las mismas credenciales de siempre — el secreto TOTP
   viajó con la BD, así que tu app autenticadora **sigue funcionando sin
   volver a escanear el QR**.
-- Entra a Configuración y confirma que GLPI/SMTP/Gemini/WhatsApp/Telegram
+- Entra a Configuración y confirma que GLPI/SMTP/IA/WhatsApp/Telegram
   ya aparecen con los valores del servidor anterior (vinieron en el dump).
 - Abre un registro con un adjunto (por ejemplo, un contrato en Licencias)
   y confirma que el archivo se descarga correctamente.
@@ -922,7 +956,7 @@ sql/schema.sql        Esquema base completo (migracion "0001_baseline")
 sql/migrations/        Migraciones incrementales numeradas (npm run migrate aplica todo)
 src/config/           Configuración desde variables de entorno
 src/db/               Pool de conexión, migración, seed del admin y reset-2fa
-src/services/         Cliente GLPI, cliente Gemini (extracción IA), envío de correo, configuración, subida de archivos, TOTP (2FA), respaldo/restauración, auditoría, dispositivos de confianza
+src/services/         Cliente GLPI, IA (aiService + ai/providers: Ollama, Gemini, Claude, compatibles con OpenAI; lectura de facturas), envío de correo, configuración, subida de archivos, TOTP (2FA), respaldo/restauración, auditoría, dispositivos de confianza
 src/jobs/              Tarea programada de recordatorios (node-cron), sondeo de Telegram
 src/middleware/        Autenticación, permisos por módulo, y protección CSRF
 src/routes/             Rutas de cada módulo (licencias, dominios, isp, servidores, certificados, celulares, empleados, red, glpi, reportes, configuración, usuarios, 2FA, permisos, auditoría, mi-cuenta)

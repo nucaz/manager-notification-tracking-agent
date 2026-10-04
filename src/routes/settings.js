@@ -3,7 +3,6 @@ const { requireAuth, isAdmin } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const settingsService = require('../services/settingsService');
 const mailer = require('../services/mailer');
-const geminiClient = require('../services/geminiClient');
 const whatsappClient = require('../services/whatsappClient');
 const telegramClient = require('../services/telegramClient');
 const devopsSidecarClient = require('../services/devopsSidecarClient');
@@ -49,7 +48,6 @@ router.post('/', isAdmin, verifyCsrfToken, async (req, res, next) => {
       'glpi_oauth_client_id', 'glpi_oauth_client_secret', 'glpi_oauth_username', 'glpi_oauth_password',
       'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from',
       'reminder_thresholds_days', 'reminder_recipients', 'reminder_send_hour',
-      'ai_provider', 'gemini_api_key', 'gemini_model',
       'whatsapp_phone_number_id', 'whatsapp_access_token', 'whatsapp_verify_token', 'whatsapp_app_secret',
       'telegram_bot_token',
       'devops_sidecar_url', 'devops_sidecar_user', 'devops_sidecar_password',
@@ -99,16 +97,6 @@ router.post('/enviar-prueba', isAdmin, verifyCsrfToken, async (req, res) => {
     req.flash('success', `Correo de prueba enviado a ${to}.`);
   } catch (err) {
     req.flash('error', `No se pudo enviar el correo de prueba: ${err.message}`);
-  }
-  res.redirect('/configuracion');
-});
-
-router.post('/probar-gemini', isAdmin, verifyCsrfToken, async (req, res) => {
-  try {
-    await geminiClient.testConnection();
-    req.flash('success', 'Conexión con Gemini exitosa. La API key funciona.');
-  } catch (err) {
-    req.flash('error', `No se pudo conectar con Gemini: ${err.message}`);
   }
   res.redirect('/configuracion');
 });

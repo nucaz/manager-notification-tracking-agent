@@ -12,7 +12,12 @@
   var form = document.getElementById('ia_form');
   var input = document.getElementById('ia_pregunta');
   var send = document.getElementById('ia_enviar');
+  var modelBox = document.getElementById('ia_modelo_box');
+  var modelSelect = document.getElementById('ia_modelo');
+  var privacy = document.getElementById('ia_privacidad');
   var KEY = 'asistente:hilo';
+  var MODEL_KEY = 'asistente:modelo';
+  var choices = null; // { allowed, defaultId, providers: [{ id, label, location, model }] }
   var MAX_TURNS = 15;
   var busy = false;
 
@@ -143,9 +148,10 @@
     var reply = el('div', 'ia-respuesta' + (turn.error ? ' ia-error' : ''));
     if (turn.pending) {
       reply.appendChild(el('span', 'spinner-border spinner-border-sm me-2'));
-      reply.appendChild(document.createTextNode('Consultando…'));
+      reply.appendChild(document.createTextNode(turn.local ? 'Consultando al servidor local… (puede tardar un poco)' : 'Consultando…'));
     } else {
       reply.appendChild(rich(turn.error || turn.a));
+      if (turn.notice) reply.appendChild(el('div', 'small text-warning mt-1', turn.notice));
       (turn.tables || []).forEach(function (t) { reply.appendChild(tableNode(t)); });
       if (turn.sources && turn.sources.length) {
         var src = el('div', 'ia-fuentes');
@@ -161,6 +167,9 @@
         });
         reply.appendChild(src);
       }
+    }
+    if (turn.provider) {
+      node.appendChild(el('div', 'ia-modelo-usado', 'Respondió ' + turn.provider.label + ' · ' + turn.provider.model + (turn.provider.location === 'local' ? ' (local)' : ' (nube)')));
     }
     node.appendChild(reply);
     return node;
@@ -190,7 +199,8 @@
     busy = true;
     send.disabled = true;
     var history = turns.filter(function (t) { return t.a && !t.error; }).slice(-6).map(function (t) { return { q: t.q, a: t.a }; });
-    var turn = { q: question, pending: true };
+    var chosen = selected();
+    var turn = { q: question, pending: true, local: !!(chosen && chosen.location === 'local') };
     turns.push(turn);
     render();
     input.value = '';
@@ -199,7 +209,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ _csrf: csrf, question: question, page: location.pathname, history: history }),
+      body: JSON.stringify({ _csrf: csrf, question: question, page: location.pathname, history: history, provider_id: modelBox.hidden || !chosen ? null : chosen.id }),
     }).then(function (res) {
       return res.text().then(function (body) {
         var data;
@@ -212,10 +222,13 @@
       turn.a = data.answer;
       turn.tables = data.tables;
       turn.sources = data.sources;
+      turn.provider = data.provider;
+      turn.notice = data.notice;
     }).catch(function (err) {
       turn.error = err.message || 'No se pudo consultar.';
     }).then(function () {
       delete turn.pending;
+      delete turn.local;
       busy = false;
       send.disabled = false;
       save(turns);
@@ -235,6 +248,48 @@
     render();
     input.focus();
   });
-  panel.addEventListener('shown.bs.offcanvas', function () { render(); input.focus(); });
+  // Modelo para la pregunta: el asignado al asistente, u otro si la
+  // configuracion deja elegir. Se recuerda la ultima eleccion.
+  function selected() {
+    if (!choices) return null;
+    var id = Number(modelSelect.value) || choices.defaultId;
+    return choices.providers.filter(function (p) { return p.id === id; })[0] || choices.providers[0] || null;
+  }
+  function showPrivacy() {
+    var p = selected();
+    privacy.textContent = !p ? '' : p.location === 'local'
+      ? 'Responde ' + p.label + ' (servidor de la empresa): los datos no salen de la red.' + (choices.webLabel ? ' Solo las búsquedas en internet, si las hace, pasan por ' + choices.webLabel + '.' : '')
+      : 'La pregunta y los datos necesarios para responderla se envían a ' + p.label + ' (en la nube).';
+  }
+  function loadModels() {
+    if (choices) return;
+    fetch('/asistente/modelos', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ _csrf: csrf }),
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      if (!data || !data.ok) return;
+      choices = data;
+      modelSelect.textContent = '';
+      data.providers.forEach(function (p) {
+        var o = el('option', null, p.label + ' · ' + p.model + (p.location === 'local' ? ' (local)' : ' (nube)'));
+        o.value = p.id;
+        modelSelect.appendChild(o);
+      });
+      var remembered = null;
+      try { remembered = Number(localStorage.getItem(MODEL_KEY)); } catch (e) { /* sin almacenamiento */ }
+      var ids = data.providers.map(function (p) { return p.id; });
+      modelSelect.value = String(ids.indexOf(remembered) > -1 ? remembered : (data.defaultId || ids[0] || ''));
+      modelBox.hidden = !(data.allowed && data.providers.length > 1);
+      if (modelBox.hidden) modelSelect.value = String(data.defaultId || ids[0] || '');
+      showPrivacy();
+    }).catch(function () { /* sin selector: responde el modelo asignado */ });
+  }
+  modelSelect.addEventListener('change', function () {
+    try { localStorage.setItem(MODEL_KEY, modelSelect.value); } catch (e) { /* sin almacenamiento */ }
+    showPrivacy();
+  });
+
+  panel.addEventListener('shown.bs.offcanvas', function () { loadModels(); render(); input.focus(); });
   render();
 })();

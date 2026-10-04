@@ -129,6 +129,7 @@ table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: elli
 .ia-pregunta { align-self: flex-end; max-width: 88%; background: #2d5be3; color: #fff; padding: .5rem .75rem; border-radius: 12px 12px 2px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ia-respuesta { background: #f3f5f9; padding: .65rem .75rem; border-radius: 12px 12px 12px 2px; overflow-wrap: anywhere; }
 .ia-respuesta.ia-error { background: #fdecea; color: #8a1c13; }
+.ia-modelo-usado { font-size: .72rem; color: #6c757d; margin-bottom: -.3rem; }
 .ia-texto p { margin: 0 0 .45rem; }
 .ia-texto ul { margin: 0 0 .45rem; padding-left: 1.2rem; }
 .ia-texto > :last-child { margin-bottom: 0; }

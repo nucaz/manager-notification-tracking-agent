@@ -302,8 +302,7 @@ async def resumir_commit(repo_id: int, sha: str, forzar: bool = False, db: Sessi
 Responde EN ESPAÑOL, en Markdown, con una lista de puntos (bullets) CONCISA de los cambios importantes de ESTE commit - que se agrego, modifico o elimino, y en que archivo/funcion cuando el diff lo permita. Maximo 8 puntos. Si es un cambio trivial (typo, formato), dilo en un solo punto."""
 
     try:
-        summary = await ai_client.generate(prompt)
-        provider = settings.ai_provider
+        summary, provider = await ai_client.generate_detailed(prompt, ai_client.USO_TEXTOS)
     except ai_client.AIClientError as e:
         raise HTTPException(status_code=502, detail=f"No se pudo generar el resumen: {e}")
 

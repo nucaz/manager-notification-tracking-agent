@@ -31,7 +31,7 @@ def _mask(value: str) -> str:
 
 
 @router.get("/configuracion", response_class=HTMLResponse)
-def settings_page(
+async def settings_page(
     request: Request,
     saved: bool = False,
     restored: bool = False,
@@ -49,6 +49,9 @@ def settings_page(
             "settings": settings,
             "gemini_key_masked": _mask(settings.gemini_api_key),
             "anthropic_key_masked": _mask(settings.anthropic_api_key),
+            "shared_enabled": ai_client.shared_enabled(),
+            "shared_status": await ai_client.shared_status(),
+            "uso_labels": {ai_client.USO_AUDITORIA: "Auditoría diaria de código", ai_client.USO_TEXTOS: "Asistente y resúmenes de commits"},
         },
     )
 
