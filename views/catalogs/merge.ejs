@@ -1,0 +1,70 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="mb-0">Unificar valores</h2>
+  <a href="/configuracion/catalogos?tipo=<%= tipo %>" class="btn btn-outline-secondary">Volver a Catálogos</a>
+</div>
+<p class="text-muted">Junta varios valores escritos de distinta forma en uno solo, en todos los lugares donde se usan, y deja el catálogo con ese valor. Solo cambia el campo elegido: unificar áreas no toca las sedes.</p>
+
+<ul class="nav nav-pills mb-3">
+  <% tipos.forEach(function(t) { %>
+    <li class="nav-item"><a class="nav-link <%= tipo === t[0] ? 'active' : '' %>" href="/configuracion/catalogos/unificar?tipo=<%= t[0] %>"><%= t[1] %></a></li>
+  <% }); %>
+</ul>
+
+<% if (preview) { %>
+<div class="card p-3 mb-3 border-warning" id="vista_previa">
+  <h5>Revisar antes de aplicar</h5>
+  <p class="mb-2"><strong><%= preview.sources.join(', ') %></strong> pasan a <strong><%= preview.target %></strong>.</p>
+  <table class="table table-sm w-auto mb-2" data-tabla="no">
+    <thead><tr><th>Dónde</th><th class="text-end">Registros que cambian</th></tr></thead>
+    <tbody>
+      <% preview.counts.forEach(function(c) { %><tr><td><%= c.label %></td><td class="text-end"><%= c.n %></td></tr><% }); %>
+      <tr><td>Catálogo</td><td class="text-end"><%= preview.catalogRemoved %> valor(es) se quitan<%= preview.catalogAddsTarget ? '; se agrega ' + preview.target : '' %></td></tr>
+    </tbody>
+  </table>
+  <form method="post" action="/configuracion/catalogos/unificar" onsubmit="return confirm('Se cambiarán <%= preview.total %> registro(s). ¿Aplicar?');">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="tipo" value="<%= tipo %>">
+    <input type="hidden" name="target" value="<%= preview.target %>">
+    <% preview.sources.forEach(function(s) { %><input type="hidden" name="sources" value="<%= s %>"><% }); %>
+    <button class="btn btn-warning" type="submit">Aplicar la unificación</button>
+    <a class="btn btn-link" href="/configuracion/catalogos/unificar?tipo=<%= tipo %>">Cancelar</a>
+  </form>
+</div>
+<% } %>
+
+<form method="post" action="/configuracion/catalogos/unificar/vista-previa" class="card p-3" id="form_unificar">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <input type="hidden" name="tipo" value="<%= tipo %>">
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <h6>1. Marque los valores que se van a unificar</h6>
+      <div class="table-responsive" style="max-height: 420px;">
+        <table class="table table-sm align-middle mb-0" data-tabla="no">
+          <thead><tr><th></th><th>Valor</th><th class="text-end">Usos</th><th>Dónde</th><th>En catálogo</th></tr></thead>
+          <tbody>
+            <% valores.forEach(function(v, i) { %>
+              <tr>
+                <td><input type="checkbox" class="form-check-input" name="sources" value="<%= v.value %>" id="v_<%= i %>" <%= preview && preview.sources.includes(v.value) ? 'checked' : '' %>></td>
+                <td><label for="v_<%= i %>"><%= v.value %></label></td>
+                <td class="text-end"><%= v.total %></td>
+                <td class="small text-muted"><%= Object.entries(v.where).map(function(e) { return e[0] + ' ' + e[1]; }).join(' · ') || '—' %></td>
+                <td><%= v.catalog ? 'Sí' : 'No' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <h6>2. Valor que queda</h6>
+      <input type="text" class="form-control" name="target" list="valores_destino" maxlength="100" required value="<%= preview ? preview.target : '' %>" placeholder="Ej. CLINICA">
+      <datalist id="valores_destino"><% valores.forEach(function(v) { %><option value="<%= v.value %>"><% }); %></datalist>
+      <div class="form-text">Puede ser uno de la lista o uno nuevo. Si el valor que queda está marcado, se ignora.</div>
+      <button class="btn btn-primary mt-3" type="submit">Ver qué cambiaría</button>
+    </div>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

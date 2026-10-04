@@ -3,6 +3,8 @@ const { requireAuth, isAdmin } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const catalogService = require('../services/catalogService');
 const mobileModelService = require('../services/mobileModelService');
+const catalogMergeService = require('../services/catalogMergeService');
+const auditService = require('../services/auditService');
 
 const router = express.Router();
 router.use(requireAuth, isAdmin, verifyCsrfToken);
@@ -44,6 +46,49 @@ router.post('/nuevo', async (req, res, next) => {
       return res.redirect(`/configuracion/catalogos?tipo=${req.body.catalog_type}`);
     }
     next(err);
+  }
+});
+
+// --- Unificar valores (ej. "BO" -> "BACKOFFICE") --------------------------
+const MERGE_TYPES = [['area', 'Áreas'], ['sede', 'Sedes'], ['marca', 'Marcas'], ['operadora', 'Operadoras']];
+const mergeType = (t) => (MERGE_TYPES.some((x) => x[0] === t) ? t : 'area');
+
+router.get('/unificar', async (req, res, next) => {
+  try {
+    const tipo = mergeType(req.query.tipo);
+    res.render('catalogs/merge', { title: 'Unificar valores', tipos: MERGE_TYPES, tipo, valores: await catalogMergeService.values(tipo), preview: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/unificar/vista-previa', async (req, res, next) => {
+  const tipo = mergeType(req.body.tipo);
+  try {
+    const preview = await catalogMergeService.preview(tipo, req.body.sources, req.body.target);
+    res.render('catalogs/merge', { title: 'Unificar valores', tipos: MERGE_TYPES, tipo, valores: await catalogMergeService.values(tipo), preview });
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+    res.redirect(`/configuracion/catalogos/unificar?tipo=${tipo}`);
+  }
+});
+
+router.post('/unificar', async (req, res, next) => {
+  const tipo = mergeType(req.body.tipo);
+  try {
+    const r = await catalogMergeService.apply(tipo, req.body.sources, req.body.target, req.session.user.id);
+    const detail = r.changed.map((c) => `${c.label}: ${c.n}`).join(', ');
+    await auditService.log(req, {
+      user: req.session.user, action: 'catalogo_unificado', target: `${tipo}: ${r.sources.join(', ')} → ${r.target}`,
+      detail: `${detail}; catálogo: ${r.catalogRemoved} quitado(s)${r.catalogAddedTarget ? `, agregado ${r.target}` : ''}`,
+    });
+    req.flash('success', `Unificado en "${r.target}": ${detail}.`);
+    res.redirect(`/configuracion/catalogos/unificar?tipo=${tipo}`);
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+    res.redirect(`/configuracion/catalogos/unificar?tipo=${tipo}`);
   }
 });
 
