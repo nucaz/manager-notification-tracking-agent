@@ -27,7 +27,8 @@ const cut = (v, n) => {
 const running = new Map(); // fuente -> promesa en curso
 
 async function state(source) {
-  const [[row]] = await pool.query('SELECT * FROM external_sync_state WHERE source = ?', [source]);
+  // La antiguedad se calcula en la base (synced_at y NOW() en la misma zona horaria).
+  const [[row]] = await pool.query('SELECT *, TIMESTAMPDIFF(SECOND, synced_at, NOW()) AS age_seconds FROM external_sync_state WHERE source = ?', [source]);
   return row || null;
 }
 
@@ -109,8 +110,8 @@ function sync(source) {
 async function ensureFresh(source) {
   const maxAge = (source.startsWith('glpi_') ? MAX_AGE_MIN.glpi : MAX_AGE_MIN[source]) * 60 * 1000;
   const st = await state(source);
-  const syncedAt = st && st.synced_at ? new Date(String(st.synced_at).replace(' ', 'T')) : null;
-  if (syncedAt && Date.now() - syncedAt.getTime() < maxAge) return [];
+  const syncedAt = st && st.synced_at ? st.synced_at : null;
+  if (syncedAt && Number(st.age_seconds) * 1000 < maxAge) return [];
   try {
     await sync(source);
     return [];
