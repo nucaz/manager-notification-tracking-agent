@@ -220,6 +220,15 @@ async function main() {
     check('Sumas por grupo: costo del plan y lo que se paga (con descuento)', JSON.stringify(r.json.tables[0].rows) === JSON.stringify([['Entel', 2, 69.8, 64.8]])
       && r.json.tables[0].columns.join() === 'Operadora,Cantidad,Suma de Costo del plan,Suma de Se paga');
 
+    // --- Datos personales: la IA en la nube no los recibe; el usuario si
+    script = [call('consultar_datos', { reporte: 'chips', buscar: '9000007', columnas: ['phone_number', 'operadora'], ordenar_por: 'phone_number' }), say('Dos chips.')];
+    r = await preguntar('Números de los chips de prueba [e2e]');
+    const masked = lastToolResponse();
+    check('Nube (Gemini): los números van a la IA como "[dato personal oculto]", la operadora tal cual', JSON.stringify(masked.filas) === JSON.stringify([['[dato personal oculto]', 'Entel'], ['[dato personal oculto]', 'Entel']])
+      && !JSON.stringify(seen.bodies.slice(-1)[0]).includes(N[0]));
+    check('…y el usuario ve la tabla con los números reales', JSON.stringify(r.json.tables[0].rows) === JSON.stringify([[N[0], 'Entel'], [N[1], 'Entel']]));
+    check('Las instrucciones a una IA en la nube avisan que los datos personales llegan ocultos', seen.bodies.slice(-1)[0].systemInstruction.parts[0].text.includes('te llegan como "[dato personal oculto]"'));
+
     // --- Busqueda en internet
     script = [call('buscar_en_internet', { consulta: 'ZTE Blade A75 características' }), say('El ZTE A75 tiene batería de 5000 mAh.')];
     r = await preguntar('Busca en internet las características del ZTE A75 [e2e]');

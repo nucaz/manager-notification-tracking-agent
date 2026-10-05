@@ -234,11 +234,11 @@ CREATE TABLE IF NOT EXISTS mobile_devices (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_mobile_device_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_mobile_device_area (area),
-  INDEX idx_mobile_device_status (status),
+  INDEX idx_mobile_device_status_sede (status, sede, area),
   INDEX idx_mobile_device_phone_country (phone_country_code_id),
   INDEX idx_mobile_device_imei (imei),
   INDEX idx_mobile_device_asset_code (asset_code),
-  INDEX idx_mobile_device_sede (sede),
+  INDEX idx_mobile_device_lugar (sede, area, asset_code),
   INDEX idx_mobile_device_phone_number (phone_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -285,7 +285,9 @@ CREATE TABLE IF NOT EXISTS mobile_device_assignments (
   CONSTRAINT fk_assignment_device FOREIGN KEY (device_id) REFERENCES mobile_devices(id) ON DELETE CASCADE,
   CONSTRAINT fk_assignment_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
   CONSTRAINT fk_assignment_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-  INDEX idx_assignment_device (device_id, returned_date)
+  INDEX idx_assignment_device (device_id, returned_date),
+  INDEX idx_assignment_vigente (returned_date, assigned_date),
+  INDEX idx_assignment_desde (assigned_date, device_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Checklist fisico por area (hoja "RESUMEN" del Excel original). Una fila
@@ -324,7 +326,7 @@ CREATE TABLE IF NOT EXISTS mobile_device_incidents (
   CONSTRAINT fk_mobile_incident_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_mobile_incident_device (device_id),
   INDEX idx_mobile_incident_fecha (fecha),
-  INDEX idx_mobile_incident_tipo (tipo)
+  INDEX idx_mobile_incident_tipo_fecha (tipo, fecha)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Chips (lineas). Un chip es siempre un numero de linea; puede estar
@@ -355,7 +357,7 @@ CREATE TABLE IF NOT EXISTS mobile_lines (
   CONSTRAINT fk_mobile_line_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   UNIQUE KEY uniq_mobile_line_number (phone_number),
   INDEX idx_mobile_line_device (device_id),
-  INDEX idx_mobile_line_estado (estado),
+  INDEX idx_mobile_line_estado_operadora (estado, operadora, device_id),
   INDEX idx_mobile_line_operadora (operadora),
   INDEX idx_mobile_line_iccid (iccid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -517,7 +519,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   user_agent VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_audit_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-  INDEX idx_audit_log_action (action),
+  INDEX idx_audit_log_action_fecha (action, created_at),
   INDEX idx_audit_log_created (created_at),
   INDEX idx_audit_log_email (user_email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -610,7 +612,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   extracted_at DATETIME NULL,
   applied_at DATETIME NULL,                     -- cuando se copiaron estos datos al registro principal
   CONSTRAINT fk_attachment_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
-  INDEX idx_attachment_entity (entity_type, entity_id)
+  INDEX idx_attachment_entity (entity_type, entity_id),
+  INDEX idx_attachment_subido (uploaded_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
@@ -833,4 +836,60 @@ CREATE TABLE IF NOT EXISTS ai_providers (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_ai_provider_label (label),
   INDEX idx_ai_provider_active (active, location)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Copias locales de fuentes externas para el asistente (GLPI y los
+-- repositorios de DevOps Sidecar): se consultan con indices en vez de
+-- descargarlas en cada pregunta. Las renueva src/services/externalSyncService.js
+-- (tarea cada 30 min y, si estan viejas, al consultarlas).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS glpi_assets (
+  asset_type VARCHAR(20) NOT NULL,              -- computadoras | monitores | impresoras
+  glpi_id INT NOT NULL,
+  name VARCHAR(255) NULL,
+  state VARCHAR(100) NULL,
+  type VARCHAR(100) NULL,
+  manufacturer VARCHAR(150) NULL,
+  model VARCHAR(150) NULL,
+  serial VARCHAR(150) NULL,
+  otherserial VARCHAR(150) NULL,
+  location VARCHAR(255) NULL,
+  user_name VARCHAR(150) NULL,
+  entity VARCHAR(255) NULL,
+  date_mod VARCHAR(30) NULL,
+  os VARCHAR(150) NULL,
+  os_version VARCHAR(100) NULL,
+  processor VARCHAR(255) NULL,
+  memory_type VARCHAR(100) NULL,
+  memory VARCHAR(60) NULL,
+  ip VARCHAR(255) NULL,
+  PRIMARY KEY (asset_type, glpi_id),
+  INDEX idx_glpi_asset_state (asset_type, state),
+  INDEX idx_glpi_asset_location (asset_type, location),
+  INDEX idx_glpi_asset_entity (asset_type, entity),
+  INDEX idx_glpi_asset_model (asset_type, manufacturer, model),
+  INDEX idx_glpi_asset_serial (serial)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Repositorios de DevOps Sidecar copiados aqui (misma razon).
+CREATE TABLE IF NOT EXISTS devops_repos (
+  id INT NOT NULL PRIMARY KEY,                  -- id del repositorio en el sidecar
+  name VARCHAR(200) NOT NULL,
+  github_url VARCHAR(500) NULL,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  sync_interval_minutes INT NULL,
+  last_synced_at VARCHAR(30) NULL,
+  last_sync_status VARCHAR(100) NULL,
+  last_audit VARCHAR(120) NULL,
+  INDEX idx_devops_repo_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cuando se copio cada fuente externa por ultima vez, y si fallo.
+CREATE TABLE IF NOT EXISTS external_sync_state (
+  source VARCHAR(40) NOT NULL PRIMARY KEY,      -- glpi_computadoras, glpi_monitores, glpi_impresoras, devops_repos
+  synced_at DATETIME NULL,
+  row_count INT NULL,
+  last_error VARCHAR(500) NULL,
+  last_attempt_at DATETIME NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

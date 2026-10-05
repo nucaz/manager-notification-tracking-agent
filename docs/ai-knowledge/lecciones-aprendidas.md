@@ -381,3 +381,26 @@ errores de red se reescriben sin la URL.
 Si el servidor local se cae, pasar sola a Gemini sacaría datos de la
 empresa justo cuando alguien eligió "local" por privacidad. El respaldo
 existe pero viene vacío; cuando actúa, la respuesta lo avisa.
+
+## 33. El asistente no debe cargar tablas enteras para contar
+
+`runQuery` cargaba cada conjunto completo (`load()`) y filtraba en
+JavaScript. Con miles de filas no se notaba; con cientos de miles es
+lento y usa memoria. Ahora arma SQL con lista blanca y parámetros y deja
+filtrar, agrupar y sumar a MariaDB. Se comprobó que da lo mismo que antes
+(totales, grupos y sumas, `tests/asistente_datos.e2e.js`).
+
+## 34. Un índice que no cubre el JOIN se ignora
+
+Con 300 000 chips, "de baja" (10 %) igual recorría la tabla completa: el
+`COUNT` con sus `LEFT JOIN` necesitaba `device_id`, que no estaba en el
+índice `(estado, operadora)`, y leer cada fila salía más caro que
+recorrerla. Con `(estado, operadora, device_id)` usa el índice. Medirlo
+con EXPLAIN sobre datos grandes, no con los de desarrollo (el optimizador
+recorre tablas chicas aunque haya índice).
+
+## 35. Una columna mostrada como etiqueta se filtra por su código
+
+Filtrar "estado = En stock" sobre un `CASE` no usa índices. Se resuelve
+la etiqueta al código (`status IN ('en_stock')`) o a una condición fija
+(vencido = `fecha < CURDATE()`), y el índice sí sirve.

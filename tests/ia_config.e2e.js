@@ -184,6 +184,10 @@ async function main() {
     const toolMsg = chats[1].messages.slice(-1)[0];
     check('El resultado de la consulta vuelve a Ollama como mensaje "tool", calculado por la aplicación', toolMsg.role === 'tool' && toolMsg.tool_name === 'consultar_datos'
       && JSON.parse(toolMsg.content).total_registros === 2 && chats[1].messages.slice(-2)[0].tool_calls[0].function.name === 'consultar_datos');
+    ollama.script = [oCall('consultar_datos', { reporte: 'celulares', filtros: [{ columna: 'area', valor: AREA }], columnas: ['imei', 'asset_code'] }), oSay('Listo.')];
+    await json('/asistente/preguntar', { _csrf: CSRF, question: 'IMEI de prueba [ia-e2e]' });
+    check('Servidor local: los datos van tal cual (no salen de la red) y sin el aviso de datos ocultos', ollama.chats.slice(-1)[0].messages.slice(-1)[0].content.includes(IMEI[0])
+      && !ollama.chats.slice(-1)[0].messages[0].content.includes('te llegan como'));
     check('Respuesta: texto del modelo local, la tabla y qué modelo respondió', a.json.answer === 'Hay 1 en stock y 1 asignado.' && a.json.tables[0].total === 2
       && a.json.provider.label === 'PRUEBA-IA Local' && a.json.provider.location === 'local' && !a.json.notice);
 

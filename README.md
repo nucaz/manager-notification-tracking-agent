@@ -124,8 +124,14 @@ Aplicación web para el seguimiento de:
   diagramas y, solo admin, usuarios y auditoría), pero **no puede crear,
   cambiar ni borrar datos**: no escribe SQL y no tiene ninguna herramienta
   de escritura. Se habilita por rol en Permisos y queda en Historial de
-  chat (canal web). La pregunta y los datos necesarios para responderla
-  se envían a Google
+  chat (canal web). Las consultas corren en MariaDB con índices (nunca
+  carga tablas completas), en una transacción de solo lectura con tope de
+  15 s y, si se configura, con un usuario de MariaDB solo con SELECT
+  (`ASSISTANT_DB_USER`, ver `scripts/crear-usuario-asistente.js`). GLPI y
+  los repositorios se consultan desde una copia local que se renueva cada
+  30 minutos. Con una IA en la nube, los datos personales (nombres, DNI,
+  números, correos) le llegan ocultos; con el servidor local no salen de
+  la red.
 - **Un solo usuario para las dos aplicaciones**: a DevOps Sidecar se entra
   desde el menú DevOps con el mismo usuario (ver 11.1)
 - **Captcha en el inicio de sesión**, propio y sin servicios externos, más

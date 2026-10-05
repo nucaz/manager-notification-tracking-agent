@@ -22,6 +22,14 @@ module.exports = {
   // Vacio = mismo protocolo y nombre que esta aplicacion, puerto 8091.
   sidecarPublicUrl: process.env.SIDECAR_PUBLIC_URL || '',
 
+  // Usuario de MariaDB solo con SELECT para el asistente (opcional; ver
+  // scripts/crear-usuario-asistente.js). Vacio = el usuario de la app, pero
+  // siempre en una transaccion de solo lectura.
+  assistantDb: {
+    user: process.env.ASSISTANT_DB_USER || '',
+    password: process.env.ASSISTANT_DB_PASSWORD || '',
+  },
+
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
     port: parseInt(process.env.DB_PORT || '3306', 10),
