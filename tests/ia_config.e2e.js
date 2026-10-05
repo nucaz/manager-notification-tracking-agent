@@ -197,6 +197,11 @@ async function main() {
     const noWeb = ollama.chats.slice(-1)[0];
     check('Sin proveedor de búsqueda activo, no se ofrece "buscar en internet" ni se promete en las instrucciones', noWeb.tools.length === 1
       && noWeb.messages[0].content.includes('no tienes búsqueda en internet'));
+    let ci = await json('/asistente/modelos', { _csrf: CSRF });
+    check('Con la nube inactiva, el panel la recibe aparte como inactiva (se ve deshabilitada, no se elige)',
+      !ci.json.providers.some((p) => p.id === nube.id) && ci.json.inactive.some((p) => p.id === nube.id && p.location === 'nube'));
+    ci = await json('/asistente/preguntar', { _csrf: CSRF, question: 'Hola con la nube inactiva [ia-e2e]', provider_id: nube.id });
+    check('Elegir un proveedor inactivo se ignora: responde el asignado', ci.json.provider && ci.json.provider.label === 'PRUEBA-IA Local');
     await pool.query('UPDATE ai_providers SET active = 1 WHERE id = ?', [nube.id]);
 
     // --- Eleccion por pregunta

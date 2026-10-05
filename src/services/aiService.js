@@ -236,13 +236,16 @@ async function webSearch(query) {
 // Opciones del selector "Responder con" del panel del asistente.
 async function choices() {
   const u = await uses();
-  const rows = (await list()).filter((p) => p.active);
+  const all = await list();
+  const rows = all.filter((p) => p.active);
   const web = await webSearchProvider();
   return {
     webLabel: web ? web.label : null, // las busquedas en internet pasan por este, responda quien responda
     allowed: u.choosePerQuestion,
     defaultId: u.assigned.asistente,
     providers: rows.map((p) => ({ ...publicInfo(p), web: !!p.supports_web })),
+    // Se muestran deshabilitados: explica por que no se puede elegir la nube.
+    inactive: all.filter((p) => !p.active).map(publicInfo),
   };
 }
 

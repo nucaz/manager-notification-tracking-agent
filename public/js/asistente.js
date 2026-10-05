@@ -268,7 +268,7 @@
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ _csrf: csrf }),
     }).then(function (r) { return r.json(); }).then(function (data) {
-      if (!data || !data.ok) return;
+      if (!data || !data.ok) throw new Error((data && data.error) || 'sin respuesta');
       choices = data;
       modelSelect.textContent = '';
       data.providers.forEach(function (p) {
@@ -276,14 +276,26 @@
         o.value = p.id;
         modelSelect.appendChild(o);
       });
+      // Los inactivos se ven pero no se eligen: asi se entiende por que
+      // no aparece, por ejemplo, el de la nube.
+      (data.inactive || []).forEach(function (p) {
+        var o = el('option', null, p.label + ' · ' + p.model + ' (inactivo: actívelo en Configuración > IA)');
+        o.value = p.id;
+        o.disabled = true;
+        modelSelect.appendChild(o);
+      });
       var remembered = null;
       try { remembered = Number(localStorage.getItem(MODEL_KEY)); } catch (e) { /* sin almacenamiento */ }
       var ids = data.providers.map(function (p) { return p.id; });
-      modelSelect.value = String(ids.indexOf(remembered) > -1 ? remembered : (data.defaultId || ids[0] || ''));
-      modelBox.hidden = !(data.allowed && data.providers.length > 1);
-      if (modelBox.hidden) modelSelect.value = String(data.defaultId || ids[0] || '');
+      modelSelect.value = String(ids.indexOf(remembered) > -1 ? remembered : (ids.indexOf(data.defaultId) > -1 ? data.defaultId : (ids[0] || '')));
+      modelBox.hidden = !(data.allowed && data.providers.length + (data.inactive || []).length > 1);
+      if (modelBox.hidden) modelSelect.value = String(ids.indexOf(data.defaultId) > -1 ? data.defaultId : (ids[0] || ''));
       showPrivacy();
-    }).catch(function () { /* sin selector: responde el modelo asignado */ });
+    }).catch(function (err) {
+      // Responde el modelo asignado; se avisa en vez de dejar el selector vacio.
+      modelBox.hidden = true;
+      privacy.textContent = 'No se pudo cargar la lista de modelos (' + err.message + '): responde el asignado al asistente.';
+    });
   }
   modelSelect.addEventListener('change', function () {
     try { localStorage.setItem(MODEL_KEY, modelSelect.value); } catch (e) { /* sin almacenamiento */ }

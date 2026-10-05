@@ -68,7 +68,9 @@ app.use((req, res, next) => {
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// no-cache: el navegador revalida cada vez (ETag, 304 si no cambio). Sin
+// esto Chrome reusaba un asistente.js viejo tras desplegar.
+app.use(express.static(path.join(__dirname, '..', 'public'), { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
 
 // Tope general por IP (despues de los archivos estaticos, que no cuentan):
 // muy por encima del uso de una persona, pero corta a un script que
