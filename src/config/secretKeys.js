@@ -11,6 +11,7 @@ const SECRET_KEYS = new Set([
   'whatsapp_access_token', 'whatsapp_app_secret',
   'telegram_bot_token',
   'devops_sidecar_password',
+  'backup_recovery_password',
 ]);
 
 module.exports = { SECRET_KEYS };

@@ -189,6 +189,8 @@ class JobPayload(BaseModel):
     include_content: bool = False
     include_diff: bool = True
     include_sidecar_db: bool = True
+    include_repos: bool = True
+    include_main_app: bool = False
     frequency: str = "daily"
     hour: int = Field(2, ge=0, le=23)
     minute: int = Field(0, ge=0, le=59)
@@ -212,6 +214,7 @@ def _job_out(db: Session, job: models.BackupJob) -> dict:
         "repo_ids": repo_ids, "repo_names": [r.name for r in repos] or ["Todos los repositorios activos"],
         "include_bundle": job.include_bundle, "include_content": job.include_content,
         "include_diff": job.include_diff, "include_sidecar_db": job.include_sidecar_db,
+        "include_repos": job.include_repos, "include_main_app": job.include_main_app,
         "frequency": job.frequency, "hour": job.hour, "minute": job.minute, "day_of_week": job.day_of_week,
         "day_of_month": job.day_of_month, "cron_expr": job.cron_expr,
         "schedule_text": scheduler.describe_schedule(job),
@@ -229,12 +232,12 @@ def _apply_job(db: Session, job: models.BackupJob, p: JobPayload) -> None:
         raise HTTPException(status_code=422, detail="Frecuencia no valida.")
     if p.day_of_week not in scheduler.DIAS:
         raise HTTPException(status_code=422, detail="Dia de la semana no valido.")
-    if not (p.include_bundle or p.include_content or p.include_diff or p.include_sidecar_db):
+    if not ((p.include_repos and (p.include_bundle or p.include_content or p.include_diff)) or p.include_sidecar_db or p.include_main_app):
         raise HTTPException(status_code=422, detail="Elija al menos un contenido para respaldar.")
     known_dests = {d.id for d in db.query(models.BackupDestination).all()}
     if any(d not in known_dests for d in p.destination_ids):
         raise HTTPException(status_code=422, detail="Uno de los destinos elegidos ya no existe.")
-    for field in ("name", "enabled", "include_bundle", "include_content", "include_diff", "include_sidecar_db",
+    for field in ("name", "enabled", "include_bundle", "include_content", "include_diff", "include_sidecar_db", "include_repos", "include_main_app",
                   "frequency", "hour", "minute", "day_of_week", "day_of_month", "incrementals_per_full",
                   "keep_chains_local", "keep_chains_remote"):
         setattr(job, field, getattr(p, field))
@@ -318,8 +321,11 @@ def test_job(job_id: int, db: Session = Depends(get_db)):
     checks = []
     repo_ids = backup_jobs.job_repo_ids(job)
     q = db.query(models.Repo).filter(models.Repo.id.in_(repo_ids)) if repo_ids else         db.query(models.Repo).filter(models.Repo.active.is_(True))
-    repos = q.order_by(models.Repo.name).all()
-    if not repos and not job.include_sidecar_db:
+    repos = q.order_by(models.Repo.name).all() if job.include_repos else []
+    if job.include_main_app:
+        ok, msg = backup_jobs.check_main_app()
+        checks.append({"kind": "aplicacion", "name": "Aplicación principal", "ok": ok, "message": msg})
+    if not repos and not job.include_sidecar_db and not job.include_main_app:
         checks.append({"kind": "repo", "name": "Repositorios", "ok": False, "message": "El trabajo no tiene repositorios que respaldar."})
     for repo in repos:
         ok, msg = backup_jobs.check_repo_ready(repo)

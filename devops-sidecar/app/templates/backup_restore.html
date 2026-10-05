@@ -37,6 +37,13 @@
       <label class="form-check-label" for="rmD"><strong>Preparar descarga</strong> (repositorio git + .zip de archivos)</label></div>
     <div class="form-check" id="rmSWrap"><input class="form-check-input" type="radio" name="rMode" id="rmS" value="subir">
       <label class="form-check-label" for="rmS"><strong>Subir a un repositorio Git</strong></label></div>
+    <div class="form-check d-none" id="rmAWrap"><input class="form-check-input" type="radio" name="rMode" id="rmA" value="aplicar">
+      <label class="form-check-label text-danger" for="rmA"><strong>Restaurar en la aplicación</strong> (reemplaza base y archivos)</label></div>
+  </div>
+  <div id="applyFields" class="d-none border border-danger rounded p-2 mb-2">
+    <div class="small mb-2">Reemplaza la base de datos de la aplicación principal y copia sus archivos. Antes se verifica cada archivo (SHA-256) y la aplicación guarda una copia de la base actual; después aplica las migraciones que falten. Úselo para recuperar el servidor o volver a un punto anterior.</div>
+    <label class="form-label" for="aConfirm">Escriba <code>RESTAURAR TODO</code></label>
+    <input class="form-control" id="aConfirm" autocomplete="off">
   </div>
   <div id="pushFields" class="row g-2 d-none">
     <div class="col-12"><label class="form-label" for="pUrl">URL del repositorio (recomendado: uno nuevo y vacío)</label>
@@ -61,22 +68,30 @@ const fmt = (iso) => iso ? new Date(iso + 'Z').toLocaleString('es-PE', { dateSty
 const kb = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).toFixed(1) + ' KB';
 const $ = (id) => document.getElementById(id);
 const ST = { ok: 'success', error: 'danger', en_curso: 'info' };
-const MODES = { verificar: 'prueba', descargar: 'descarga', subir: 'subida a Git' };
+const MODES = { verificar: 'prueba', descargar: 'descarga', subir: 'subida a Git', aplicar: 'restauración en la aplicación' };
+const label = (c) => (c.is_db ? 'Base del sidecar' : (c.is_app ? 'Aplicación completa' : c.repo));
 let selection = null;  // { point_id } o { destination_id, chain_path, seq }
 
 function show(text, kind = 'success') { $('msg').innerHTML = `<div class="alert alert-${kind}">${esc(text)}</div>`; window.scrollTo(0, 0); }
 
-function select(sel, text, isDb) {
+function syncFields() {
+  $('pushFields').classList.toggle('d-none', !$('rmS').checked);
+  $('applyFields').classList.toggle('d-none', !$('rmA').checked);
+}
+
+function select(sel, text, isDb, isApp) {
   selection = sel;
   $('actionWhat').innerHTML = text;
-  $('rmSWrap').classList.toggle('d-none', !!isDb);
-  if (isDb && $('rmS').checked) $('rmV').checked = true;
-  $('pushFields').classList.toggle('d-none', !$('rmS').checked);
+  $('rmSWrap').classList.toggle('d-none', !!(isDb || isApp));
+  $('rmAWrap').classList.toggle('d-none', !isApp);
+  if ((isDb || isApp) && $('rmS').checked) $('rmV').checked = true;
+  if (!isApp && $('rmA').checked) $('rmV').checked = true;
+  syncFields();
   $('actionCard').classList.remove('d-none');
   $('actionCard').scrollIntoView({ behavior: 'smooth' });
 }
 
-document.querySelectorAll('input[name="rMode"]').forEach((r) => r.addEventListener('change', () => $('pushFields').classList.toggle('d-none', !$('rmS').checked)));
+document.querySelectorAll('input[name="rMode"]').forEach((r) => r.addEventListener('change', syncFields));
 
 async function loadDestinations() {
   const dests = await (await fetch('/api/backup-destinations')).json();
@@ -96,7 +111,7 @@ $('btnExplore').addEventListener('click', async () => {
     <thead><tr><th>Trabajo</th><th>Repositorio</th><th>Cadena</th><th>Punto</th><th></th></tr></thead><tbody>
     ${data.chains.map((c, i) => `<tr>
       <td class="small">${esc(c.job)}</td>
-      <td>${c.is_db ? 'Base del sidecar' : esc(c.repo)}</td>
+      <td>${c.is_app ? '<strong>Aplicación completa</strong>' : esc(label(c))}</td>
       <td class="font-monospace small">${esc(c.chain_label)}${c.has_manifest ? '' : ' <span class="badge bg-warning text-dark" title="Sin manifest.json">sin manifest</span>'}</td>
       <td><select class="form-select form-select-sm" id="seq_${i}">${c.points.map((p) => `<option value="${p.seq}" ${p === c.points[c.points.length - 1] ? 'selected' : ''}>${p.seq === 0 ? 'Completo' : 'Incremental ' + p.seq} (${kb(p.size)})</option>`).join('')}</select></td>
       <td><button class="btn btn-sm btn-outline-primary" data-i="${i}">Elegir</button></td></tr>`).join('')}
@@ -106,7 +121,7 @@ $('btnExplore').addEventListener('click', async () => {
     const seq = Number($(`seq_${b.dataset.i}`).value);
     $('pointCard').classList.add('d-none');
     select({ destination_id: Number(id), chain_path: c.path, seq },
-      `<strong>${esc(c.is_db ? 'Base del sidecar' : c.repo)}</strong>, cadena <span class="font-monospace">${esc(c.chain_label)}</span>, punto ${seq === 0 ? 'completo' : '#' + seq} — desde <strong>${esc(data.destination)}</strong>`, c.is_db);
+      `<strong>${esc(label(c))}</strong>, cadena <span class="font-monospace">${esc(c.chain_label)}</span>, punto ${seq === 0 ? 'completo' : '#' + seq} — desde <strong>${esc(data.destination)}</strong>`, c.is_db, c.is_app);
   }));
 });
 
@@ -118,6 +133,9 @@ $('btnStart').addEventListener('click', async () => {
   if (mode === 'subir') {
     Object.assign(body, { push_url: $('pUrl').value, push_user: $('pUser').value, push_token: $('pToken').value });
     if (!confirm(`¿Subir el repositorio restaurado a ${body.push_url}? No se fuerza nada: si ya tiene ramas con otro historial, se detiene.`)) return;
+  } else if (mode === 'aplicar') {
+    body.confirmacion = $('aConfirm').value;
+    if (!confirm('Se reemplazará la base de datos y los archivos de la aplicación principal con este respaldo. ¿Continuar?')) return;
   } else if (!confirm(mode === 'verificar' ? '¿Probar la restauración de este punto?' : '¿Preparar la descarga de este punto?')) return;
   $('btnStart').disabled = true;
   const res = await fetch('/api/restores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -133,7 +151,7 @@ async function loadHistory() {
   $('history').innerHTML = rows.length ? rows.map((r) => `
     <details class="mb-2" ${r.status === 'en_curso' ? 'open' : ''}><summary>
       <span class="badge bg-${ST[r.status] || 'secondary'}">${esc(r.status)}</span>
-      #${r.id} ${esc(fmt(r.created_at))} — ${esc(MODES[r.mode] || r.mode)} de <strong>${esc(r.repo === '_sidecar_db' ? 'base del sidecar' : r.repo)}</strong>
+      #${r.id} ${esc(fmt(r.created_at))} — ${esc(MODES[r.mode] || r.mode)} de <strong>${esc(r.repo === '_sidecar_db' ? 'base del sidecar' : (r.repo === '_aplicacion' ? 'aplicación completa' : r.repo))}</strong>
       punto ${r.seq === 0 ? 'completo' : '#' + r.seq} desde ${esc(r.source)}</summary>
       ${r.outputs.map((o) => `<a class="btn btn-sm btn-success mt-1 me-1" href="/api/restores/${r.id}/archivo/${encodeURIComponent(o.name)}"><i class="bi bi-download"></i> ${esc(o.name)} (${kb(o.size)})</a>`).join('')}
       <pre class="bg-light p-2 small mb-0 mt-1" style="white-space: pre-wrap">${esc(r.log || 'En curso…')}</pre></details>`).join('')
@@ -150,11 +168,11 @@ async function loadHistory() {
   if (!res.ok) { show('Ese punto ya no existe.', 'warning'); return; }
   const data = await res.json();
   const p = data.point;
-  $('pointInfo').innerHTML = `Trabajo <strong>${esc(p.job)}</strong> — <strong>${esc(p.is_db ? 'Base del sidecar' : p.repo)}</strong>, cadena <span class="font-monospace">${esc(p.chain_label)}</span>, ${p.seq === 0 ? 'completo' : 'incremental #' + p.seq} del ${esc(fmt(p.created_at))}`;
+  $('pointInfo').innerHTML = `Trabajo <strong>${esc(p.job)}</strong> — <strong>${esc(label(p))}</strong>, cadena <span class="font-monospace">${esc(p.chain_label)}</span>, ${p.seq === 0 ? 'completo' : 'incremental #' + p.seq} del ${esc(fmt(p.created_at))}`;
   $('pointSource').innerHTML = data.sources.length ? data.sources.map((s) => `<option value="${esc(s.source)}">${esc(s.label)}</option>`).join('')
     : '<option value="">No está en el servidor ni confirmado en ningún destino</option>';
   $('pointCard').classList.remove('d-none');
-  if (data.sources.length) select({ point_id: p.id }, 'El punto seleccionado arriba.', p.is_db);
+  if (data.sources.length) select({ point_id: p.id }, 'El punto seleccionado arriba.', p.is_db, p.is_app);
 })();
 </script>
 {% endblock %}

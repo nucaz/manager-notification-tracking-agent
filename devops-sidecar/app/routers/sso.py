@@ -3,6 +3,7 @@ un formulario, no en la URL, para que el pase no quede en historiales ni
 en logs) un pase firmado de un solo uso, y este modulo abre su sesion.
 Ver services/sso_service.py y auth.py."""
 import html
+import re
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Form, Request
@@ -30,13 +31,15 @@ def _page(title: str, message: str, link: str | None, status_code: int) -> HTMLR
 
 
 @router.post("/sso")
-def sso_login(request: Request, token: str = Form("")):
+def sso_login(request: Request, token: str = Form(""), next: str = Form("/")):  # noqa: A002 - nombre del campo del formulario
     payload = sso_service.verify(token, "sidecar-sso")
     if not payload or not sso_service.consume_pass(payload):
         return _page("No se pudo entrar a DevOps", "El pase de acceso no es válido, venció o ya se usó. Vuelva a entrar desde la aplicación principal (menú DevOps).",
                      main_app_url(request), 401)
     secure = _is_https(request)
-    response = RedirectResponse("/", status_code=303)
+    # Solo rutas internas simples (nunca otro sitio): "/backups/trabajos".
+    target = next if re.fullmatch(r"/[A-Za-z0-9/_-]*", next or "") and not next.startswith("//") else "/"
+    response = RedirectResponse(target, status_code=303)
     response.set_cookie(SESSION_COOKIE, sso_service.session_token(payload), max_age=sso_service.SESSION_SECONDS,
                         httponly=True, samesite="lax", secure=secure, path="/")
     app_url = str(payload.get("app") or "")

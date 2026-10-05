@@ -28,7 +28,9 @@ router.get('/', requireAuth, async (req, res, next) => {
   const appUrl = `${req.protocol}://${req.get('host')}`;
   await auditService.log(req, { user, action: 'devops_sso', target: sidecarUrl });
   res.setHeader('Cache-Control', 'no-store');
-  res.render('devops/entrar', { title: 'Entrando a DevOps', action: `${sidecarUrl}/sso`, token: ssoService.userPass(user, appUrl), layout: false });
+  // ?ir=/backups/trabajos: pagina del sidecar a la que se entra (solo rutas internas simples).
+  const target = /^\/[a-z0-9/_-]*$/i.test(String(req.query.ir || '')) && !String(req.query.ir).startsWith('//') ? String(req.query.ir) : '/';
+  res.render('devops/entrar', { title: 'Entrando a DevOps', action: `${sidecarUrl}/sso`, token: ssoService.userPass(user, appUrl), next: target, layout: false });
 });
 
 module.exports = router;

@@ -404,3 +404,16 @@ recorre tablas chicas aunque haya índice).
 Filtrar "estado = En stock" sobre un `CASE` no usa índices. Se resuelve
 la etiqueta al código (`status IN ('en_stock')`) o a una condición fija
 (vencido = `fecha < CURDATE()`), y el índice sí sirve.
+
+## 36. Un respaldo sin la clave de cifrado no recupera la configuración
+
+La base guarda API keys y tokens cifrados con `CREDENTIALS_ENC_KEY`, que
+vive en el `.env`, fuera de la base. Un dump solo, restaurado en un
+servidor nuevo, deja toda esa configuración ilegible. El respaldo completo
+lleva los `.env` cifrados con una contraseña que el usuario guarda aparte.
+
+## 37. Probar la retención con ejecuciones seguidas destapa nombres repetidos
+
+Las cadenas se nombraban con fecha y hora al segundo. En producción corren
+de noche y no chocan, pero dos ejecuciones manuales seguidas compartían
+carpeta y la retención borraba la copia más nueva. Nombres únicos siempre.

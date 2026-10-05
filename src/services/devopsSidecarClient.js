@@ -47,6 +47,10 @@ async function testConnection() {
   return request('get', '/api/repos');
 }
 
+async function backupJobs() {
+  return request('get', '/api/backup-jobs');
+}
+
 async function listRepos() {
   return request('get', '/api/repos');
 }
@@ -89,6 +93,7 @@ module.exports = {
   getConfig,
   testConnection,
   listRepos,
+  backupJobs,
   leaderboard,
   latestReport,
   commitsHoy,

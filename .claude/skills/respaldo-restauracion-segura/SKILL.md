@@ -67,3 +67,30 @@ solo fixtures):
    valor cifrado sigue descifrando correctamente tras el ciclo completo.
 5. Confirma que el snapshot de seguridad automático realmente quedó en
    disco antes de la restauración.
+
+## Respaldo completo de la aplicación (formato y lo que ya costó)
+
+- **Un respaldo que sirve para recuperar un servidor perdido trae también
+  los secretos**: sin el `CREDENTIALS_ENC_KEY` del `.env`, las API keys
+  guardadas cifradas en la base son ilegibles. Van en
+  `secretos.env.enc`, cifrados con una contraseña de recuperación que el
+  usuario guarda fuera del servidor, en **formato de OpenSSL**
+  (`Salted__` + PBKDF2-SHA256 200 000 + AES-256-CBC): se abren sin la
+  aplicación (`src/services/fullBackupService.js`, `encryptOpenssl`).
+- Un solo motor de destinos externos: el de DevOps Sidecar (rclone). La
+  aplicación solo genera y restaura el `.tar.gz`
+  (`/interno/respaldo/generar|restaurar`, pase `app-backup`); el sidecar
+  lo programa, lo guarda en cadenas con SHA-256, lo envía y lo restaura.
+- **Verificar antes de restaurar**: SHA-256 de cada archivo contra el
+  manifest y rechazar nombres que tar tenga que "limpiar" (`../`, `/`):
+  busybox tar los neutraliza al extraer, pero un respaldo propio nunca
+  los trae, así que se rechaza el archivo entero.
+- **Después de restaurar, migrar**: un respaldo de una versión anterior
+  queda con el esquema viejo; `restoreArchive` corre las migraciones.
+- **Carpetas de cadena únicas**: dos ejecuciones en el mismo segundo
+  compartían carpeta y la retención borraba la más nueva
+  (`backup_jobs.unique_stamp`).
+- Pruebas: `tests/respaldo_completo.e2e.js` (incluye restauración de ida y
+  vuelta y un tar con `../` armado a mano) y
+  `devops-sidecar/tests/test_respaldo_aplicacion.py`.
+

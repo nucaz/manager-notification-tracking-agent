@@ -21,6 +21,21 @@ def get_db():
         db.close()
 
 
+# Columnas agregadas despues de crear la tabla (create_all no las agrega).
+_ADDED_COLUMNS = {
+    "backup_jobs": [
+        ("include_repos", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("include_main_app", "BOOLEAN NOT NULL DEFAULT 0"),
+    ],
+}
+
+
 def init_db():
     from . import models  # noqa: F401 (registra los modelos en Base antes de crear tablas)
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        for table, cols in _ADDED_COLUMNS.items():
+            have = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            for name, ddl in cols:
+                if name not in have:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")

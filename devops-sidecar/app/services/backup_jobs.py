@@ -19,6 +19,7 @@ import gzip
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import sqlite3
@@ -27,17 +28,21 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 from sqlalchemy.orm import Session
 
 from .. import models
 from ..config import settings
 from ..database import SessionLocal
-from . import git_service, rclone_service
+from . import git_service, rclone_service, sso_service
 
 logger = logging.getLogger("backup_jobs")
 _locks: dict[int, threading.Lock] = {}
 _locks_guard = threading.Lock()
 DB_KEY = "_sidecar_db"
+APP_KEY = "_aplicacion"  # respaldo completo de la aplicacion principal
+# Variables del contenedor que NO son del .env (las pone la imagen o Docker).
+_RUNTIME_ENV = {"PATH", "HOME", "HOSTNAME", "LANG", "GPG_KEY", "PWD", "TERM", "SHLVL", "PYTHON_VERSION", "PYTHON_SHA256", "OLDPWD"}
 
 
 def _lock_for(job_id: int) -> threading.Lock:
@@ -74,6 +79,17 @@ def jobs_root() -> Path:
 
 def chain_dir(job: models.BackupJob, repo_key: str, chain_label: str) -> Path:
     return jobs_root() / str(job.id) / repo_key / chain_label
+
+
+def unique_stamp(job: models.BackupJob, repo_key: str) -> str:
+    """Etiqueta de una cadena nueva: fecha y hora, con sufijo si ya existe
+    (dos ejecuciones en el mismo segundo no deben compartir carpeta)."""
+    base = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp, n = base, 1
+    while chain_dir(job, repo_key, stamp).exists():
+        n += 1
+        stamp = f"{base}_{n}"
+    return stamp
 
 
 def remote_sub(job: models.BackupJob, repo_key: str, chain_label: str) -> str:
@@ -268,7 +284,7 @@ def create_repo_point(db: Session, job: models.BackupJob, run: models.BackupJobR
 
 def create_db_point(db: Session, job: models.BackupJob, run: models.BackupJobRun, log) -> models.BackupPoint:
     """Copia consistente de sidecar.db (API de backup de sqlite), gzip."""
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = unique_stamp(job, DB_KEY)
     folder = chain_dir(job, DB_KEY, stamp)
     folder.mkdir(parents=True, exist_ok=True)
     raw = folder / "sidecar.db"
@@ -300,6 +316,111 @@ def create_db_point(db: Session, job: models.BackupJob, run: models.BackupJobRun
     db.commit()
     log(f"  base del sidecar: copia de {entry['size'] / 1024:.1f} KB")
     return point
+
+
+def sidecar_env() -> dict:
+    """El .env de este modulo, para el archivo de secretos cifrado del
+    respaldo completo (lo cifra la aplicacion principal con la contrasena
+    de recuperacion; viaja solo por la red interna de Docker)."""
+    return {k: v for k, v in os.environ.items()
+            if re.fullmatch(r"[A-Z][A-Z0-9_]*", k) and k not in _RUNTIME_ENV and not k.startswith(("PYTHON", "LC_"))}
+
+
+def _main_app(path: str) -> str:
+    return f"{settings.main_app_internal_url.rstrip('/')}/interno/respaldo{path}"
+
+
+def check_main_app() -> tuple[bool, str]:
+    """Para "Probar" un trabajo: la aplicacion principal responde y acepta el pase."""
+    if not sso_service.enabled():
+        return False, "Falta SSO_SHARED_SECRET: sin acceso unico no se puede pedir el respaldo a la aplicacion principal."
+    try:
+        r = httpx.post(_main_app("/restaurar"), headers={"Authorization": f"Bearer {sso_service.app_backup_pass()}"}, timeout=15)
+    except httpx.RequestError as e:
+        return False, f"La aplicacion principal no responde en {settings.main_app_internal_url} ({type(e).__name__})."
+    if r.status_code == 401:
+        return False, "La aplicacion principal rechazo el pase (SSO_SHARED_SECRET distinto en los dos .env)."
+    return True, "La aplicacion principal responde y acepta el pase."
+
+
+def create_app_point(db: Session, job: models.BackupJob, run: models.BackupJobRun, log) -> models.BackupPoint:
+    """Respaldo completo de la aplicacion principal: un .tar.gz por noche
+    (cada uno es un completo; la retencion conserva las ultimas N noches)."""
+    if not sso_service.enabled():
+        raise RuntimeError("Falta SSO_SHARED_SECRET: no se puede pedir el respaldo a la aplicacion principal.")
+    stamp = unique_stamp(job, APP_KEY)
+    folder = chain_dir(job, APP_KEY, stamp)
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"aplicacion_{stamp}.tar.gz"
+    try:
+        with httpx.stream("POST", _main_app("/generar"), json={"sidecar_env": sidecar_env()},
+                          headers={"Authorization": f"Bearer {sso_service.app_backup_pass()}"},
+                          timeout=httpx.Timeout(3600, connect=15)) as r:
+            if r.status_code != 200:
+                r.read()
+                try:
+                    detail = r.json().get("error")
+                except ValueError:
+                    detail = r.text[:300]
+                raise RuntimeError(f"La aplicacion principal respondio HTTP {r.status_code}: {detail}")
+            expected = r.headers.get("x-respaldo-sha256", "")
+            secrets = r.headers.get("x-respaldo-secretos") == "si"
+            with open(target, "wb") as f:
+                for chunk in r.iter_bytes(1024 * 1024):
+                    f.write(chunk)
+    except httpx.RequestError as e:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise RuntimeError(f"No se pudo contactar a la aplicacion principal ({type(e).__name__}).") from e
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    digest = _sha256(target)
+    if expected and digest != expected:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise RuntimeError("El respaldo llego incompleto (SHA-256 distinto); se descarta.")
+    (folder / "RESTAURAR.txt").write_text(
+        "Respaldo COMPLETO de la aplicacion Gestion de Licencias, Dominios y Contratos.\n"
+        "Dentro del .tar.gz: basedatos.sql.gz, archivos/, secretos.env.enc (los .env cifrados) y su propio RESTAURAR.txt\n"
+        "con los pasos detallados. Resumen:\n"
+        "  1. Instalar la aplicacion en el servidor nuevo y recuperar los .env:\n"
+        "     tar -xzf aplicacion_*.tar.gz && openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -in secretos.env.enc -out secretos.env\n"
+        "  2. DevOps Sidecar > Respaldos > Restaurar > este punto > 'Restaurar en la aplicacion'\n"
+        "     (o Aplicacion > Configuracion > Respaldos > Restaurar respaldo completo).\n",
+        encoding="utf-8")
+    entry = {"name": target.name, "size": target.stat().st_size, "sha256": digest}
+    (folder / "manifest.json").write_text(json.dumps({"repo": APP_KEY, "points": [
+        {"seq": 0, "kind": "full", "created_at": datetime.utcnow().isoformat(), "files": [entry]}]}, indent=2), encoding="utf-8")
+    point = models.BackupPoint(job_id=job.id, run_id=run.id, repo_id=None, repo_name=APP_KEY, kind="full", seq=0,
+                               chain_label=stamp, files_json=json.dumps([entry]), total_bytes=entry["size"])
+    db.add(point)
+    db.flush()
+    point.chain_id = point.id
+    db.commit()
+    log(f"  aplicacion completa: {entry['size'] / 1048576:.1f} MB{'' if secrets else ' (SIN los .env: falta la contrasena de recuperacion en la aplicacion)'}")
+    return point
+
+
+DEFAULT_APP_JOB = "Aplicación completa (nocturno)"
+
+
+def ensure_app_job(db: Session) -> models.BackupJob | None:
+    """Una sola vez: crea el respaldo nocturno de la aplicacion completa
+    (02:30, todos los destinos activos, 7 noches en el servidor y 30 en
+    cada destino). Si alguien lo borra, no se vuelve a crear."""
+    if not sso_service.enabled() or db.get(models.AppSetting, "app_backup_job_created"):
+        return None
+    job = None
+    if not db.query(models.BackupJob).filter(models.BackupJob.include_main_app.is_(True)).first():
+        dests = [d.id for d in db.query(models.BackupDestination).filter(models.BackupDestination.enabled.is_(True)).all()]
+        job = models.BackupJob(name=DEFAULT_APP_JOB, enabled=True, repo_ids_json="[]", include_repos=False, include_bundle=False,
+                               include_diff=False, include_content=False, include_sidecar_db=True, include_main_app=True,
+                               frequency="daily", hour=2, minute=30, incrementals_per_full=0, keep_chains_local=7,
+                               keep_chains_remote=30, destination_ids_json=json.dumps(dests))
+        db.add(job)
+        logger.info("Creado el trabajo '%s' (02:30, destinos %s).", DEFAULT_APP_JOB, dests)
+    db.add(models.AppSetting(key="app_backup_job_created", value=datetime.utcnow().isoformat()))
+    db.commit()
+    return job
 
 
 def sync_to_destinations(db: Session, job, destinations, log) -> int:
@@ -406,7 +527,7 @@ def run_job(job_id: int, trigger: str = "programado") -> int | None:
         q = db.query(models.Repo).filter(models.Repo.active.is_(True))
         if repo_ids:
             q = db.query(models.Repo).filter(models.Repo.id.in_(repo_ids))
-        repos = q.order_by(models.Repo.name).all()
+        repos = q.order_by(models.Repo.name).all() if job.include_repos else []
         dest_ids = job_destination_ids(job)
         destinations = [d for d in db.query(models.BackupDestination).filter(models.BackupDestination.id.in_(dest_ids)).all()
                         if d.enabled] if dest_ids else []
@@ -428,6 +549,16 @@ def run_job(job_id: int, trigger: str = "programado") -> int | None:
                 db.rollback()
                 errors += 1
                 log(f"  {repo.name}: ERROR {e}")
+        if job.include_main_app:
+            try:
+                point = create_app_point(db, job, run, log)
+                new_points.append(point)
+                if "SIN los .env" in lines[-1]:
+                    warnings += 1
+            except Exception as e:  # noqa: BLE001
+                db.rollback()
+                errors += 1
+                log(f"  aplicacion completa: ERROR {e}")
         if job.include_sidecar_db:
             try:
                 new_points.append(create_db_point(db, job, run, log))

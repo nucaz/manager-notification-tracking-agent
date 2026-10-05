@@ -1,0 +1,102 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="mb-0">Respaldos</h2>
+  <a href="/configuracion" class="btn btn-outline-secondary">Volver a Configuración</a>
+</div>
+<p class="text-muted">Un respaldo completo trae todo lo necesario para volver a levantar la aplicación en otro servidor: la base de datos (incluida la configuración de GLPI, correo, IA, WhatsApp y Telegram), los adjuntos, facturas, recibos y diagramas, y los <code>.env</code> de la aplicación y de DevOps cifrados con la contraseña de recuperación.</p>
+
+<div class="card p-3 mb-3 <%= jobs.length ? '' : 'border-warning' %>" id="programados">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">Respaldo programado</h5>
+    <a class="btn btn-sm btn-outline-primary" href="<%= sidecarJobsUrl %>">Gestionar horario y destinos en DevOps</a>
+  </div>
+  <p class="small text-muted mb-2">Lo ejecuta DevOps Sidecar: guarda las últimas copias en el servidor y las envía a sus destinos externos (OneDrive, Microsoft 365, Google Drive, carpeta de red SMB, S3, SFTP, WebDAV o un disco), con cifrado opcional.</p>
+  <% if (sidecarError) { %>
+    <div class="alert alert-warning mb-0">No se pudo consultar DevOps Sidecar: <%= sidecarError %></div>
+  <% } else if (!jobs.length) { %>
+    <div class="alert alert-warning mb-0">Ningún trabajo de DevOps respalda la aplicación completa. Cree uno (o edite uno) y marque "Aplicación completa".</div>
+  <% } else { %>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0" data-tabla="no">
+        <thead><tr><th>Trabajo</th><th>Horario</th><th>Próximo</th><th>Último</th><th>Destinos externos</th></tr></thead>
+        <tbody>
+          <% jobs.forEach(function (j) { %>
+            <tr>
+              <td><strong><%= j.name %></strong><%= j.enabled ? '' : ' (pausado)' %></td>
+              <td><%= j.schedule_text %></td>
+              <td><%= j.next_run || '—' %></td>
+              <td>
+                <% if (j.last_run_at) { %>
+                  <span class="badge <%= j.last_status === 'ok' ? 'text-bg-success' : (j.last_status === 'error' ? 'text-bg-danger' : 'text-bg-warning') %>"><%= ({ ok: 'Correcto', ok_con_avisos: 'Con avisos', error: 'Error' })[j.last_status] || j.last_status %></span>
+                  <span class="small text-muted"><%= String(j.last_run_at).slice(0, 16).replace('T', ' ') %> (UTC)</span>
+                <% } else { %><span class="text-muted">Todavía no se ejecutó</span><% } %>
+              </td>
+              <td><%= j.destination_names.length ? j.destination_names.join(', ') : 'Solo en el servidor' %>
+                <% if (!j.destination_names.length) { %><div class="small text-danger">Sin destino externo: si se pierde el servidor, se pierden también estas copias.</div><% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <form method="post" action="/configuracion/respaldos/contrasena" class="card p-3 h-100 <%= hasPassword ? '' : 'border-danger' %>" autocomplete="off" id="form_contrasena">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h5>Contraseña de recuperación</h5>
+      <% if (hasPassword) { %>
+        <p class="mb-2"><span class="badge text-bg-success">Configurada</span> <span class="small text-muted"><%= passwordSetAt ? 'desde ' + passwordSetAt : '' %></span></p>
+      <% } else { %>
+        <div class="alert alert-danger py-2">Sin contraseña, los respaldos <strong>no</strong> incluyen los <code>.env</code>. En un servidor nuevo, las API keys y tokens guardados no se podrán leer.</div>
+      <% } %>
+      <p class="small text-muted">Cifra los <code>.env</code> dentro de cada respaldo (AES-256, formato de OpenSSL: se abren incluso sin esta aplicación). <strong>Anótela fuera del servidor</strong> (gestor de contraseñas o sobre cerrado): si se pierde, esa parte del respaldo no se puede abrir.</p>
+      <div class="mb-2">
+        <label class="form-label" for="pw1"><%= hasPassword ? 'Nueva contraseña' : 'Contraseña' %> (12 caracteres o más)</label>
+        <input type="password" class="form-control" name="password" id="pw1" minlength="12" required autocomplete="new-password">
+      </div>
+      <div class="mb-2">
+        <label class="form-label" for="pw2">Repetir</label>
+        <input type="password" class="form-control" name="password2" id="pw2" minlength="12" required autocomplete="new-password">
+      </div>
+      <div><button class="btn btn-primary btn-sm" type="submit">Guardar contraseña</button></div>
+    </form>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-3 h-100">
+      <h5>Respaldo ahora</h5>
+      <p class="small text-muted">Descarga un respaldo completo (.tar.gz) en este momento. El programado además incluye el <code>.env</code> de DevOps.</p>
+      <div><a class="btn btn-outline-primary" href="/configuracion/respaldos/descargar" id="btn_descargar"><i class="bi bi-download"></i> Descargar respaldo completo</a></div>
+      <hr>
+      <h6>Recuperar si el servidor se pierde</h6>
+      <ol class="small mb-0">
+        <li>Instale la aplicación en el servidor nuevo y recupere los <code>.env</code> del respaldo (<code>RESTAURAR.txt</code> trae el comando).</li>
+        <li>En DevOps, agregue de nuevo el destino externo y vaya a <a href="<%= sidecarRestoreUrl %>">Restaurar</a>: elija el respaldo y "Restaurar en la aplicación".</li>
+        <li>O suba el .tar.gz aquí abajo.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<form method="post" action="/configuracion/respaldos/restaurar" enctype="multipart/form-data" class="card p-3 mt-3 border-danger" id="form_restaurar"
+  onsubmit="return confirm('Se reemplazará TODA la base de datos y se copiarán los archivos del respaldo. ¿Continuar?');">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <h5 class="text-danger">Restaurar respaldo completo</h5>
+  <p class="small text-muted">Reemplaza la base de datos y copia los archivos del respaldo (no borra archivos que existan y no estén en él). Antes se revisa el SHA-256 de cada archivo y se guarda una copia de la base actual; después se aplican las migraciones que falten. Las sesiones vuelven a las del respaldo: es posible que deba iniciar sesión otra vez.</p>
+  <div class="row g-2 align-items-end">
+    <div class="col-md-6">
+      <label class="form-label" for="archivo">Archivo respaldo_aplicacion_....tar.gz</label>
+      <input type="file" name="file" id="archivo" accept=".gz,.tgz" class="form-control" required>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="confirmacion">Escriba <code><%= confirmation %></code></label>
+      <input type="text" name="confirmacion" id="confirmacion" class="form-control" required>
+    </div>
+    <div class="col-md-2"><button type="submit" class="btn btn-danger w-100">Restaurar</button></div>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

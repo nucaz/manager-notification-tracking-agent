@@ -769,6 +769,46 @@ tengas, probamos la conexión real.
 
 ## 10. Copias de seguridad y migración a otro servidor
 
+### 10.0 Respaldo completo programado (recomendado)
+
+**Configuración > Respaldos** (solo `admin`). Un respaldo completo es un
+solo archivo `respaldo_aplicacion_<fecha>.tar.gz` con todo lo necesario
+para volver a levantar la aplicación en otro servidor:
+
+| Dentro | Qué es |
+|---|---|
+| `basedatos.sql.gz` | la base completa (datos y toda la configuración) |
+| `archivos/` | adjuntos, facturas, recibos y diagramas |
+| `secretos.env.enc` | los `.env` de la aplicación y de DevOps Sidecar, cifrados con la **contraseña de recuperación** (AES-256, formato de OpenSSL) |
+| `manifest.json` | versión, migraciones, cantidades y SHA-256 de cada archivo |
+| `RESTAURAR.txt` | los pasos para recuperar todo |
+
+- **Programado**: lo ejecuta DevOps Sidecar con su motor de respaldos. Al
+  arrancar crea una vez el trabajo **"Aplicación completa (nocturno)"**
+  (02:30, todos los destinos activos, 7 noches en el servidor y 30 en
+  cada destino); se cambia en DevOps > Respaldos > Trabajos programados
+  (casilla "Aplicación completa"). Los destinos externos son los del
+  sidecar: OneDrive, Microsoft 365, Google Drive, carpeta de red SMB, S3,
+  SFTP, WebDAV o un disco, con cifrado opcional (rclone crypt).
+- **Contraseña de recuperación**: sin ella el respaldo no incluye los
+  `.env`, y en un servidor nuevo no se podrían leer las API keys y tokens
+  guardados (están cifrados con `CREDENTIALS_ENC_KEY`). Anótela fuera del
+  servidor.
+- **Restaurar**: en DevOps > Respaldos > Restaurar (explorar el destino,
+  elegir el punto, "Restaurar en la aplicación", frase `RESTAURAR TODO`),
+  o subiendo el `.tar.gz` en Configuración > Respaldos. Antes se revisa el
+  SHA-256 de cada archivo y se guarda una copia de la base actual; después
+  se aplican las migraciones que falten.
+
+**Si se pierde el servidor**:
+1. Instale la aplicación en el servidor nuevo (sección 2).
+2. Recupere los `.env` del respaldo:
+   `tar -xzf respaldo_aplicacion_*.tar.gz secretos.env.enc && openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -in secretos.env.enc -out secretos.env`
+   y copie cada sección en `glpi-licencias-app/.env` y `devops-sidecar/.env`.
+3. `docker compose up -d`; en DevOps agregue de nuevo el destino externo
+   y restaure desde "Restaurar". Sin la aplicación: `RESTAURAR.txt`
+   trae los comandos a mano (`gunzip | mariadb`, `docker cp archivos/`).
+
 Toda la app vive en tres sitios: la **base de datos** (datos + configuración
 completa: GLPI, SMTP, proveedores de IA, WhatsApp, Telegram — todo lo que se edita
 desde Configuración se guarda en la tabla `settings`, así que un dump de

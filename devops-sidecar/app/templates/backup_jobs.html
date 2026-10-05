@@ -38,12 +38,18 @@
       </div>
       <div class="col-md-6">
         <label class="form-label fw-semibold">Qué respaldar</label>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="include_main_app" id="cApp">
+          <label class="form-check-label" for="cApp"><strong>Aplicación completa</strong> (Gestión de Licencias: base de datos, adjuntos y los .env cifrados): para recuperar todo en un servidor nuevo</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="include_repos" id="cRepos" checked>
+          <label class="form-check-label" for="cRepos">Repositorios (los marcados a la izquierda):</label></div>
+        <div class="ms-4">
         <div class="form-check"><input class="form-check-input" type="checkbox" name="include_bundle" id="cBundle" checked>
           <label class="form-check-label" for="cBundle">Historial git completo / incremental (git bundle, restaurable)</label></div>
         <div class="form-check"><input class="form-check-input" type="checkbox" name="include_diff" id="cDiff" checked>
           <label class="form-check-label" for="cDiff">Cambios legibles (.diff) desde el respaldo anterior</label></div>
         <div class="form-check"><input class="form-check-input" type="checkbox" name="include_content" id="cContent">
           <label class="form-check-label" for="cContent">Archivos tal cual, sin .git (solo en los completos)</label></div>
+        </div>
         <div class="form-check"><input class="form-check-input" type="checkbox" name="include_sidecar_db" id="cDb" checked>
           <label class="form-check-label" for="cDb">Base de configuración del sidecar (sidecar.db)</label></div>
       </div>
@@ -131,12 +137,12 @@ function openForm(job) {
   editing = job ? job.id : null;
   document.getElementById('formTitle').textContent = job ? `Editar trabajo: ${job.name}` : 'Nuevo trabajo';
   const d = job || { name: '', enabled: true, repo_ids: [], include_bundle: true, include_diff: true, include_content: false,
-    include_sidecar_db: true, frequency: 'daily', hour: 2, minute: 0, day_of_week: 'sun', day_of_month: 1, cron_expr: '',
+    include_sidecar_db: true, include_repos: true, include_main_app: false, frequency: 'daily', hour: 2, minute: 0, day_of_week: 'sun', day_of_month: 1, cron_expr: '',
     incrementals_per_full: 6, keep_chains_local: 2, keep_chains_remote: 4, destination_ids: [] };
   ['name', 'frequency', 'hour', 'minute', 'day_of_week', 'day_of_month', 'incrementals_per_full', 'keep_chains_local', 'keep_chains_remote']
     .forEach((k) => { F(k).value = d[k]; });
   F('cron_expr').value = d.cron_expr || '';
-  ['enabled', 'include_bundle', 'include_diff', 'include_content', 'include_sidecar_db'].forEach((k) => { F(k).checked = d[k]; });
+  ['enabled', 'include_bundle', 'include_diff', 'include_content', 'include_sidecar_db', 'include_repos', 'include_main_app'].forEach((k) => { F(k).checked = d[k] !== false && !!d[k]; });
   document.querySelectorAll('.repo-check').forEach((cb) => { cb.checked = d.repo_ids.includes(Number(cb.value)); });
   document.getElementById('destChecks').innerHTML = DESTS.length ? DESTS.map((x) => `
     <div class="form-check"><input class="form-check-input dest-check" type="checkbox" value="${x.id}" id="d${x.id}" ${d.destination_ids.includes(x.id) ? 'checked' : ''}>
@@ -158,6 +164,7 @@ form.addEventListener('submit', async (e) => {
     day_of_month: Number(F('day_of_month').value), cron_expr: F('cron_expr').value,
     include_bundle: F('include_bundle').checked, include_diff: F('include_diff').checked,
     include_content: F('include_content').checked, include_sidecar_db: F('include_sidecar_db').checked,
+    include_repos: F('include_repos').checked, include_main_app: F('include_main_app').checked,
     incrementals_per_full: Number(F('incrementals_per_full').value), keep_chains_local: Number(F('keep_chains_local').value),
     keep_chains_remote: Number(F('keep_chains_remote').value),
     repo_ids: [...document.querySelectorAll('.repo-check:checked')].map((cb) => Number(cb.value)),
@@ -181,7 +188,7 @@ async function load() {
     const st = j.running ? STATUS.en_curso : (STATUS[j.last_status] || ['secondary', 'sin ejecutar']);
     return `<tr>
       <td><a href="/backups/trabajos/${j.id}"><strong>${esc(j.name)}</strong></a> ${j.enabled ? '' : '<span class="badge bg-secondary">pausado</span>'}
-        <div class="small text-muted">${esc(j.repo_names.join(', '))}</div></td>
+        <div class="small text-muted">${j.include_main_app ? "<strong>Aplicación completa</strong> · " : ""}${j.include_repos ? esc(j.repo_names.join(", ")) : "Sin repositorios"}${j.include_sidecar_db ? " · base del sidecar" : ""}</div></td>
       <td class="small">${esc(j.schedule_text)}<div class="text-muted">${j.next_run ? 'Próxima: ' + esc(j.next_run) : ''}</div></td>
       <td class="small">1 completo + ${j.incrementals_per_full} incr.<div class="text-muted">conserva ${j.keep_chains_local} aquí / ${j.keep_chains_remote} fuera</div></td>
       <td class="small">${j.destination_names.length ? esc(j.destination_names.join(', ')) : '<span class="text-muted">solo servidor</span>'}</td>

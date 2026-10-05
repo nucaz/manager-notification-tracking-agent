@@ -54,6 +54,8 @@ app.use(
 // IA para DevOps Sidecar (red interna, pase firmado): con su propio parser
 // porque el diff de una auditoria supera el limite del parser global.
 app.use('/interno/ia', require('./routes/internalAi'));
+// Respaldo completo para DevOps Sidecar (genera y restaura; cuerpo crudo .tar.gz).
+app.use('/interno/respaldo', require('./routes/internalBackup'));
 
 // Cabeceras de seguridad basicas en toda respuesta.
 app.use((req, res, next) => {
@@ -161,6 +163,7 @@ app.use('/red', networkRoutes);
 app.use('/glpi', glpiRoutes);
 app.use('/configuracion/catalogos', catalogRoutes);
 app.use('/configuracion/ia', require('./routes/aiSettings'));
+app.use('/configuracion/respaldos', require('./routes/backups'));
 app.use('/configuracion', settingsRoutes);
 app.use('/usuarios', usersRoutes);
 app.use('/auditoria', auditRoutes);

@@ -11,6 +11,7 @@ La carga lleva siempre `aud` (para que sirve el pase) y `exp` (vence):
   - sidecar-session  la sesion de este modulo (cookie)
   - sidecar-origin   de que aplicacion principal vino (para volver a ella)
   - sidecar-api      llamadas de la aplicacion principal a esta API
+  - app-backup       respaldo completo de la aplicacion principal (generar / restaurar)
   - app-ai           este modulo pide a la aplicacion principal que genere
                      con la IA configurada alla (configuracion unica)
 
@@ -94,6 +95,11 @@ def session_token(payload: dict) -> str:
         "aud": "sidecar-session", "exp": int(time.time()) + SESSION_SECONDS,
         "sub": payload.get("sub"), "name": payload.get("name"), "role": payload.get("role"),
     })
+
+
+def app_backup_pass() -> str:
+    """Pase para pedir o restaurar el respaldo completo de la aplicacion principal."""
+    return sign({"aud": "app-backup", "exp": int(time.time()) + 300, "sub": "devops-sidecar"})
 
 
 def app_ai_pass() -> str:

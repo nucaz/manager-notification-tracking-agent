@@ -17,7 +17,8 @@ router = APIRouter(prefix="/api", tags=["restauracion"], dependencies=[Depends(r
 
 
 class RestorePayload(BaseModel):
-    mode: str  # verificar | descargar | subir
+    mode: str  # verificar | descargar | subir | aplicar (respaldo completo de la aplicacion)
+    confirmacion: str | None = None  # "RESTAURAR TODO" para aplicar
     # Opcion A: un punto conocido por el sidecar + de donde leerlo.
     point_id: int | None = None
     source: str | None = None  # "local" o el id del destino
@@ -66,13 +67,14 @@ def point_sources(point_id: int, db: Session = Depends(get_db)):
             seen.add(t.destination_id)
             sources.append({"source": str(t.destination_id), "label": t.destination.name + (" (cifrado)" if t.destination.encrypt else "")})
     return {"point": {"id": p.id, "job": p.job.name, "repo": p.repo_name, "chain_label": p.chain_label, "seq": p.seq,
-                      "kind": p.kind, "created_at": p.created_at.isoformat(), "is_db": p.repo_name == backup_jobs.DB_KEY},
+                      "kind": p.kind, "created_at": p.created_at.isoformat(), "is_db": p.repo_name == backup_jobs.DB_KEY,
+                      "is_app": p.repo_name == backup_jobs.APP_KEY},
             "sources": sources}
 
 
 @router.post("/restores", status_code=202)
 def start_restore(payload: RestorePayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    if payload.mode not in ("verificar", "descargar", "subir"):
+    if payload.mode not in ("verificar", "descargar", "subir", "aplicar"):
         raise HTTPException(status_code=422, detail="Modo no valido.")
     if restore_service.is_busy():
         raise HTTPException(status_code=409, detail="Ya hay una restauracion en curso; espere a que termine.")
@@ -105,9 +107,14 @@ def start_restore(payload: RestorePayload, background_tasks: BackgroundTasks, db
         repo_name, seq = chain_path.split("/")[1], payload.seq
 
     push = None
+    if payload.mode == "aplicar":
+        if repo_name != backup_jobs.APP_KEY:
+            raise HTTPException(status_code=422, detail="Solo un respaldo de la aplicacion completa se restaura en la aplicacion.")
+        if (payload.confirmacion or "").strip() != "RESTAURAR TODO":
+            raise HTTPException(status_code=422, detail='Escriba exactamente "RESTAURAR TODO" para confirmar.')
     if payload.mode == "subir":
-        if repo_name == backup_jobs.DB_KEY:
-            raise HTTPException(status_code=422, detail="La base del sidecar no se sube a Git: use Descargar.")
+        if repo_name in (backup_jobs.DB_KEY, backup_jobs.APP_KEY):
+            raise HTTPException(status_code=422, detail="Esta copia no se sube a Git: use Descargar.")
         url = (payload.push_url or "").strip()
         problem = git_targets.validate_url(url)
         if problem:

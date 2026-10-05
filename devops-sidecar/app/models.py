@@ -180,6 +180,12 @@ class BackupJob(Base):
     include_content = Column(Boolean, nullable=False, default=False)  # archivos sin .git (solo en completos)
     include_diff = Column(Boolean, nullable=False, default=True)      # .diff legible de los cambios
     include_sidecar_db = Column(Boolean, nullable=False, default=True)
+    # False = el trabajo no respalda repositorios (ej. solo la aplicacion).
+    include_repos = Column(Boolean, nullable=False, default=True)
+    # Respaldo completo de la aplicacion principal (base, archivos y .env
+    # cifrados): lo genera la app (/interno/respaldo/generar), aqui se guarda
+    # en cadenas y se envia a los destinos. Ver backup_jobs.create_app_point.
+    include_main_app = Column(Boolean, nullable=False, default=False)
     # daily | weekly | monthly | cron
     frequency = Column(String(10), nullable=False, default="daily")
     hour = Column(Integer, nullable=False, default=2)

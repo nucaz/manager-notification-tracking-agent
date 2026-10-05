@@ -28,12 +28,13 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import httpx
 from sqlalchemy.orm import Session
 
 from .. import models
 from ..config import settings
 from ..database import SessionLocal
-from . import backup_jobs, git_service, git_targets, rclone_service
+from . import backup_jobs, git_service, git_targets, rclone_service, sso_service
 
 logger = logging.getLogger("restore")
 RESTORE_KEEP_DAYS = 3
@@ -80,7 +81,8 @@ def explore_destination(db: Session, dest: models.BackupDestination) -> list[dic
             continue
         key, name, size = "/".join(parts[:3]), parts[3], int(item.get("Size") or 0)
         c = chains.setdefault(key, {"path": key, "job": parts[0], "repo": parts[1], "chain_label": parts[2],
-                                    "has_manifest": False, "is_db": parts[1] == backup_jobs.DB_KEY, "points": {}})
+                                    "has_manifest": False, "is_db": parts[1] == backup_jobs.DB_KEY,
+                                    "is_app": parts[1] == backup_jobs.APP_KEY, "points": {}})
         if name == "manifest.json":
             c["has_manifest"] = True
             continue
@@ -282,6 +284,62 @@ def _restore_db(rr: models.RestoreRun, src: Path, work: Path, log) -> list[dict]
     return []
 
 
+def _restore_app(rr: models.RestoreRun, src: Path, work: Path, log) -> list[dict]:
+    """Respaldo completo de la aplicacion principal: verificar (SHA-256 y
+    contenido), descargar el .tar.gz o aplicarlo en la aplicacion."""
+    files = sorted(src.glob("aplicacion_*.tar.gz"))
+    if not files:
+        raise RestoreError("La cadena no tiene ningun respaldo de la aplicacion.")
+    archive = files[-1]
+    mf = src / "manifest.json"
+    if mf.exists():
+        entries = {f["name"]: f for p in json.loads(mf.read_text(encoding="utf-8")).get("points", []) for f in p["files"]}
+        if archive.name in entries and backup_jobs._sha256(archive) != entries[archive.name]["sha256"]:
+            raise RestoreError(f"{archive.name} esta DANADO: su SHA-256 no coincide con el del manifest.")
+        log("Integridad del archivo: SHA-256 correcto.")
+    try:
+        with tarfile.open(archive, "r:gz") as tar:
+            names = tar.getnames()
+            inner = json.loads(tar.extractfile("manifest.json").read().decode("utf-8"))
+    except (tarfile.TarError, KeyError, ValueError, AttributeError) as e:
+        raise RestoreError(f"No se pudo leer el respaldo: {e}") from e
+    if "basedatos.sql.gz" not in names:
+        raise RestoreError("El respaldo no trae la base de datos.")
+    cant = inner.get("cantidades") or {}
+    log(f"Respaldo del {str(inner.get('creado', '?'))[:16]} (servidor {inner.get('servidor', '?')}): "
+        f"{(inner.get('archivos') or {}).get('cantidad', 0)} archivo(s), {cant.get('mobile_devices', '?')} celulares, "
+        f"{cant.get('software_licenses', '?')} licencias, {cant.get('users', '?')} usuarios; "
+        f".env cifrados: {'si' if (inner.get('secretos') or {}).get('incluidos') else 'NO'}.")
+    if rr.mode == "descargar":
+        out = work / archive.name
+        shutil.copy2(archive, out)
+        log(f"Listo para descargar: {archive.name}. Ver RESTAURAR.txt dentro del archivo.")
+        return [{"name": out.name, "size": out.stat().st_size}]
+    if rr.mode == "aplicar":
+        log("Enviando a la aplicacion principal para restaurar (base y archivos)...")
+        try:
+            with open(archive, "rb") as f:
+                r = httpx.post(backup_jobs._main_app("/restaurar"), content=f,
+                               headers={"Authorization": f"Bearer {sso_service.app_backup_pass()}", "X-Confirmacion": "RESTAURAR TODO",
+                                        "Content-Type": "application/gzip", "Content-Length": str(archive.stat().st_size)},
+                               timeout=httpx.Timeout(3600, connect=15))
+        except httpx.RequestError as e:
+            raise RestoreError(f"La aplicacion principal no responde ({type(e).__name__}).") from e
+        try:
+            data = r.json()
+        except ValueError:
+            data = {}
+        if r.status_code != 200 or not data.get("ok"):
+            raise RestoreError(f"La aplicacion no restauro: {data.get('error') or 'HTTP ' + str(r.status_code)}")
+        log(f"Aplicacion restaurada: base y {data.get('archivos')} archivo(s); migraciones aplicadas despues: {data.get('migraciones')}; "
+            f"copia de la base anterior: {data.get('copia_previa')}.")
+        for w in data.get("avisos") or []:
+            log("AVISO: " + w)
+        return []
+    log("Prueba de restauracion correcta (no se aplico nada).")
+    return []
+
+
 def run_restore(restore_id: int, push: dict | None = None) -> None:
     if not _lock.acquire(blocking=False):
         db = SessionLocal()
@@ -328,6 +386,8 @@ def run_restore(restore_id: int, push: dict | None = None) -> None:
                 raise RestoreError("Esa cadena ya no esta en el servidor (la borro la retencion local): restaure desde un destino externo.")
         if rr.repo_name == backup_jobs.DB_KEY:
             outputs = _restore_db(rr, src, work, log)
+        elif rr.repo_name == backup_jobs.APP_KEY:
+            outputs = _restore_app(rr, src, work, log)
         else:
             outputs = _restore_repo(rr, src, work, log, push)
         rr.status = "ok"
