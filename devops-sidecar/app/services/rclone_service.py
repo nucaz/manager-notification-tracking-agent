@@ -470,7 +470,10 @@ def test_destination(db, dest) -> tuple[bool, str]:
 def upload_dir(db, dest, local_dir: Path, remote_sub: str) -> tuple[bool, str]:
     """Copia la carpeta de una cadena (solo lo que falte o cambie) y
     verifica despues contra el destino: check compara hashes/tamanos;
-    con cifrado se usa cryptcheck, que verifica el contenido cifrado."""
+    con cifrado se usa cryptcheck, que verifica el contenido cifrado.
+    cryptcheck necesita hashes del destino: una carpeta SMB o un WebDAV
+    generico no los tienen, y entonces se descarga, descifra y compara
+    byte a byte (check --download)."""
     try:
         with RcloneSession(dest) as s:
             target = s.path(remote_sub)
@@ -479,6 +482,9 @@ def upload_dir(db, dest, local_dir: Path, remote_sub: str) -> tuple[bool, str]:
                 return False, "Fallo la subida: " + _err(r) + _hint(dest, _err(r))
             verb = "cryptcheck" if dest.encrypt else "check"
             v = s.run([verb, str(local_dir), target, "--one-way"], timeout=LONG_TIMEOUT)
+            if v.returncode != 0 and dest.encrypt and "does not support any hashes" in (v.stderr or ""):
+                verb = "comparando el contenido descargado"
+                v = s.run(["check", str(local_dir), target, "--one-way", "--download"], timeout=LONG_TIMEOUT)
             if v.returncode != 0:
                 return False, "Subido pero la verificacion encontro diferencias: " + _err(v)
         persist_new_token(db, dest, s)

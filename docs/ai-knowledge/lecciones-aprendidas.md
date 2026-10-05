@@ -417,3 +417,12 @@ lleva los `.env` cifrados con una contraseña que el usuario guarda aparte.
 Las cadenas se nombraban con fecha y hora al segundo. En producción corren
 de noche y no chocan, pero dos ejecuciones manuales seguidas compartían
 carpeta y la retención borraba la copia más nueva. Nombres únicos siempre.
+
+## 38. cryptcheck no sirve sobre un destino sin hashes
+
+Con rclone crypt, la verificación usaba `cryptcheck`, que compara hashes.
+Una carpeta SMB (o un WebDAV genérico) no tiene hashes: sin cifrado,
+`check` cae solo a comparar tamaños y pasa, pero `cryptcheck` falla con
+"does not support any hashes" y cada subida quedaba en error. Ahora, ante
+ese mensaje, se verifica con `check --download` (descarga, descifra y
+compara byte a byte). Las pruebas incluyen un WebDAV cifrado.

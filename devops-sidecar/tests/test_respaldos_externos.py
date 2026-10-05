@@ -169,6 +169,11 @@ def main():
                                   "config": {"crypt_password": "Contrasena-Cifrado-1", "crypt_password2": "Sal-2"}},
                 "WebDAV": {"kind": "webdav", "remote_path": "respaldos/sidecar",
                            "config": {"url": "http://127.0.0.1:18080", "vendor": "other", "user": "u", "pass": "clave-webdav"}},
+                # Cifrado sobre un destino sin hashes (como una carpeta SMB):
+                # cryptcheck no puede verificar y se compara descargando.
+                "WebDAV cifrado": {"kind": "webdav", "remote_path": "respaldos/cifrado", "encrypt": True,
+                                   "config": {"url": "http://127.0.0.1:18080", "vendor": "other", "user": "u", "pass": "clave-webdav",
+                                              "crypt_password": "Contrasena-Cifrado-3", "crypt_password2": "Sal-3"}},
                 "SFTP": {"kind": "sftp", "remote_path": "respaldos/sidecar",
                          "config": {"host": "127.0.0.1", "port": "12022", "user": "u", "pass": "clave-sftp",
                                     "known_hosts": sftp_known_hosts(12022)}},
@@ -239,7 +244,8 @@ def main():
             status, log = run()
             pts = points()
             check(f"Ejecucion 1: COMPLETO ({status})", status == "ok" and pts[-1][0] == "full" and pts[-1][1] == 0)
-            check("Completo enviado y verificado en los 5 destinos", pts[-1][4].count("ok") == 5)
+            check("Completo enviado y verificado en los 6 destinos", pts[-1][4].count("ok") == 6)
+            check("Cifrado sin hashes: verificado descargando y comparando", "comparando el contenido descargado" in log)
             chain1 = pts[-1][2]
             plain_dir = ROOT / "externo_plano" / "Diario-externo" / "demo" / chain1
             names = sorted(p.name for p in plain_dir.iterdir())
@@ -294,17 +300,17 @@ def main():
             t = c.post(f"/api/backup-jobs/{job['id']}/test").json()
             bad = [x for x in t["checks"] if not x["ok"]]
             check(f"Probar conexion del trabajo detecta el WebDAV caido ({len(bad)} error)",
-                  not t["ok"] and len(bad) == 1 and bad[0]["kind"] == "destino"
+                  not t["ok"] and len(bad) == 2 and all(b["kind"] == "destino" for b in bad)
                   and any(x["kind"] == "repo" and x["ok"] for x in t["checks"]))
             status, log = run()
             pts = points()
             check(f"WebDAV caido: ejecucion con error ({status}) y el resto de destinos OK",
-                  status == "error" and pts[-1][4].count("ok") == 4 and "error" in pts[-1][4])
+                  status == "error" and pts[-1][4].count("ok") == 4 and pts[-1][4].count("error") == 2)
             servers["webdav"] = serve("webdav", ROOT / "srv_webdav", 18080, ["--user", "u", "--pass", "clave-webdav"])
             status, log = run()
             pts = points()
             check("Probar conexion con todo en linea: OK", c.post(f"/api/backup-jobs/{job['id']}/test").json()["ok"])
-            check(f"WebDAV de vuelta: se reenvia lo pendiente ({status})", status == "ok" and pts[-1][4].count("ok") == 5)
+            check(f"WebDAV de vuelta: se reenvia lo pendiente ({status})", status == "ok" and pts[-1][4].count("ok") == 6)
 
             # Retencion: 2 cadenas locales y 2 remotas -> al abrir la 3a se borra la 1a
             for i in (5, 6):
