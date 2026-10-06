@@ -2,22 +2,24 @@
 'subir a un repositorio Git' se usa solo en memoria durante la
 restauracion: no se guarda en ningun lado."""
 import json
+import re
+from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import models
 from ..auth import require_dashboard_auth
 from ..database import get_db
-from ..services import backup_jobs, git_service, git_targets, rclone_service, restore_service
+from ..services import backup_jobs, external_restore, external_sources, git_service, git_targets, rclone_service, restore_service
 
 router = APIRouter(prefix="/api", tags=["restauracion"], dependencies=[Depends(require_dashboard_auth)])
 
 
 class RestorePayload(BaseModel):
-    mode: str  # verificar | descargar | subir | aplicar (respaldo completo de la aplicacion)
+    mode: str  # verificar | descargar | subir | aplicar (aplicacion completa) | nueva_base (sistema externo)
     confirmacion: str | None = None  # "RESTAURAR TODO" para aplicar
     # Opcion A: un punto conocido por el sidecar + de donde leerlo.
     point_id: int | None = None
@@ -29,11 +31,14 @@ class RestorePayload(BaseModel):
     push_url: str | None = None
     push_user: str | None = None
     push_token: str | None = None
+    # nueva_base: conexion del destino (se usa solo en memoria, no se guarda).
+    target: dict | None = None
 
 
 def _out(rr: models.RestoreRun) -> dict:
     return {"id": rr.id, "source": rr.source_label, "chain_path": rr.chain_path, "repo": rr.repo_name, "seq": rr.seq,
             "mode": rr.mode, "status": rr.status, "log": rr.log or "", "outputs": json.loads(rr.outputs_json or "[]"),
+            "progress": rr.progress or 0, "step": rr.step, "steps": json.loads(rr.steps_json or "[]"),
             "created_at": rr.created_at.isoformat(), "finished_at": rr.finished_at.isoformat() if rr.finished_at else None}
 
 
@@ -68,13 +73,31 @@ def point_sources(point_id: int, db: Session = Depends(get_db)):
             sources.append({"source": str(t.destination_id), "label": t.destination.name + (" (cifrado)" if t.destination.encrypt else "")})
     return {"point": {"id": p.id, "job": p.job.name, "repo": p.repo_name, "chain_label": p.chain_label, "seq": p.seq,
                       "kind": p.kind, "created_at": p.created_at.isoformat(), "is_db": p.repo_name == backup_jobs.DB_KEY,
-                      "is_app": p.repo_name == backup_jobs.APP_KEY, "is_ext": restore_service.is_external(p.repo_name)},
+                      "is_app": p.repo_name == backup_jobs.APP_KEY, "is_ext": restore_service.is_external(p.repo_name),
+                      "ext_kind": _ext_kind(db, p.repo_name, RestorePayload(mode="verificar", point_id=p.id))
+                      if restore_service.is_external(p.repo_name) else None,
+                      "prefill": _prefill(db, p.repo_name)},
             "sources": sources}
+
+
+def _prefill(db: Session, repo_name: str) -> dict:
+    """Valores no secretos del sistema de origen para precargar el destino
+    (mismo servidor, puerto y usuario); la base se sugiere con otro nombre."""
+    src = db.query(models.ExternalSource).filter_by(folder_key=repo_name).first()
+    if not src:
+        return {}
+    cfg = external_sources.load_config(src)
+    keep = {k: cfg[k] for k in ("host", "port", "tls", "sslmode", "protocol", "verify_cert", "db_host", "db_port", "db_tls") if cfg.get(k)}
+    base = cfg.get("database") or cfg.get("db_name") or "sitio"
+    keep["database"] = re.sub(r"[^A-Za-z0-9_]", "_", f"{base}_restaurada_{datetime.now():%Y%m%d}")[:60]
+    if src.kind == "wordpress":
+        keep["wp_path"] = (cfg.get("wp_path") or "public_html").rstrip("/") + "-restaurado"
+    return keep
 
 
 @router.post("/restores", status_code=202)
 def start_restore(payload: RestorePayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    if payload.mode not in ("verificar", "descargar", "subir", "aplicar"):
+    if payload.mode not in ("verificar", "descargar", "subir", "aplicar", "nueva_base"):
         raise HTTPException(status_code=422, detail="Modo no valido.")
     if restore_service.is_busy():
         raise HTTPException(status_code=409, detail="Ya hay una restauracion en curso; espere a que termine.")
@@ -107,6 +130,24 @@ def start_restore(payload: RestorePayload, background_tasks: BackgroundTasks, db
         repo_name, seq = chain_path.split("/")[1], payload.seq
 
     push = None
+    target = None
+    if payload.mode == "nueva_base":
+        if not restore_service.is_external(repo_name):
+            raise HTTPException(status_code=422, detail="Solo el respaldo de un sistema externo se restaura en una base nueva.")
+        kind = _ext_kind(db, repo_name, payload)
+        if not kind:
+            raise HTTPException(status_code=422, detail="No se reconoce el tipo de respaldo de esa cadena.")
+        target = {k: (v.strip() if isinstance(v, str) and k not in ("password", "db_password") else v)
+                  for k, v in (payload.target or {}).items() if v not in (None, "")}
+        problems = external_restore.validate_target(kind, target)
+        src = db.query(models.ExternalSource).filter_by(folder_key=repo_name).first()
+        if src and kind != "wordpress":
+            cfg = external_sources.load_config(src)
+            if target.get("host") == cfg.get("host") and target.get("database") == cfg.get("database"):
+                problems.append("Esa es la base de origen: elija un nombre de base nuevo.")
+        if problems:
+            raise HTTPException(status_code=422, detail=" ".join(problems))
+        target["_kind"] = kind
     if payload.mode == "aplicar":
         if repo_name != backup_jobs.APP_KEY:
             raise HTTPException(status_code=422, detail="Solo un respaldo de la aplicacion completa se restaura en la aplicacion.")
@@ -127,9 +168,39 @@ def start_restore(payload: RestorePayload, background_tasks: BackgroundTasks, db
     db.add(rr)
     db.commit()
     db.refresh(rr)
-    background_tasks.add_task(restore_service.run_restore, rr.id, push)
+    background_tasks.add_task(restore_service.run_restore, rr.id, push, target)
     dest_txt = f" hacia {git_service.strip_credentials(push['url'])}" if push else ""
     return {"id": rr.id, "message": f"Restauracion #{rr.id} iniciada{dest_txt}; el avance aparece en el historial."}
+
+
+def _ext_kind(db: Session, repo_name: str, payload: RestorePayload) -> str | None:
+    src = db.query(models.ExternalSource).filter_by(folder_key=repo_name).first()
+    if src:
+        return src.kind
+    if payload.point_id:
+        p = db.get(models.BackupPoint, payload.point_id)
+        return external_restore.kind_of_files([f["name"] for f in json.loads(p.files_json)]) if p else None
+    return (payload.target or {}).get("_kind_hint") if (payload.target or {}).get("_kind_hint") in external_restore.RESTORE_FIELDS else None
+
+
+@router.get("/restore-targets/fields")
+def restore_target_fields():
+    return {"fields": external_restore.RESTORE_FIELDS}
+
+
+@router.get("/restores/{restore_id}/log")
+def download_log(restore_id: int, db: Session = Depends(get_db)):
+    """El log completo (con el mapa del error si fallo) como archivo."""
+    rr = db.get(models.RestoreRun, restore_id)
+    if not rr:
+        raise HTTPException(status_code=404, detail="Restauracion no encontrada.")
+    steps = "".join(f"  [{st['status']}] {st['name']}" + (f" - {st['detail']}" if st.get("detail") else "") + "\n"
+                    for st in json.loads(rr.steps_json or "[]"))
+    head = (f"Restauracion #{rr.id} - modo {rr.mode} - estado {rr.status} - avance {rr.progress}%\n"
+            f"Origen: {rr.source_label} / {rr.chain_path} (punto #{rr.seq})\n"
+            f"Inicio: {rr.created_at:%Y-%m-%d %H:%M:%S} UTC  Fin: {rr.finished_at or '-'}\n\n"
+            f"Pasos:\n{steps}\nLog:\n")
+    return PlainTextResponse(head + (rr.log or ""), headers={"Content-Disposition": f'attachment; filename="restauracion_{rr.id}.log"'})
 
 
 @router.get("/restores")

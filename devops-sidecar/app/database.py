@@ -28,6 +28,11 @@ _ADDED_COLUMNS = {
         ("include_main_app", "BOOLEAN NOT NULL DEFAULT 0"),
         ("source_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
     ],
+    "restore_runs": [
+        ("progress", "INTEGER NOT NULL DEFAULT 0"),
+        ("step", "VARCHAR(120)"),
+        ("steps_json", "TEXT NOT NULL DEFAULT '[]'"),
+    ],
 }
 
 

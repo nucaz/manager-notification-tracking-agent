@@ -257,7 +257,7 @@ def _mysql_cnf(tmp: Path, host: str, port: str, user: str, password: str, tls: s
 
 def _mysql_query(cnf: Path, database: str, sql: str) -> list[list[str]]:
     try:
-        r = subprocess.run(["mariadb", f"--defaults-extra-file={cnf}", "--connect-timeout=20", "-N", "-B", "-e", sql, database],
+        r = subprocess.run(["mariadb", f"--defaults-extra-file={cnf}", "--connect-timeout=20", "-N", "-B", "-e", sql, *([database] if database else [])],
                            capture_output=True, text=True, timeout=TEST_TIMEOUT)
     except FileNotFoundError:
         raise _missing_tool("mariadb")

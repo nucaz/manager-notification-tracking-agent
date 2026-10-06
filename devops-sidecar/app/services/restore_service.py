@@ -23,8 +23,11 @@ import logging
 import re
 import shutil
 import sqlite3
+import subprocess
 import tarfile
 import threading
+import time
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -34,7 +37,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..config import settings
 from ..database import SessionLocal
-from . import backup_jobs, external_sources, git_service, git_targets, rclone_service, sso_service
+from . import backup_jobs, external_restore, external_sources, git_service, git_targets, rclone_service, sso_service
 
 logger = logging.getLogger("restore")
 RESTORE_KEEP_DAYS = 3
@@ -96,6 +99,7 @@ def explore_destination(db: Session, dest: models.BackupDestination) -> list[dic
     out = []
     for c in chains.values():
         c["points"] = sorted(c["points"].values(), key=lambda p: p["seq"])
+        c["ext_kind"] = external_restore.kind_of_files([f["name"] for p in c["points"] for f in p["files"]]) if c["is_ext"] else None
         if c["points"]:
             out.append(c)
     return sorted(out, key=lambda c: (c["job"], c["repo"], c["chain_label"]), reverse=False)
@@ -344,10 +348,75 @@ def is_external(key: str) -> bool:
     return key.startswith("_externo_")
 
 
-def _restore_external(rr: models.RestoreRun, src: Path, work: Path, log) -> list[dict]:
-    """Sistema externo (base en Azure, WordPress): verificar el SHA-256 y
-    que cada archivo se lea entero, o dejarlo para descargar. Nunca se
-    aplica sobre el sistema de origen: RESTAURAR.txt trae los comandos."""
+class Progress:
+    """Avance de una restauracion para la pantalla: pasos con estado y un
+    porcentaje total ponderado. Se guarda en la base (con el log hasta el
+    momento) a lo sumo cada segundo, asi la pantalla lo ve en vivo."""
+
+    def __init__(self, db: Session, rr: models.RestoreRun, lines: list[str], plan: list[tuple[str, int]]):
+        self.db, self.rr, self.lines = db, rr, lines
+        self.steps = [{"name": n, "weight": w, "status": "pendiente", "detail": ""} for n, w in plan]
+        self.cur, self.frac, self._saved = -1, 0.0, 0.0
+        self.interval = 1.0  # segundos minimos entre guardados (no escribir en cada MB)
+        self.save(force=True)
+
+    def start(self, name: str) -> None:
+        idx = next((i for i, st in enumerate(self.steps) if st["name"] == name), None)
+        if idx is None:
+            self.steps.append({"name": name, "weight": 5, "status": "pendiente", "detail": ""})
+            idx = len(self.steps) - 1
+        for st in self.steps[:idx]:
+            st["status"] = {"en_curso": "ok", "pendiente": "omitido"}.get(st["status"], st["status"])
+        self.steps[idx]["status"] = "en_curso"
+        self.cur, self.frac = idx, 0.0
+        self.save(force=True)
+
+    def update(self, frac: float, detail: str = "") -> None:
+        self.frac = max(0.0, min(1.0, frac))
+        if detail and self.cur >= 0:
+            self.steps[self.cur]["detail"] = detail[:200]
+        self.save()
+
+    def sub(self, name: str):
+        """Funcion progress(fraccion, detalle) para un paso: lo inicia la
+        primera vez que se llama."""
+        def fn(frac, detail=""):
+            if self.cur < 0 or self.steps[self.cur]["name"] != name:
+                self.start(name)
+            self.update(frac, detail)
+        return fn
+
+    def percent(self) -> int:
+        total = sum(st["weight"] for st in self.steps) or 1
+        done = sum(st["weight"] for st in self.steps if st["status"] in ("ok", "omitido"))
+        if 0 <= self.cur < len(self.steps) and self.steps[self.cur]["status"] == "en_curso":
+            done += self.steps[self.cur]["weight"] * self.frac
+        return int(done * 100 / total)
+
+    def finish(self, ok: bool, error: str = "") -> None:
+        for st in self.steps:
+            if st["status"] == "en_curso":
+                st["status"] = "ok" if ok else "error"
+                if not ok:
+                    st["detail"] = error[:300]
+            elif st["status"] == "pendiente" and ok:
+                st["status"] = "omitido"
+        self.save(force=True, final_pct=100 if ok else None)
+
+    def save(self, force: bool = False, final_pct: int | None = None) -> None:
+        now = time.monotonic()
+        if not force and now - self._saved < self.interval:
+            return
+        self._saved = now
+        self.rr.progress = final_pct if final_pct is not None else min(self.percent(), 99)
+        cur = self.steps[self.cur] if 0 <= self.cur < len(self.steps) else None
+        self.rr.step = (cur["name"] + (f" - {cur['detail']}" if cur["detail"] else ""))[:120] if cur else None
+        self.rr.steps_json = json.dumps([{k: v for k, v in st.items() if k != "weight"} for st in self.steps])
+        self.rr.log = "\n".join(self.lines)
+        self.db.commit()
+
+
+def _manifest_files(src: Path) -> tuple[dict, list[dict]]:
     mf = src / "manifest.json"
     if not mf.exists():
         raise RestoreError("La carpeta no tiene manifest.json: vea RESTAURAR.txt para restaurar a mano.")
@@ -355,31 +424,151 @@ def _restore_external(rr: models.RestoreRun, src: Path, work: Path, log) -> list
     files = [f for p in manifest.get("points", []) for f in p["files"]]
     if not files:
         raise RestoreError("El manifest no lista archivos.")
-    log(f"Respaldo de '{manifest.get('source', rr.repo_name)}' ({manifest.get('kind', '?')}).")
+    return manifest, files
+
+
+def external_kind(src: Path) -> str | None:
+    try:
+        manifest, files = _manifest_files(src)
+    except RestoreError:
+        return None
+    return manifest.get("kind") or external_restore.kind_of_files([f["name"] for f in files])
+
+
+def _restore_external(rr: models.RestoreRun, src: Path, work: Path, log, prog: Progress,
+                      target: dict | None) -> tuple[list[dict], list[str]]:
+    """Sistema externo (base en Azure, WordPress): verificar (SHA-256 y que
+    cada archivo se lea entero), descargar, o cargarlo en una base NUEVA.
+    Nunca se aplica sobre el sistema de origen."""
+    manifest, files = _manifest_files(src)
+    kind = manifest.get("kind") or external_restore.kind_of_files([f["name"] for f in files])
+    log(f"Respaldo de '{manifest.get('source', rr.repo_name)}' ({kind or '?'}).")
+    prog.start("Verificar integridad")
+    total = sum(f.get("size", 0) for f in files) or 1
+    seen = 0
     for f in files:
         path = src / f["name"]
         if not path.exists():
             raise RestoreError(f"Falta {f['name']}.")
+        prog.update(seen / total, f"SHA-256 y lectura de {f['name']}")
         if backup_jobs._sha256(path) != f["sha256"]:
             raise RestoreError(f"{f['name']} esta DANADO: su SHA-256 no coincide con el del manifest.")
         try:
             log("  " + external_sources.verify_file(path))
         except (external_sources.SourceError, OSError, EOFError, tarfile.TarError) as e:
             raise RestoreError(f"{f['name']} no se puede leer: {e}") from e
+        seen += f.get("size", 0)
     log("Integridad: SHA-256 correcto y contenido legible.")
     if rr.mode == "descargar":
+        prog.start("Preparar archivos")
         outputs = []
         for name in [f["name"] for f in files] + ["RESTAURAR.txt"]:
             if (src / name).exists():
                 shutil.copy2(src / name, work / name)
                 outputs.append({"name": name, "size": (work / name).stat().st_size})
         log("Listo para descargar. RESTAURAR.txt trae los comandos para levantarlo en otra base u otro hosting.")
-        return outputs
-    log("Prueba de restauracion correcta (no se aplico nada).")
-    return []
+        return outputs, []
+    if rr.mode != "nueva_base":
+        log("Prueba de restauracion correcta (no se aplico nada).")
+        return [], []
+    if not target:
+        raise RestoreError("Faltan los datos de la base destino (se piden al iniciar; no se guardan).")
+    t = target
+    where = f"base '{t['database']}' en {t.get('db_host') or t['host']}" + (f", carpeta '{t['wp_path']}'" if kind == "wordpress" else "")
+    log(f"Destino: {where}.")
+    try:
+        if kind == "mysql":
+            warnings = external_restore.restore_mysql(next(src.glob("*.sql.gz")), t, log, prog.sub("Cargar en la base nueva"))
+        elif kind == "postgres":
+            warnings = external_restore.restore_postgres(next(src.glob("*.dump")), t, log, prog.sub("Cargar en la base nueva"))
+        elif kind == "mssql":
+            warnings = external_restore.restore_mssql(next(src.glob("*.bacpac")), t, log, prog.sub("Cargar en la base nueva"))
+        elif kind == "wordpress":
+            warnings = external_restore.restore_wordpress(src, work, t, log, prog.sub("Cargar en la base nueva"),
+                                                          prog.sub("Subir archivos del sitio"))
+        else:
+            raise RestoreError("No se reconoce el tipo de respaldo.")
+    except external_sources.SourceError as e:
+        raise RestoreError(str(e)) from e
+    log("Restauracion en la base nueva terminada." + (f" Avisos: {len(warnings)}." if warnings else ""))
+    return [], warnings
 
 
-def run_restore(restore_id: int, push: dict | None = None) -> None:
+def _download(db: Session, dest: models.BackupDestination, chain_path: str, src: Path, log, prog: Progress) -> None:
+    prog.start("Descargar del destino")
+    with rclone_service.RcloneSession(dest) as s:
+        size = s.run(["size", "--json", s.path(chain_path)], timeout=900)
+        try:
+            total = json.loads(size.stdout or "{}").get("bytes") or 1
+        except ValueError:
+            total = 1
+        proc = subprocess.Popen([rclone_service.RCLONE, "copy", s.path(chain_path), str(src), "--use-json-log", "-v",
+                                 "--stats", "2s", "--stats-log-level", "NOTICE", "--retries", "3"],
+                                stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, env=s.env)
+        errors = []
+        for line in proc.stderr:
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("stats"):
+                got = ev["stats"].get("bytes", 0)
+                prog.update(got / total, f"{got / 1048576:.1f} de {total / 1048576:.1f} MB")
+            if ev.get("level") in ("error", "critical"):
+                errors.append(ev.get("msg", "")[:200])
+        proc.wait(timeout=rclone_service.LONG_TIMEOUT)
+    rclone_service.persist_new_token(db, dest, s)
+    if proc.returncode != 0 or not src.exists():
+        raise RestoreError("No se pudo descargar la cadena del destino: " + (" | ".join(errors[-3:]) or f"codigo {proc.returncode}"))
+    got = sum(f.stat().st_size for f in src.iterdir() if f.is_file())
+    log(f"Descargado de '{dest.name}'{' (descifrado)' if dest.encrypt else ''}: {got / 1048576:.2f} MB.")
+
+
+_MODE_STEP = {"verificar": "Probar restauracion", "descargar": "Preparar archivos", "subir": "Subir a Git",
+              "aplicar": "Restaurar en la aplicacion"}
+
+
+def _plan(rr: models.RestoreRun, kind: str | None) -> list[tuple[str, int]]:
+    plan = [("Descargar del destino", 30)] if rr.destination_id else []
+    if is_external(rr.repo_name):
+        plan.append(("Verificar integridad", 10))
+        if rr.mode == "nueva_base":
+            plan.append(("Cargar en la base nueva", 50))
+            if kind == "wordpress":
+                plan.append(("Subir archivos del sitio", 40))
+        elif rr.mode == "descargar":
+            plan.append(("Preparar archivos", 5))
+    else:
+        plan.append((_MODE_STEP.get(rr.mode, rr.mode), 60))
+    return plan
+
+
+def _error_map(prog: Progress, rr: models.RestoreRun, err: str, tb: str | None) -> list[str]:
+    """Bloque al final del log que explica DONDE y POR QUE fallo."""
+    idx = prog.cur
+    step = prog.steps[idx]["name"] if 0 <= idx < len(prog.steps) else "inicio"
+    done = [st["name"] for st in prog.steps if st["status"] == "ok"]
+    out = ["", "=== MAPA DEL ERROR ===",
+           f"Restauracion #{rr.id}: {rr.mode} de {rr.repo_name} (cadena {rr.chain_path}, punto #{rr.seq}) desde {rr.source_label}",
+           f"Fallo en el paso {idx + 1} de {len(prog.steps)}: {step}",
+           "Pasos completados: " + (", ".join(done) if done else "ninguno"),
+           f"Causa: {err}"]
+    if "Sugerencia" not in err:
+        low = err.lower()
+        if "danado" in low or "sha-256" in low:
+            out.append("Sugerencia: la copia esta corrupta; restaure desde otro destino o un punto anterior.")
+        elif "ya existe" in low or "ya tiene" in low:
+            out.append("Sugerencia: use un nombre de base o carpeta nuevo; nunca se escribe sobre datos existentes.")
+        elif "descargar" in low or "destino" in low:
+            out.append("Sugerencia: use 'Probar' en Destinos externos para revisar la conexion con el destino.")
+    out.append("Nada se modifico en el sistema de origen." if is_external(rr.repo_name) else
+               "Revise el paso indicado en el log.")
+    if tb:
+        out += ["Detalle tecnico:", tb]
+    return out
+
+
+def run_restore(restore_id: int, push: dict | None = None, target: dict | None = None) -> None:
     if not _lock.acquire(blocking=False):
         db = SessionLocal()
         try:
@@ -398,12 +587,15 @@ def run_restore(restore_id: int, push: dict | None = None) -> None:
         logger.info("restore %s: %s", restore_id, msg)
 
     rr = None
+    prog = None
     work = restore_dir(restore_id)
     outputs: list[dict] = []
+    warnings: list[str] = []
     try:
         rr = db.get(models.RestoreRun, restore_id)
         if not rr:
             return
+        prog = Progress(db, rr, lines, _plan(rr, (target or {}).get("_kind")))
         shutil.rmtree(work, ignore_errors=True)
         work.mkdir(parents=True)
         log(f"Restauracion ({rr.mode}) de {rr.repo_name}, punto #{rr.seq}, desde {rr.source_label}.")
@@ -412,37 +604,45 @@ def run_restore(restore_id: int, push: dict | None = None) -> None:
             if not dest:
                 raise RestoreError("El destino ya no existe.")
             src = work / "descarga"
-            with rclone_service.RcloneSession(dest) as s:
-                r = s.run(["copy", s.path(rr.chain_path), str(src)], timeout=rclone_service.LONG_TIMEOUT)
-            rclone_service.persist_new_token(db, dest, s)
-            if r.returncode != 0 or not src.exists():
-                raise RestoreError("No se pudo descargar la cadena del destino: " + rclone_service._err(r))
-            total = sum(f.stat().st_size for f in src.iterdir() if f.is_file())
-            log(f"Descargado de '{dest.name}'{' (descifrado)' if dest.encrypt else ''}: {total / 1024:.1f} KB.")
+            _download(db, dest, rr.chain_path, src, log, prog)
         else:
             src = backup_jobs.jobs_root() / rr.chain_path
             if not src.exists():
                 raise RestoreError("Esa cadena ya no esta en el servidor (la borro la retencion local): restaure desde un destino externo.")
-        if rr.repo_name == backup_jobs.DB_KEY:
-            outputs = _restore_db(rr, src, work, log)
-        elif rr.repo_name == backup_jobs.APP_KEY:
-            outputs = _restore_app(rr, src, work, log)
-        elif is_external(rr.repo_name):
-            outputs = _restore_external(rr, src, work, log)
+        if is_external(rr.repo_name):
+            outputs, warnings = _restore_external(rr, src, work, log, prog, target)
         else:
-            outputs = _restore_repo(rr, src, work, log, push)
-        rr.status = "ok"
+            prog.start(_MODE_STEP.get(rr.mode, rr.mode))
+            if rr.repo_name == backup_jobs.DB_KEY:
+                outputs = _restore_db(rr, src, work, log)
+            elif rr.repo_name == backup_jobs.APP_KEY:
+                outputs = _restore_app(rr, src, work, log)
+            else:
+                outputs = _restore_repo(rr, src, work, log, push)
+        for w in warnings:
+            log("AVISO: " + w)
+        rr.status = "ok_con_avisos" if warnings else "ok"
+        log(f"Fin: {rr.status}.")
+        prog.finish(True)
     except (RestoreError, rclone_service.RcloneError) as e:
         log("ERROR: " + str(e))
         if rr:
             rr.status = "error"
+            if prog:
+                lines.extend(_error_map(prog, rr, str(e), None))
+                prog.finish(False, str(e))
     except Exception as e:  # noqa: BLE001 - queda registrado en la restauracion
         logger.exception("Fallo la restauracion %s", restore_id)
         log(f"ERROR inesperado: {e}")
         if rr:
             rr.status = "error"
+            if prog:
+                tb = "".join(traceback.format_exception(e)[-4:])[-1500:]
+                lines.extend(_error_map(prog, rr, f"{type(e).__name__}: {e}", tb))
+                prog.finish(False, str(e))
     finally:
         shutil.rmtree(work / "descarga", ignore_errors=True)
+        shutil.rmtree(work / "sitio_restaurado", ignore_errors=True)
         if not outputs:
             shutil.rmtree(work, ignore_errors=True)
         if rr:

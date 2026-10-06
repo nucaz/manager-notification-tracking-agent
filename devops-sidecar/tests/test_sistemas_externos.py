@@ -344,6 +344,109 @@ def main():
                 time.sleep(1)
             check("Copia danada en el servidor: la verificacion la detecta", st["status"] == "error" and "DANADO" in st["log"])
 
+            # ---------------- restaurar en una base NUEVA, con avance y log ----------------
+            def restore_new(point_id, source, target):
+                r = c.post("/api/restores", json={"mode": "nueva_base", "point_id": point_id, "source": source, "target": target})
+                if r.status_code != 202:
+                    print("restaurar rechazado:", r.status_code, r.text[:300])
+                    return r, {"status": "rechazado", "progress": 0, "steps": [], "log": r.text, "id": 0}, set()
+                seen = set()
+                for _ in range(300):
+                    st = c.get(f"/api/restores/{r.json()['id']}").json()
+                    seen.add(st["progress"])
+                    if st["status"] != "en_curso":
+                        break
+                    time.sleep(0.5)
+                return r, st, seen
+
+            s.expire_all()
+            pts = {p.repo_name: p for p in s.query(models.BackupPoint).filter_by(job_id=job["id"]).order_by(models.BackupPoint.id).all()}
+            src_info = c.get(f"/api/backup-points/{pts[keys['BD inventario (PostgreSQL 18)']].id}/sources").json()["point"]
+            check("El punto informa el tipo y sugiere un nombre de base nuevo",
+                  src_info["ext_kind"] == "postgres" and src_info["prefill"]["database"].startswith("inventario_restaurada_")
+                  and src_info["prefill"]["host"] == "ext_pg" and "password" not in src_info["prefill"])
+            r = c.post("/api/restores", json={"mode": "nueva_base", "point_id": pts[keys["BD ventas (MySQL 8.4)"]].id, "source": str(dest["id"]),
+                                              "target": {"host": "ext_mysql", "user": "root", "password": ROOTPW, "database": "ventas", "tls": "cifrar"}})
+            check("Restaurar sobre la base de origen: rechazado antes de empezar", r.status_code == 422 and "base de origen" in r.json()["detail"])
+            r = c.post("/api/restores", json={"mode": "nueva_base", "point_id": pts[keys["BD ventas (MySQL 8.4)"]].id, "source": "local",
+                                              "target": {"host": "ext_mysql", "user": "root", "password": ROOTPW, "database": "1-mala"}})
+            check("Nombre de base no valido: rechazado", r.status_code == 422)
+
+            maria("ext_mysql", "DROP DATABASE IF EXISTS ventas_nueva")
+            r, st, seen = restore_new(pts[keys["BD ventas (MySQL 8.4)"]].id, str(dest["id"]),
+                                      {"host": "ext_mysql", "user": "root", "password": ROOTPW, "database": "ventas_nueva", "tls": "cifrar"})
+            check(f"MySQL en base nueva desde el destino cifrado: {st['status']} {st['progress']}%", st["status"] == "ok" and st["progress"] == 100)
+            check("Pasos de la restauracion desde un destino", [x["status"] for x in st["steps"]] == ["ok", "ok", "ok"]
+                  and [x["name"] for x in st["steps"]] == ["Descargar del destino", "Verificar integridad", "Cargar en la base nueva"])
+            # El cliente de pruebas corre la tarea antes de responder: el avance
+            # intermedio se comprueba en la clase que lo calcula y lo guarda.
+            from app.services import restore_service
+            fake = models.RestoreRun(source_label="x", chain_path="a/b/c", repo_name="_externo_x", seq=0, mode="nueva_base")
+            s.add(fake)
+            s.commit()
+            pr = restore_service.Progress(s, fake, [], [("Descargar del destino", 30), ("Cargar en la base nueva", 70)])
+            pr.interval = 0
+            pr.start("Descargar del destino")
+            pr.update(0.5, "15 de 30 MB")
+            a1 = (fake.progress, fake.step)
+            pr.sub("Cargar en la base nueva")(0.5, "objeto 5 de 10")
+            a2 = fake.progress
+            s.refresh(fake)
+            check(f"Avance ponderado y guardado en vivo ({a1[0]}% -> {a2}%, paso '{a1[1]}')",
+                  a1 == (15, "Descargar del destino - 15 de 30 MB") and a2 == 65 and fake.progress == 65
+                  and json.loads(fake.steps_json)[0]["status"] == "ok")
+            s.delete(fake)
+            s.commit()
+            check("MySQL: base nueva con los mismos datos que el origen",
+                  maria("ext_mysql", "SELECT COUNT(*) FROM clientes", "ventas_nueva") == maria("ext_mysql", "SELECT COUNT(*) FROM clientes", "ventas"))
+            check("Las credenciales del destino no quedan en la base del sidecar ni en el log",
+                  ROOTPW not in (s.get(models.RestoreRun, st["id"]).log or "") and ROOTPW not in json.dumps(st))
+            logtxt = c.get(f"/api/restores/{st['id']}/log")
+            check("Log descargable con pasos y detalle", logtxt.status_code == 200 and "attachment" in logtxt.headers.get("content-disposition", "")
+                  and "[ok] Cargar en la base nueva" in logtxt.text)
+            r, st, _ = restore_new(pts[keys["BD ventas (MySQL 8.4)"]].id, "local",
+                                   {"host": "ext_mysql", "user": "root", "password": ROOTPW, "database": "ventas_nueva", "tls": "cifrar"})
+            check("Base destino con datos: se detiene sin tocarla", st["status"] == "error" and "ya existe y tiene" in st["log"])
+            check("Mapa del error: paso, pasos completados, causa y sugerencia",
+                  "=== MAPA DEL ERROR ===" in st["log"] and "Fallo en el paso 2 de 2: Cargar en la base nueva" in st["log"]
+                  and "Sugerencia" in st["log"] and "Nada se modifico en el sistema de origen" in st["log"]
+                  and [x["status"] for x in st["steps"]] == ["ok", "error"])
+
+            psql("DROP DATABASE IF EXISTS inventario_nueva")
+            r, st, _ = restore_new(pts[keys["BD inventario (PostgreSQL 18)"]].id, "local",
+                                   {"host": "ext_pg", "user": "postgres", "password": ROOTPW, "database": "inventario_nueva", "sslmode": "require"})
+            q = "SELECT count(*), sum((datos->>'n')::int) FROM equipos"
+            check(f"PostgreSQL en base nueva: {st['status']}", st["status"] == "ok" and psql(q, "inventario") == psql(q, "inventario_nueva"))
+
+            if "BD facturas (SQL Server)" in ids:
+                name = f"Facturas_nueva_{datetime.now():%H%M%S}"
+                r, st, _ = restore_new(pts[keys["BD facturas (SQL Server)"]].id, "local",
+                                       {"host": "ext_mssql", "user": "sa", "password": "Raiz-Prueba-1x", "database": name, "tls": "confiar"})
+                check(f"SQL Server en base nueva ({name}): {st['status']}", st["status"] == "ok" and "Importado" in st["log"])
+                if st["status"] != "ok":
+                    print(st["log"][-1500:])
+
+            maria("ext_maria", "DROP DATABASE IF EXISTS wp_nueva; GRANT ALL ON wp_nueva.* TO 'wpuser'@'%'")
+            wp_target = {"protocol": "ftps", "host": "ext_ftp", "user": "ftpu", "password": "clave-ftp", "verify_cert": "no",
+                         "wp_path": f"public_html/landing-restaurada-{datetime.now():%H%M%S}", "db_host": "ext_maria", "db_user": "root",
+                         "db_password": ROOTPW, "database": "wp_nueva", "db_tls": "cifrar", "config_db_host": "localhost",
+                         "new_url": "https://landing2.prueba"}
+            r, st, _ = restore_new(pts[keys["Landing (WordPress)"]].id, "local", wp_target)
+            check(f"WordPress en base y carpeta nuevas: {st['status']} {st['progress']}%", st["status"] == "ok" and st["progress"] == 100
+                  and [x["name"] for x in st["steps"]] == ["Verificar integridad", "Cargar en la base nueva", "Subir archivos del sitio"])
+            if st["status"] != "ok":
+                print(st["log"][-1500:])
+            check("WordPress: siteurl cambiado en la base nueva",
+                  maria("ext_maria", "SELECT option_value FROM lp_options WHERE option_name='siteurl'", "wp_nueva").strip() == "https://landing2.prueba")
+            pw = run(["rclone", "obscure", "clave-ftp"], env=dict(os.environ, HOME=str(ROOT))).strip()
+            cfg = run(["rclone", "cat", f":ftp:{wp_target['wp_path']}/wp-config.php", "--ftp-host", "ext_ftp", "--ftp-user", "ftpu",
+                       "--ftp-pass", pw, "--ftp-explicit-tls", "--ftp-no-check-certificate"], env=dict(os.environ, HOME=str(ROOT)))
+            check("WordPress: wp-config.php subido con la base nueva", "'wp_nueva'" in cfg and "'localhost'" in cfg and "$table_prefix = 'lp_'" in cfg)
+            r, st, _ = restore_new(pts[keys["Landing (WordPress)"]].id, "local", {**wp_target, "database": "wp_otra"})
+            check("WordPress: carpeta destino con archivos -> se detiene sin tocarla", st["status"] == "error" and "ya tiene archivos" in st["log"])
+            check("Pagina Restaurar ofrece 'base nueva' y la barra de avance", all(x in c.get("/backups/restaurar").text
+                                                                                for x in ("rmN", "progress-bar", "Descargar log")))
+
             # ---------------- renombrar no corta las cadenas; pagina ----------------
             r = c.put(f"/api/external-sources/{mysql_id}", json={"name": "Ventas Azure", **defs["BD ventas (MySQL 8.4)"]})
             check("Renombrar conserva la carpeta (no corta las cadenas)", r.json()["folder_key"] == keys["BD ventas (MySQL 8.4)"])

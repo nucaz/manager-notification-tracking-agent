@@ -358,9 +358,15 @@ class RestoreRun(Base):
     chain_path = Column(String(500), nullable=False)  # trabajo/repo/cadena
     repo_name = Column(String(200), nullable=False)
     seq = Column(Integer, nullable=False, default=0)
-    mode = Column(String(12), nullable=False)  # verificar | descargar | subir
-    status = Column(String(12), nullable=False, default="en_curso")  # en_curso | ok | error
+    # verificar | descargar | subir | aplicar | nueva_base (sistema externo en una base nueva)
+    mode = Column(String(12), nullable=False)
+    status = Column(String(14), nullable=False, default="en_curso")  # en_curso | ok | ok_con_avisos | error
     log = Column(Text, nullable=True)
+    # Avance para la pantalla: porcentaje, paso actual y la lista de pasos
+    # [{name, status: pendiente|en_curso|ok|omitido|error, detail}].
+    progress = Column(Integer, nullable=False, default=0)
+    step = Column(String(120), nullable=True)
+    steps_json = Column(Text, nullable=False, default="[]")
     outputs_json = Column(Text, nullable=False, default="[]")  # [{name, size}]
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     finished_at = Column(DateTime, nullable=True)

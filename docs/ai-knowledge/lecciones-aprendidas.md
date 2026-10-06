@@ -443,3 +443,10 @@ instala del repositorio oficial PGDG, no el de la distribucion.
 `rclone serve ftp --cert` hace TLS implicito y rechaza `PBSZ`: con el
 cliente en FTPS explicito se quedaba colgado. El hosting real (cPanel) usa
 Pure-FTPd con TLS explicito obligatorio; la prueba usa ese mismo servidor.
+
+## 41. El TestClient de FastAPI corre las tareas en segundo plano antes de responder
+
+Con `BackgroundTasks`, `TestClient` termina la tarea antes de devolver la
+respuesta: una prueba que consulta el avance "mientras corre" solo ve el
+100 %. El avance intermedio se prueba sobre la clase que lo calcula
+(`restore_service.Progress`), con el intervalo de guardado en 0.

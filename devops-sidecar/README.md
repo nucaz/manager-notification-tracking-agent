@@ -290,6 +290,19 @@ ejecución es un completo por sistema, con `RESTAURAR.txt` y
   x64.
 - El respaldo de WordPress incluye `wp-config.php` (con la clave de la
   base): envíelo a un destino cifrado.
+- **Restaurar en una base nueva** (Restaurar > elegir el punto): se
+  indica el servidor destino, un usuario con permiso para crear la base y
+  un nombre de base nuevo (se sugiere `origen_restaurada_FECHA`). Si la
+  base ya existe con tablas, o la carpeta del sitio tiene archivos, se
+  detiene sin tocar nada; nunca acepta la base de origen. WordPress: base
+  nueva + archivos a una carpeta nueva por FTPS/SFTP, `wp-config.php`
+  ajustado y, si se indica, `siteurl`/`home` nuevos. Las credenciales se
+  usan solo en memoria.
+- Toda restauración muestra **barra de avance** y la lista de pasos
+  (pendiente, en curso, listo, error), y su **log se descarga** como
+  archivo. Si falla, el log termina con un **MAPA DEL ERROR**: en qué paso
+  (n de m), qué pasos se completaron, la causa (ej. `ERROR 1064 at line
+  523` del cliente MySQL) y una sugerencia.
 
 Pruebas contra servidores reales desechables (MySQL 8.4, MariaDB 11.4,
 PostgreSQL 18, SQL Server 2022 y Pure-FTPd con TLS obligatorio, el FTP de

@@ -37,6 +37,8 @@
       <label class="form-check-label" for="rmD"><strong>Preparar descarga</strong> (repositorio git + .zip de archivos)</label></div>
     <div class="form-check" id="rmSWrap"><input class="form-check-input" type="radio" name="rMode" id="rmS" value="subir">
       <label class="form-check-label" for="rmS"><strong>Subir a un repositorio Git</strong></label></div>
+    <div class="form-check d-none" id="rmNWrap"><input class="form-check-input" type="radio" name="rMode" id="rmN" value="nueva_base">
+      <label class="form-check-label text-primary" for="rmN"><strong>Restaurar en una base nueva</strong> (nunca sobre datos existentes)</label></div>
     <div class="form-check d-none" id="rmAWrap"><input class="form-check-input" type="radio" name="rMode" id="rmA" value="aplicar">
       <label class="form-check-label text-danger" for="rmA"><strong>Restaurar en la aplicación</strong> (reemplaza base y archivos)</label></div>
   </div>
@@ -44,6 +46,12 @@
     <div class="small mb-2">Reemplaza la base de datos de la aplicación principal y copia sus archivos. Antes se verifica cada archivo (SHA-256) y la aplicación guarda una copia de la base actual; después aplica las migraciones que falten. Úselo para recuperar el servidor o volver a un punto anterior.</div>
     <label class="form-label" for="aConfirm">Escriba <code>RESTAURAR TODO</code></label>
     <input class="form-control" id="aConfirm" autocomplete="off">
+  </div>
+  <div id="newFields" class="d-none border border-primary rounded p-2 mb-2">
+    <div class="small mb-2">Carga el respaldo en una base <strong>nueva o vacía</strong> (WordPress: también los archivos en una carpeta nueva del hosting).
+      Si la base o la carpeta ya tienen datos, se detiene sin tocar nada. El sistema de origen no se modifica. Las credenciales se usan solo
+      durante esta restauración y no se guardan: use un usuario con permiso para crear la base.</div>
+    <div class="row g-2" id="newFieldsInner"></div>
   </div>
   <div id="pushFields" class="row g-2 d-none">
     <div class="col-12"><label class="form-label" for="pUrl">URL del repositorio (recomendado: uno nuevo y vacío)</label>
@@ -67,20 +75,39 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const fmt = (iso) => iso ? new Date(iso + 'Z').toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '';
 const kb = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).toFixed(1) + ' KB';
 const $ = (id) => document.getElementById(id);
-const ST = { ok: 'success', error: 'danger', en_curso: 'info' };
-const MODES = { verificar: 'prueba', descargar: 'descarga', subir: 'subida a Git', aplicar: 'restauración en la aplicación' };
+const ST = { ok: 'success', ok_con_avisos: 'warning', error: 'danger', en_curso: 'info' };
+const MODES = { verificar: 'prueba', descargar: 'descarga', subir: 'subida a Git', aplicar: 'restauración en la aplicación', nueva_base: 'restauración en una base nueva' };
+const STEP_ICON = { ok: 'bi-check-circle-fill text-success', en_curso: 'bi-arrow-repeat text-primary', error: 'bi-x-circle-fill text-danger', pendiente: 'bi-circle text-muted', omitido: 'bi-dash-circle text-muted' };
 const label = (c) => (c.is_db ? 'Base del sidecar' : (c.is_app ? 'Aplicación completa' : (c.is_ext ? 'Sistema externo: ' + (c.repo || '').replace(/^_externo_/, '') : c.repo)));
 let selection = null;  // { point_id } o { destination_id, chain_path, seq }
+let extKind = null; let prefill = {}; let TARGET_FIELDS = {};
 
 function show(text, kind = 'success') { $('msg').innerHTML = `<div class="alert alert-${kind}">${esc(text)}</div>`; window.scrollTo(0, 0); }
 
 function syncFields() {
   $('pushFields').classList.toggle('d-none', !$('rmS').checked);
   $('applyFields').classList.toggle('d-none', !$('rmA').checked);
+  $('newFields').classList.toggle('d-none', !$('rmN').checked);
 }
 
-function select(sel, text, isDb, isApp) {
+function renderTarget() {
+  const fields = TARGET_FIELDS[extKind] || [];
+  $('newFieldsInner').innerHTML = fields.map((f) => {
+    const id = `t_${f.key}`;
+    const val = prefill[f.key] ?? f.default ?? '';
+    const input = f.type === 'select'
+      ? `<select class="form-select form-select-sm" id="${id}" data-key="${f.key}">${f.options.map(([v, l]) => `<option value="${esc(v)}" ${String(val) === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+      : `<input class="form-control form-control-sm" id="${id}" data-key="${f.key}" type="${f.type === 'password' ? 'password' : 'text'}" value="${f.type === 'password' ? '' : esc(val)}" ${f.required ? 'required' : ''} autocomplete="new-password">`;
+    return `<div class="col-md-6"><label class="form-label small mb-0" for="${id}">${esc(f.label)}${f.required ? ' *' : ''}</label>${input}${f.help ? `<div class="form-text">${esc(f.help)}</div>` : ''}</div>`;
+  }).join('');
+}
+
+function select(sel, text, isDb, isApp, kind, pre) {
   selection = sel;
+  extKind = kind || null; prefill = pre || {};
+  $('rmNWrap').classList.toggle('d-none', !extKind);
+  if (!extKind && $('rmN').checked) $('rmV').checked = true;
+  if (extKind) renderTarget();
   $('actionWhat').innerHTML = text;
   $('rmSWrap').classList.toggle('d-none', !!(isDb || isApp));
   $('rmAWrap').classList.toggle('d-none', !isApp);
@@ -121,7 +148,7 @@ $('btnExplore').addEventListener('click', async () => {
     const seq = Number($(`seq_${b.dataset.i}`).value);
     $('pointCard').classList.add('d-none');
     select({ destination_id: Number(id), chain_path: c.path, seq },
-      `<strong>${esc(label(c))}</strong>, cadena <span class="font-monospace">${esc(c.chain_label)}</span>, punto ${seq === 0 ? 'completo' : '#' + seq} — desde <strong>${esc(data.destination)}</strong>`, c.is_db || c.is_ext, c.is_app);
+      `<strong>${esc(label(c))}</strong>, cadena <span class="font-monospace">${esc(c.chain_label)}</span>, punto ${seq === 0 ? 'completo' : '#' + seq} — desde <strong>${esc(data.destination)}</strong>`, c.is_db || c.is_ext, c.is_app, c.ext_kind, {});
   }));
 });
 
@@ -133,6 +160,16 @@ $('btnStart').addEventListener('click', async () => {
   if (mode === 'subir') {
     Object.assign(body, { push_url: $('pUrl').value, push_user: $('pUser').value, push_token: $('pToken').value });
     if (!confirm(`¿Subir el repositorio restaurado a ${body.push_url}? No se fuerza nada: si ya tiene ramas con otro historial, se detiene.`)) return;
+  } else if (mode === 'nueva_base') {
+    const target = { _kind_hint: extKind };
+    let missing = '';
+    document.querySelectorAll('#newFieldsInner [data-key]').forEach((el) => {
+      target[el.dataset.key] = el.value;
+      if (el.required && !el.value.trim() && !missing) missing = el.previousElementSibling.textContent;
+    });
+    if (missing) { show(`Complete: ${missing.replace(' *', '')}`, 'warning'); return; }
+    body.target = target;
+    if (!confirm(`¿Restaurar en la base NUEVA "${target.database}"? Si ya tiene datos, se detiene sin tocarla.`)) return;
   } else if (mode === 'aplicar') {
     body.confirmacion = $('aConfirm').value;
     if (!confirm('Se reemplazará la base de datos y los archivos de la aplicación principal con este respaldo. ¿Continuar?')) return;
@@ -142,6 +179,7 @@ $('btnStart').addEventListener('click', async () => {
   const data = await res.json().catch(() => ({}));
   $('btnStart').disabled = false;
   $('pToken').value = '';
+  document.querySelectorAll('#newFieldsInner input[type="password"]').forEach((el) => { el.value = ''; });
   show(data.message || data.detail || 'Error de red.', res.ok ? 'info' : 'danger');
   loadHistory();
 });
@@ -153,13 +191,20 @@ async function loadHistory() {
       <span class="badge bg-${ST[r.status] || 'secondary'}">${esc(r.status)}</span>
       #${r.id} ${esc(fmt(r.created_at))} — ${esc(MODES[r.mode] || r.mode)} de <strong>${esc(r.repo === '_sidecar_db' ? 'base del sidecar' : (r.repo === '_aplicacion' ? 'aplicación completa' : r.repo.replace(/^_externo_/, 'sistema externo ')))}</strong>
       punto ${r.seq === 0 ? 'completo' : '#' + r.seq} desde ${esc(r.source)}</summary>
+      <div class="progress my-2" role="progressbar" aria-label="Avance de la restauración #${r.id}" aria-valuenow="${r.progress}" aria-valuemin="0" aria-valuemax="100" style="height: 1.1rem">
+        <div class="progress-bar ${r.status === 'error' ? 'bg-danger' : (r.status === 'en_curso' ? 'progress-bar-striped progress-bar-animated' : (r.status === 'ok_con_avisos' ? 'bg-warning text-dark' : 'bg-success'))}" style="width: ${Math.max(r.progress, 3)}%">${r.progress}%</div>
+      </div>
+      ${r.status === 'en_curso' && r.step ? `<div class="small text-primary mb-1">${esc(r.step)}</div>` : ''}
+      <ol class="list-unstyled small mb-2">${(r.steps || []).map((st) => `<li><i class="bi ${STEP_ICON[st.status] || 'bi-circle'}"></i> ${esc(st.name)}${st.detail ? ` <span class="text-muted">— ${esc(st.detail)}</span>` : ''}</li>`).join('')}</ol>
+      <a class="btn btn-sm btn-outline-secondary mt-1 me-1" href="/api/restores/${r.id}/log"><i class="bi bi-file-earmark-text"></i> Descargar log</a>
       ${r.outputs.map((o) => `<a class="btn btn-sm btn-success mt-1 me-1" href="/api/restores/${r.id}/archivo/${encodeURIComponent(o.name)}"><i class="bi bi-download"></i> ${esc(o.name)} (${kb(o.size)})</a>`).join('')}
       <pre class="bg-light p-2 small mb-0 mt-1" style="white-space: pre-wrap">${esc(r.log || 'En curso…')}</pre></details>`).join('')
     : 'Todavía no hay restauraciones.';
-  if (rows.some((r) => r.status === 'en_curso')) setTimeout(loadHistory, 2500);
+  if (rows.some((r) => r.status === 'en_curso')) setTimeout(loadHistory, 2000);
 }
 
 (async () => {
+  try { TARGET_FIELDS = (await (await fetch('/api/restore-targets/fields')).json()).fields; } catch (e) { TARGET_FIELDS = {}; }
   await loadDestinations();
   loadHistory();
   const pid = new URLSearchParams(location.search).get('point_id');
@@ -172,7 +217,7 @@ async function loadHistory() {
   $('pointSource').innerHTML = data.sources.length ? data.sources.map((s) => `<option value="${esc(s.source)}">${esc(s.label)}</option>`).join('')
     : '<option value="">No está en el servidor ni confirmado en ningún destino</option>';
   $('pointCard').classList.remove('d-none');
-  if (data.sources.length) select({ point_id: p.id }, 'El punto seleccionado arriba.', p.is_db || p.is_ext, p.is_app);
+  if (data.sources.length) select({ point_id: p.id }, 'El punto seleccionado arriba.', p.is_db || p.is_ext, p.is_app, p.ext_kind, p.prefill);
 })();
 </script>
 {% endblock %}
