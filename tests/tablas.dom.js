@@ -18,7 +18,9 @@ try { ({ JSDOM } = require(process.env.JSDOM_PATH || 'jsdom')); } catch (err) {
 
 // La navegacion (location.href = ...) se captura en window.__destino.
 const SCRIPT = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'tablas.js'), 'utf8')
-  .replace(/location\.href = /g, 'window.__destino = ');
+  .replace(/location\.href = /g, 'window.__destino = ')
+  .replace(/location\.reload\(\)/g, 'window.__recargo = true');
+const UI = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'ui.js'), 'utf8');
 const results = [];
 const check = (name, cond) => results.push([!!cond, name]);
 
@@ -143,6 +145,81 @@ async function main() {
   check('Servidor: filtro de texto con el valor actual', input && input.value === 'jp');
   click(dom, button(p3, 'Quitar filtro'));
   check('Servidor: quitar el filtro de texto lo saca de la URL', dom.window.__destino === '/clinic?orden=usuario&dir=asc&perfil=1%2C3');
+
+  // ---------------- columnas: mostrar, ocultar y agregar extra ----------------
+  const cols = `<div class="card"><div class="table-responsive"><table class="table"><thead><tr><th>Cuenta</th><th>Estado</th><th>Licencias</th>
+    <th data-oculta>Sede</th><th data-oculta>Jefatura</th></tr></thead><tbody>
+    <tr><td>ana</td><td>Activa</td><td>Basic</td><td>SURCO</td><td>Sí</td></tr><tr><td>beto</td><td>Bloqueada</td><td>Standard</td><td>IZAGUIRRE</td><td>No</td></tr>
+    </tbody></table></div></div>`;
+  dom = await page(cols, 'http://localhost/m365');
+  const visibleCols = () => [...dom.window.document.querySelectorAll('tbody tr:first-child td')].filter((c) => !c.hidden).map((c) => c.textContent);
+  const colsButton = dom.window.document.querySelector('.tabla-barra button');
+  check('Columnas extra (data-oculta) vienen ocultas y el botón dice cuántas', visibleCols().join('|') === 'ana|Activa|Basic'
+    && colsButton && colsButton.textContent.includes('2 oculta(s)'));
+  click(dom, colsButton);
+  let cpanel = dom.window.document.querySelector('.col-filtro-panel');
+  const boxOf = (name) => [...cpanel.querySelectorAll('label')].find((l) => l.textContent.startsWith(name)).querySelector('input');
+  const toggle = (name, on) => { const b = boxOf(name); b.checked = on; b.dispatchEvent(new dom.window.Event('change')); };
+  check('El panel lista todas las columnas, marcando las extra', cpanel.textContent.includes('Sede (extra)') && boxOf('Cuenta').checked && !boxOf('Sede').checked);
+  toggle('Sede', true);
+  toggle('Licencias', false);
+  check('Agregar una columna extra y ocultar otra', visibleCols().join('|') === 'ana|Activa|SURCO' && dom.window.document.querySelector('thead th:nth-child(4)').hidden === false
+    && dom.window.document.querySelector('thead th:nth-child(3)').hidden === true);
+  const colSaved = JSON.parse(dom.window.localStorage.getItem('tabla:/m365:0'));
+  check('La elección de columnas se recuerda', colSaved.columnas && colSaved.columnas.Sede === true && colSaved.columnas.Licencias === false);
+  const again2 = new JSDOM(`<!doctype html><body>${cols}</body>`, { url: 'http://localhost/m365', runScripts: 'outside-only' });
+  again2.window.localStorage.setItem('tabla:/m365:0', JSON.stringify(colSaved));
+  again2.window.eval(SCRIPT);
+  await new Promise((r) => setTimeout(r, 20));
+  check('Al volver, las columnas quedan como se dejaron', [...again2.window.document.querySelectorAll('tbody tr:first-child td')].filter((c) => !c.hidden)
+    .map((c) => c.textContent).join('|') === 'ana|Activa|SURCO');
+  const small = await page(`<div class="table-responsive"><table class="table"><thead><tr><th>Sede</th><th>Activos</th><th>Inactivos</th></tr></thead>
+    <tbody><tr><td>A</td><td>1</td><td>2</td></tr></tbody></table></div>`, 'http://localhost/chica');
+  check('Una tabla chica sin columnas extra no lleva el botón "Columnas"', !small.window.document.querySelector('.tabla-barra'));
+
+  // ---------------- avisos descartables y sugerencias (ui.js) ----------------
+  const uiPage = async (html, url = 'http://localhost/avisos', prep) => {
+    const d = new JSDOM(`<!doctype html><body>${html}</body>`, { url, runScripts: 'outside-only' });
+    if (prep) prep(d);
+    if (d.window.document.readyState === 'loading') await new Promise((r) => d.window.document.addEventListener('DOMContentLoaded', r));
+    d.window.eval(UI);
+    return d;
+  };
+  const aviso = '<div class="alert alert-warning" data-aviso="m365-x" id="av">Falta el permiso AuditLog.Read.All.</div>';
+  let ud = await uiPage(aviso);
+  const dismiss = ud.window.document.querySelector('#av .aviso-descartar');
+  check('Un aviso con data-aviso lleva "No volver a mostrar"', dismiss && dismiss.textContent === 'No volver a mostrar');
+  click(ud, dismiss);
+  const savedKeys = Object.keys(ud.window.localStorage);
+  check('Al descartarlo desaparece y se recuerda', !ud.window.document.querySelector('#av') && savedKeys.some((k) => k.startsWith('aviso:m365-x:')));
+  ud = await uiPage(aviso, 'http://localhost/avisos', (d) => savedKeys.forEach((k) => d.window.localStorage.setItem(k, '1')));
+  check('Descartado: no vuelve a mostrarse', !ud.window.document.querySelector('#av'));
+  ud = await uiPage(aviso.replace('AuditLog.Read.All', 'Reports.Read.All'), 'http://localhost/avisos', (d) => savedKeys.forEach((k) => d.window.localStorage.setItem(k, '1')));
+  check('Si el aviso cambia (otro problema), vuelve a aparecer', !!ud.window.document.querySelector('#av'));
+
+  ud = await uiPage(`<form method="get"><input type="text" name="q" id="q"></form>
+    <div class="table-responsive"><table class="table"><thead><tr><th>Cuenta</th><th></th></tr></thead><tbody>
+    <tr><td><a href="#">Ámbar Calanche</a><div>acalanche@depilzone.com.pe</div></td><td><button>Editar</button></td></tr>
+    <tr><td><a href="#">Emily Soto</a><div>esoto@depilzone.com.pe</div></td><td><button>Editar</button></td></tr></tbody></table></div>`, 'http://localhost/lista');
+  const q = ud.window.document.getElementById('q');
+  q.value = 'amb';
+  q.dispatchEvent(new ud.window.Event('input'));
+  const opts = () => [...ud.window.document.getElementById(q.getAttribute('list')).options].map((o) => o.value);
+  check('Buscador: más angosto (clase campo-buscar) y con sugerencias de la tabla, sin acentos ni mayúsculas', q.classList.contains('campo-buscar')
+    && q.getAttribute('autocomplete') === 'off' && opts().includes('Ámbar Calanche') && !opts().includes('Emily Soto'));
+  q.value = 'depilzone';
+  q.dispatchEvent(new ud.window.Event('input'));
+  check('Sugiere también los datos de la segunda línea de la celda (correo)', opts().length === 2 && opts().every((v) => v.includes('@')) && !opts().includes('Editar'));
+
+  ud = await uiPage('<form method="get"><input type="search" name="q" id="q" data-sugerencias="/clinic/sugerencias"></form>', 'http://localhost/clinic', (d) => {
+    d.window.fetch = async (u) => { d.window.__pedido = u; return { ok: true, json: async () => ['PRUEBA.E2E1', 'PRUEBA SUPERVISORA UNO'] }; };
+  });
+  const q2 = ud.window.document.getElementById('q');
+  q2.value = 'prueba';
+  q2.dispatchEvent(new ud.window.Event('input'));
+  await new Promise((r) => setTimeout(r, 300));
+  check('Buscador de tabla paginada en el servidor: pide sugerencias al servidor', ud.window.__pedido === '/clinic/sugerencias?q=prueba'
+    && [...ud.window.document.getElementById(q2.getAttribute('list')).options].length === 2);
 
   const fails = results.filter(([ok]) => !ok);
   for (const [ok, name] of results) console.log(`${ok ? 'PASA ' : 'FALLA'}  ${name}`);

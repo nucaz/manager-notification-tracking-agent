@@ -130,7 +130,13 @@ READMEs.
   `data-orden="clave"` (→ `?orden=&dir=`), `data-filtro="param"` con
   `data-opciones='[["valor","texto"]]'` (→ `?param=v1,v2`) o
   `data-filtro-texto="param"`, y el servicio los acepta (ver
-  `clinicService.filtersOf`). Prueba: `tests/tablas.dom.js` (jsdom).
+  `clinicService.filtersOf`). Botón **Columnas** (mostrar/ocultar; un
+  `<th data-oculta>` es una columna extra que viene oculta y se puede
+  agregar). El buscador (`name="q"`, `public/js/ui.js`) es angosto y
+  sugiere mientras se escribe, desde la tabla o desde
+  `data-sugerencias="/url"` (JSON) si la tabla pagina en el servidor. Un
+  aviso informativo con `data-aviso="clave"` lleva "No volver a mostrar"
+  (vuelve si su texto cambia). Prueba: `tests/tablas.dom.js` (jsdom).
 - **Valores sugeridos/autogenerados** (ej. correlativo de código de
   activo): siempre calculados de los datos reales en el momento
   (`MAX` sobre lo ya existente + 1), nunca con un contador aparte en

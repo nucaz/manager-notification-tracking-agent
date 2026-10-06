@@ -351,6 +351,15 @@ async function main() {
     await xwb.xlsx.load(Buffer.from(await xls.arrayBuffer()));
     check('Exportar respeta los filtros por columna', xwb.worksheets[0].rowCount === 2);
 
+    // ================= Sugerencias del buscador =================
+    const sug = await (await fetch(`${base}/clinic/sugerencias?q=prueba.e2e`, { headers: { cookie } })).json();
+    check('Sugerencias del buscador: usuarios de TODO el inventario (no solo la página)', Array.isArray(sug) && sug.length >= 3 && sug.length <= 12
+      && sug.some((v) => /prueba\.e2e/i.test(v)));
+    check('Sugerencias: con menos de 2 letras no busca', (await (await fetch(`${base}/clinic/sugerencias?q=p`, { headers: { cookie } })).json()).length === 0);
+    page = await get('/clinic?q=PRUEBA');
+    check('Listado de Clinic con columnas extra para agregar (DNI, correo, celular...)', page.text.includes('<th data-oculta>DNI</th>')
+      && page.text.includes('data-sugerencias="/clinic/sugerencias"'));
+
     // ================= Reportes =================
     page = await get('/reportes?modulo=clinic_usuarios&q=PRUEBA');
     check('Reporte "Usuarios de Clinic": antigüedad de conexión, estado en Clinic y vínculo con Empleados', page.status === 200 && page.text.includes('PRUEBA.E2E1')

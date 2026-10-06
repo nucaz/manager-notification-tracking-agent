@@ -165,7 +165,12 @@ Aplicación web para el seguimiento de:
   a mostrar, con buscador y cantidad por valor; los filtros se combinan).
   En los listados grandes que paginan en el servidor (Usuarios de Clinic)
   el orden y los filtros se aplican sobre todos los registros, no solo la
-  página visible, y el Excel exportado los respeta. Elija cuántos registros
+  página visible, y el Excel exportado los respeta. **Columnas**: muestre u
+  oculte columnas y agregue las extra (en Microsoft 365: correo, tipo,
+  sede, jefatura, licencias del tenant, actividad por servicio; en Clinic:
+  DNI, correo, celular, aprobación, creado por). El **buscador** sugiere
+  mientras se escribe, y los avisos informativos tienen "No volver a
+  mostrar". Elija cuántos registros
   ver (10, 20, 30, 40, 50, 100 o todos) con "Anterior / Siguiente", estire
   una columna arrastrando el borde derecho de su encabezado y cámbiela de
   lugar arrastrando el encabezado. Cada persona conserva su ajuste en su

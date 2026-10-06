@@ -193,6 +193,27 @@ router.post('/importar/confirmar', canWrite, verifyCsrfToken, async (req, res, n
   }
 });
 
+// Sugerencias del buscador (public/js/ui.js): usuario, nombre o DNI que
+// empiezan (o contienen) lo escrito, entre TODOS los usuarios.
+router.get('/sugerencias', async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim().slice(0, 60);
+    if (q.length < 2) return res.json([]);
+    const like = `%${q}%`;
+    const [rows] = await pool.query(
+      `SELECT v FROM (
+         SELECT username AS v, username LIKE ? AS pre FROM clinic_users WHERE username LIKE ?
+         UNION SELECT full_name, full_name LIKE ? FROM clinic_users WHERE full_name LIKE ?
+         UNION SELECT dni, dni LIKE ? FROM clinic_users WHERE dni LIKE ?
+       ) t ORDER BY pre DESC, v LIMIT 12`,
+      [`${q}%`, like, `${q}%`, like, `${q}%`, like]
+    );
+    res.json(rows.map((r) => r.v));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Tablero: antiguedad de la ultima conexion a Clinic.
 router.get('/conexiones', async (req, res, next) => {
   try {

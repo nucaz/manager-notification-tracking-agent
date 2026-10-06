@@ -159,6 +159,13 @@ table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: elli
 .col-filtro-opcion { display: flex; align-items: center; padding: .15rem .3rem; border-radius: 4px; cursor: pointer; font-size: .85rem; margin: 0; }
 .col-filtro-opcion:hover { background: #f1f4fa; }
 .col-filtro-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Barra sobre cada tabla (public/js/tablas.js): boton "Columnas". */
+.tabla-barra { display: flex; justify-content: flex-end; gap: .5rem; margin-bottom: .4rem; }
+/* Buscador de los listados (public/js/ui.js): ancho de un dato, no de media pantalla. */
+input.campo-buscar { max-width: 40ch; }
+/* Avisos que se pueden descartar (data-aviso, public/js/ui.js). */
+[data-aviso] { position: relative; }
+.aviso-descartar { padding: 0 .25rem; margin-left: .5rem; font-size: .8rem; vertical-align: baseline; }
 /* Ordenar con clic en el encabezado: icono tenue hasta pasar el mouse; azul si ordena. */
 th.col-ordenable { cursor: pointer; user-select: none; }
 th.col-ordenable:hover { background-color: #f1f4fa; }

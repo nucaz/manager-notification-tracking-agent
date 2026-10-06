@@ -71,7 +71,7 @@
 
 <form class="row g-2 mb-3 align-items-end" method="get">
   <div class="col-md-3"><label class="form-label small mb-0" for="f_q">Buscar</label>
-    <input type="search" name="q" id="f_q" value="<%= filters.q %>" class="form-control" placeholder="Nombre, usuario, DNI, correo o creado por"></div>
+    <input type="search" name="q" data-sugerencias="/clinic/sugerencias" id="f_q" value="<%= filters.q %>" class="form-control" placeholder="Nombre, usuario, DNI, correo o creado por"></div>
   <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_estado">Estado</label>
     <select name="estado" id="f_estado" class="form-select">
       <option value="">Todos</option>
@@ -131,6 +131,8 @@
         <th data-orden="supervisor" data-filtro-texto="sup">Supervisor</th>
         <th data-orden="conexion" data-orden-inicial="desc" data-filtro="conexion" data-opciones="<%= opts(BUCKETS, 'key', 'label') %>">Última conexión</th>
         <th data-orden="estado" data-filtro="estado" data-opciones="<%= JSON.stringify(Object.keys(STATUS).map(function (k) { return [k, STATUS[k].label]; })) %>">Estado</th>
+        <th data-oculta>Id Clinic</th><th data-oculta>DNI</th><th data-oculta>Correo</th><th data-oculta>Celular</th><th data-oculta>Aprobado</th>
+        <th data-oculta data-orden="registro" data-orden-inicial="desc">Creado en Clinic</th><th data-oculta>Creado por</th><th data-oculta>Empleado</th>
       </tr></thead>
       <tbody>
         <% items.forEach(function (c) {
@@ -148,10 +150,18 @@
             <td class="text-nowrap <%= idle ? 'text-warning-emphasis fw-semibold' : '' %>"><%= last ? fmt(c.last_login_at) : 'Nunca' %></td>
             <td><span class="badge <%= STATUS[c.status].badge %>"><%= STATUS[c.status].label %></span>
               <% if (c.status === 'baja' && c.baja_date) { %><div class="text-muted"><%= fmt(c.baja_date) %></div><% } %></td>
+            <td><%= c.clinic_id || '—' %></td>
+            <td><%= c.dni || '—' %></td>
+            <td><%= c.email || '—' %></td>
+            <td class="text-nowrap"><%= c.phone || '—' %></td>
+            <td><%= (APPROVAL[c.approved] || {}).label || c.approved %></td>
+            <td class="text-nowrap"><%= c.registered_at ? fmt(c.registered_at) : '—' %></td>
+            <td><%= c.registered_by || '—' %></td>
+            <td><%= c.employee_id ? [c.employee_first_name, c.employee_last_name].filter(Boolean).join(' ') : 'Sin vincular' %></td>
           </tr>
         <% }); %>
         <% if (items.length === 0) { %>
-          <tr><td colspan="8" class="text-center text-muted py-4">
+          <tr><td colspan="16" class="text-center text-muted py-4">
             <% if (grand === 0) { %>Aún no hay usuarios. Importe el listado que exporta Clinic (Usuarios_roles_sedes_permisos.xls) desde <a href="/clinic/importar">Importar listado de Clinic</a>.
             <% } else { %>No hay usuarios con esos filtros.<% } %></td></tr>
         <% } %>

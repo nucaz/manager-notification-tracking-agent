@@ -403,14 +403,15 @@
     reset.type = 'button';
     reset.className = 'btn btn-link btn-sm p-0 tabla-restablecer';
     reset.textContent = 'Restablecer columnas';
-    reset.title = 'Vuelve al orden y los anchos originales de esta tabla';
+    reset.title = 'Vuelve al orden, los anchos y las columnas originales de esta tabla';
     reset.addEventListener('click', function () {
       delete prefs.orden;
       delete prefs.anchos;
+      delete prefs.columnas;
       save(key, prefs);
       location.reload();
     });
-    function showReset() { reset.hidden = !(prefs.orden || prefs.anchos); }
+    function showReset() { reset.hidden = !(prefs.orden || prefs.anchos || (prefs.columnas && Object.keys(prefs.columnas).length)); }
 
     var rows = body ? Array.prototype.filter.call(body.rows, function (r) { return r.cells.length === total; }) : [];
     var card = table.closest ? table.closest('.card') : null;
@@ -716,6 +717,92 @@
       foot.appendChild(next);
       render();
     }
+    // --- Columnas visibles: el boton "Columnas" muestra u oculta cada una.
+    // Un encabezado con data-oculta viene oculto (columna extra que se
+    // puede agregar). La eleccion se recuerda por pantalla y tabla.
+    var colPrefs = prefs.columnas && typeof prefs.columnas === 'object' ? prefs.columnas : {};
+    var choosable = function (th) { return th.textContent.replace(/\s+/g, '').length > 0 && !th.querySelector('input'); };
+    var hiddenNow = function (th) {
+      var name = th.getAttribute('data-columna');
+      return choosable(th) && (Object.prototype.hasOwnProperty.call(colPrefs, name) ? !colPrefs[name] : th.hasAttribute('data-oculta'));
+    };
+    var colsBtn = null;
+    function applyColumns() {
+      var hiddenCount = 0;
+      Array.prototype.forEach.call(headRow.cells, function (th, i) {
+        var hide = hiddenNow(th);
+        if (hide) hiddenCount += 1;
+        Array.prototype.forEach.call(table.rows, function (row) {
+          if (row.cells.length === total && row.cells[i]) row.cells[i].hidden = hide;
+        });
+      });
+      if (colsBtn) {
+        colsBtn.innerHTML = '<i class="bi bi-layout-three-columns"></i> Columnas' + (hiddenCount ? ' <span class="badge text-bg-light border">' + hiddenCount + ' oculta(s)</span>' : '');
+      }
+    }
+    var heads = Array.prototype.filter.call(headRow.cells, choosable);
+    if (heads.length >= 5 || heads.some(function (th) { return th.hasAttribute('data-oculta'); })) {
+      var bar = document.createElement('div');
+      bar.className = 'tabla-barra';
+      colsBtn = document.createElement('button');
+      colsBtn.type = 'button';
+      colsBtn.className = 'btn btn-sm btn-outline-secondary';
+      colsBtn.setAttribute('aria-haspopup', 'dialog');
+      colsBtn.title = 'Mostrar u ocultar columnas (incluidas las extra que se pueden agregar)';
+      bar.appendChild(colsBtn);
+      wrap.parentNode.insertBefore(bar, wrap);
+      var colsPanel = null;
+      var closeCols = function () {
+        if (colsPanel) { colsPanel.remove(); colsPanel = null; document.removeEventListener('mousedown', outsideCols, true); }
+      };
+      var outsideCols = function (ev) { if (colsPanel && !colsPanel.contains(ev.target) && !colsBtn.contains(ev.target)) closeCols(); };
+      colsBtn.addEventListener('click', function () {
+        if (colsPanel) { closeCols(); return; }
+        colsPanel = document.createElement('div');
+        colsPanel.className = 'col-filtro-panel shadow';
+        colsPanel.setAttribute('role', 'dialog');
+        colsPanel.setAttribute('aria-label', 'Columnas de la tabla');
+        var titleEl = document.createElement('div');
+        titleEl.className = 'small fw-semibold mb-1';
+        titleEl.textContent = 'Columnas que se muestran';
+        colsPanel.appendChild(titleEl);
+        var listEl = document.createElement('div');
+        listEl.className = 'col-filtro-lista';
+        Array.prototype.forEach.call(headRow.cells, function (th) {
+          if (!choosable(th)) return;
+          var name = th.getAttribute('data-columna');
+          var label = document.createElement('label');
+          label.className = 'col-filtro-opcion';
+          var box = document.createElement('input');
+          box.type = 'checkbox';
+          box.className = 'form-check-input me-2';
+          box.checked = !hiddenNow(th);
+          box.addEventListener('change', function () {
+            colPrefs[name] = box.checked;
+            prefs.columnas = colPrefs;
+            save(key, prefs);
+            showReset();
+            // Con anchos fijados, una columna que reaparece no tiene ancho: se recarga.
+            if (table.classList.contains('tabla-fija')) { location.reload(); return; }
+            applyColumns();
+          });
+          var text = document.createElement('span');
+          text.className = 'col-filtro-texto';
+          text.textContent = name.replace(/#\d+$/, '') + (th.hasAttribute('data-oculta') ? ' (extra)' : '');
+          label.appendChild(box);
+          label.appendChild(text);
+          listEl.appendChild(label);
+        });
+        colsPanel.appendChild(listEl);
+        document.body.appendChild(colsPanel);
+        var r = colsBtn.getBoundingClientRect();
+        colsPanel.style.left = Math.max(window.scrollX + 8, Math.min(r.left + window.scrollX, window.scrollX + document.documentElement.clientWidth - colsPanel.offsetWidth - 8)) + 'px';
+        colsPanel.style.top = (r.bottom + window.scrollY + 4) + 'px';
+        document.addEventListener('mousedown', outsideCols, true);
+      });
+    }
+    applyColumns();
+
     foot.appendChild(reset);
     showReset();
     applyWidths();

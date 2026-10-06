@@ -55,7 +55,7 @@
   </form>
 
   <% if (extras && !extras.ok) { %>
-    <div class="alert alert-warning">
+    <div class="alert alert-warning" data-aviso="glpi-sin-datos-ampliados">
       <strong>Sin sistema operativo, procesador, memoria ni IP.</strong>
       La API v2 de GLPI no entrega esos datos; la app los toma de la API clásica del mismo GLPI, que ahora no responde: <%= extras.message %>
       <div class="small mt-1"><%= extras.help %> El resto del inventario no se ve afectado.</div>

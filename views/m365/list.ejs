@@ -52,15 +52,15 @@
 <% } %>
 
 <% if (activityNote) { %>
-  <div class="alert alert-warning small py-2"><i class="bi bi-info-circle"></i> <strong>Última conexión:</strong> <%= activityNote %>
+  <div class="alert alert-warning small py-2" data-aviso="m365-ultima-conexion"><i class="bi bi-info-circle"></i> <strong>Última conexión:</strong> <%= activityNote %>
     <% if (currentUser.role === 'admin') { %><a href="/m365/configuracion">Ver permisos</a><% } %></div>
 <% } else if (configured && !activityRead) { %>
-  <div class="alert alert-light border small py-2"><i class="bi bi-info-circle"></i> La última conexión se llena al leer el tenant con el permiso
+  <div class="alert alert-light border small py-2" data-aviso="m365-ultima-conexion-permiso"><i class="bi bi-info-circle"></i> La última conexión se llena al leer el tenant con el permiso
     <code>Reports.Read.All</code> (y, con Microsoft Entra ID P1, <code>AuditLog.Read.All</code> para el inicio de sesión exacto).</div>
 <% } %>
 
 <form class="row g-2 mb-3 align-items-center" method="get">
-  <div class="col-md-4"><label class="visually-hidden" for="f_q">Buscar</label>
+  <div class="col-md-3"><label class="visually-hidden" for="f_q">Buscar</label>
     <input type="text" name="q" id="f_q" value="<%= filters.q %>" class="form-control" placeholder="Correo, nombre o cargo..."></div>
   <div class="col-md-2"><label class="visually-hidden" for="f_estado">Estado</label>
     <select name="estado" id="f_estado" class="form-select"><option value="">Todos los estados</option>
@@ -75,13 +75,16 @@
   <div class="col-md-2"><div class="form-check">
     <input class="form-check-input" type="checkbox" name="diferencias" value="1" id="f_diff" <%= filters.diff ? 'checked' : '' %>>
     <label class="form-check-label" for="f_diff">Solo con diferencias <span class="badge text-bg-warning"><%= diffCount %></span></label></div></div>
-  <div class="col-md-2"><button class="btn btn-outline-secondary w-100" type="submit">Filtrar</button></div>
+  <div class="col-md-1"><button class="btn btn-outline-secondary w-100" type="submit">Filtrar</button></div>
 </form>
 
 <div class="card p-3">
   <div class="table-responsive">
     <table class="table table-hover align-middle">
-      <thead><tr><th>Cuenta</th><th>Cargo / Área</th><th>Estado</th><th>Licencias</th><th>Última conexión</th><th>Antigüedad</th><th>Tenant</th></tr></thead>
+      <thead><tr><th>Cuenta</th><th>Cargo / Área</th><th>Estado</th><th>Licencias</th><th>Última conexión</th><th>Antigüedad</th><th>Tenant</th>
+        <th data-oculta>Correo</th><th data-oculta>Tipo</th><th data-oculta>Área</th><th data-oculta>Sede</th><th data-oculta>Jefatura</th>
+        <th data-oculta>Licencias en el tenant</th><th data-oculta>Correo: última actividad</th><th data-oculta>Teams: última actividad</th>
+        <th data-oculta>OneDrive: última actividad</th><th data-oculta>Inicio de sesión</th></tr></thead>
       <tbody>
         <% items.forEach(function (a) { %>
           <tr>
@@ -101,10 +104,20 @@
               <% if (a.diffs.length) { %><span class="text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> <%= a.diffs.join('; ') %></span>
               <% } else if (a.tenant_seen_at) { %><span class="text-success"><i class="bi bi-check2"></i> coincide</span>
               <% } else { %><span class="text-muted">sin leer</span><% } %></td>
+            <td class="small font-monospace"><%= a.upn %></td>
+            <td class="small"><%= ACCOUNT_TYPES[a.account_type] || a.account_type %></td>
+            <td class="small"><%= a.area || '—' %></td>
+            <td class="small"><%= a.sede || '—' %></td>
+            <td class="small"><%= a.is_manager ? 'Sí' : 'No' %></td>
+            <td class="small"><%= a.tenant_licenses || '—' %></td>
+            <% ['exchange_date', 'teams_date', 'onedrive_date'].forEach(function (k) { %>
+              <td class="small text-nowrap" data-valor="<%= a[k] ? String(a[k]).slice(0, 10) : '' %>"><%= a[k] ? String(a[k]).slice(0, 10) : '—' %></td>
+            <% }); %>
+            <td class="small text-nowrap" data-valor="<%= a.last_signin_at || '' %>"><%= a.last_signin_at ? String(a.last_signin_at).slice(0, 16) : '—' %></td>
           </tr>
         <% }); %>
         <% if (!items.length) { %>
-          <tr><td colspan="7" class="text-center text-muted py-4">No hay cuentas con esos filtros. Configure la lectura del tenant para traer las cuentas existentes, o regístrelas a mano.</td></tr>
+          <tr><td colspan="17" class="text-center text-muted py-4">No hay cuentas con esos filtros. Configure la lectura del tenant para traer las cuentas existentes, o regístrelas a mano.</td></tr>
         <% } %>
       </tbody>
     </table>
