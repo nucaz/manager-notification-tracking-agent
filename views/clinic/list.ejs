@@ -1,18 +1,18 @@
 <%- include('../partials/head', { title: title }) %>
-<% const P = { q: filters.q, estado: filters.status, perfil: filters.profile, sede: filters.sede, area: filters.area, supervisor: filters.supervisor,
-     alerta: filters.alert, conexion: filters.bucket, orden: filters.sort === 'nombre' ? '' : filters.sort };
+<% const P = Object.assign({}, query);
+   delete P.pagina;
    const qs = function (over) {
      const o = Object.assign({}, P, over || {});
-     return Object.keys(o).filter(function (k) { return o[k] !== '' && o[k] !== null && o[k] !== undefined; })
+     return Object.keys(o).filter(function (k) { return o[k] !== '' && o[k] !== null && o[k] !== undefined && typeof o[k] !== 'object'; })
        .map(function (k) { return k + '=' + encodeURIComponent(o[k]); }).join('&');
    };
+   // Opciones de los filtros por columna (tablas.js, modo servidor).
+   const opts = function (list, v, t) { return JSON.stringify(list.map(function (x) { return [String(x[v]), x[t]]; })); };
+   const one = function (list) { return list.length === 1 ? list[0] : null; };
    const grand = (counts.activo || 0) + (counts.inactivo || 0) + (counts.baja || 0);
    const idleMs = IDLE_DAYS * 86400000;
    const fmt = function (d) { return d ? String(d instanceof Date ? d.toISOString() : d).slice(0, 10) : ''; };
-   const sortLink = function (key, label) {
-     return '<a class="link-body-emphasis text-decoration-none" href="/clinic?' + qs({ orden: key === 'nombre' ? '' : key, pagina: '' }) + '">' + label
-       + (filters.sort === key ? ' <i class="bi bi-caret-down-fill small"></i>' : '') + '</a>';
-   }; %>
+%>
 
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
@@ -75,37 +75,42 @@
   <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_estado">Estado</label>
     <select name="estado" id="f_estado" class="form-select">
       <option value="">Todos</option>
-      <% Object.keys(STATUS).forEach(function (k) { %><option value="<%= k %>" <%= filters.status === k ? 'selected' : '' %>><%= STATUS[k].label %></option><% }); %>
+      <% Object.keys(STATUS).forEach(function (k) { %><option value="<%= k %>" <%= one(filters.status) === k ? 'selected' : '' %>><%= STATUS[k].label %></option><% }); %>
+      <% if (filters.status.length > 1) { %><option value="<%= filters.status.join(',') %>" selected>Varios (<%= filters.status.length %>)</option><% } %>
     </select></div>
   <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_perfil">Perfil</label>
     <select name="perfil" id="f_perfil" class="form-select">
       <option value="">Todos</option>
-      <% profiles.forEach(function (p) { %><option value="<%= p.id %>" <%= filters.profile === p.id ? 'selected' : '' %>><%= p.name %><%= p.active ? '' : ' (inactivo)' %></option><% }); %>
+      <% profiles.forEach(function (p) { %><option value="<%= p.id %>" <%= one(filters.profile) === p.id ? 'selected' : '' %>><%= p.name %><%= p.active ? '' : ' (inactivo)' %></option><% }); %>
+      <% if (filters.profile.length > 1) { %><option value="<%= filters.profile.join(',') %>" selected>Varios (<%= filters.profile.length %>)</option><% } %>
     </select></div>
   <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_sede">Sede</label>
     <select name="sede" id="f_sede" class="form-select">
       <option value="">Todas</option>
-      <% sedes.forEach(function (s) { %><option value="<%= s.id %>" <%= filters.sede === s.id ? 'selected' : '' %>><%= s.name %></option><% }); %>
+      <% sedes.forEach(function (s) { %><option value="<%= s.id %>" <%= one(filters.sede) === s.id ? 'selected' : '' %>><%= s.name %></option><% }); %>
+      <% if (filters.sede.length > 1) { %><option value="<%= filters.sede.join(',') %>" selected>Varios (<%= filters.sede.length %>)</option><% } %>
     </select></div>
   <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_area">Área</label>
     <select name="area" id="f_area" class="form-select">
       <option value="">Todas</option>
-      <% areas.forEach(function (a) { %><option value="<%= a.id %>" <%= filters.area === a.id ? 'selected' : '' %>><%= a.value %></option><% }); %>
+      <% areas.forEach(function (a) { %><option value="<%= a.id %>" <%= one(filters.area) === a.id ? 'selected' : '' %>><%= a.value %></option><% }); %>
+      <% if (filters.area.length > 1) { %><option value="<%= filters.area.join(',') %>" selected>Varios (<%= filters.area.length %>)</option><% } %>
     </select></div>
   <div class="col-md-1 col-12 d-flex gap-1">
-    <% if (filters.alert) { %><input type="hidden" name="alerta" value="<%= filters.alert %>"><% } %>
-    <% if (filters.bucket) { %><input type="hidden" name="conexion" value="<%= filters.bucket %>"><% } %>
-    <% if (filters.supervisor) { %><input type="hidden" name="supervisor" value="<%= filters.supervisor %>"><% } %>
-    <% if (filters.sort !== 'nombre') { %><input type="hidden" name="orden" value="<%= filters.sort %>"><% } %>
+    <% ['alerta', 'supervisor', 'conexion', 'usuario', 'nombre', 'sup', 'orden', 'dir'].forEach(function (k) { if (P[k] && typeof P[k] === 'string') { %>
+      <input type="hidden" name="<%= k %>" value="<%= P[k] %>"><% } }); %>
     <button class="btn btn-outline-primary w-100" type="submit">Filtrar</button>
   </div>
 </form>
 
-<% if (supervisor || filters.alert || filters.bucket || qs({ orden: '' })) { %>
+<% if (qs({ orden: '', dir: '' })) { %>
   <div class="d-flex flex-wrap gap-2 align-items-center mb-2 small">
     <% if (supervisor) { %><span class="badge text-bg-primary">Equipo de <%= supervisor.username %> · <%= supervisor.full_name %></span><% } %>
     <% if (filters.alert) { %><span class="badge text-bg-warning"><%= ALERTS[filters.alert] %></span><% } %>
-    <% if (filters.bucket) { %><span class="badge text-bg-info">Última conexión: <%= (BUCKETS.find(function (b) { return b.key === filters.bucket; }) || {}).label %></span><% } %>
+    <% if (filters.bucket.length) { %><span class="badge text-bg-info">Última conexión: <%= filters.bucket.map(function (k) { return (BUCKETS.find(function (b) { return b.key === k; }) || {}).label; }).join(', ') %></span><% } %>
+    <% if (filters.username) { %><span class="badge text-bg-light border">Usuario contiene "<%= filters.username %>"</span><% } %>
+    <% if (filters.name) { %><span class="badge text-bg-light border">Nombre contiene "<%= filters.name %>"</span><% } %>
+    <% if (filters.supervisorText) { %><span class="badge text-bg-light border">Supervisor contiene "<%= filters.supervisorText %>"</span><% } %>
     <a href="/clinic" class="link-secondary">Quitar filtros</a>
   </div>
 <% } %>
@@ -113,11 +118,20 @@
 <div class="card p-3">
   <div class="d-flex justify-content-between align-items-center mb-2 small text-muted">
     <span><%= grand === 0 ? '' : (items.length ? ((page - 1) * 50 + 1) + '–' + ((page - 1) * 50 + items.length) + ' de ' + total : '0 resultados') %></span>
-    <span>Ordenar: <%- sortLink('nombre', 'nombre') %> · <%- sortLink('usuario', 'usuario') %> · <%- sortLink('conexion', 'última conexión') %> · <%- sortLink('registro', 'más recientes') %></span>
+    <span>Clic en un encabezado para ordenar; <i class="bi bi-funnel"></i> para filtrar; arrastre para mover columnas.</span>
   </div>
   <div class="table-responsive">
-    <table class="table table-hover align-middle small">
-      <thead><tr><th>Usuario</th><th>Nombre</th><th>Perfil</th><th>Sede</th><th>Área</th><th>Supervisor</th><th>Última conexión</th><th>Estado</th></tr></thead>
+    <table class="table table-hover align-middle small" data-tabla="servidor">
+      <thead><tr>
+        <th data-orden="usuario" data-filtro-texto="usuario">Usuario</th>
+        <th data-orden="nombre" data-filtro-texto="nombre">Nombre</th>
+        <th data-orden="perfil" data-filtro="perfil" data-opciones="<%= opts(profiles, 'id', 'name') %>">Perfil</th>
+        <th data-orden="sede" data-filtro="sede" data-opciones="<%= opts(sedes, 'id', 'name') %>">Sede</th>
+        <th data-orden="area" data-filtro="area" data-opciones="<%= opts(areas, 'id', 'value') %>">Área</th>
+        <th data-orden="supervisor" data-filtro-texto="sup">Supervisor</th>
+        <th data-orden="conexion" data-orden-inicial="desc" data-filtro="conexion" data-opciones="<%= opts(BUCKETS, 'key', 'label') %>">Última conexión</th>
+        <th data-orden="estado" data-filtro="estado" data-opciones="<%= JSON.stringify(Object.keys(STATUS).map(function (k) { return [k, STATUS[k].label]; })) %>">Estado</th>
+      </tr></thead>
       <tbody>
         <% items.forEach(function (c) {
              const last = c.last_login_at ? new Date(c.last_login_at) : null;

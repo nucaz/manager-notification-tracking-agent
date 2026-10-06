@@ -57,12 +57,18 @@ const ALERTS = {
   usuario_repetido: 'Usuario repetido',
   sin_dni: 'Activos sin DNI',
 };
+// Orden del listado (clic en el encabezado): columna y sentido por defecto.
+// Los vacios van siempre al final.
 const SORTS = {
-  nombre: 'c.full_name, c.username',
-  usuario: 'c.username',
-  conexion: 'o.last_login_at IS NULL, o.last_login_at DESC',
-  registro: 'o.registered_at DESC',
-  sede: 's.name, c.full_name',
+  nombre: { expr: 'c.full_name', dir: 'asc' },
+  usuario: { expr: 'c.username', dir: 'asc' },
+  perfil: { expr: 'p.name', dir: 'asc' },
+  sede: { expr: 's.name', dir: 'asc' },
+  area: { expr: 'COALESCE(a.value, pa.value)', dir: 'asc' },
+  supervisor: { expr: 'sup.username', dir: 'asc' },
+  conexion: { expr: 'o.last_login_at', dir: 'desc' },
+  registro: { expr: 'o.registered_at', dir: 'desc' },
+  estado: { expr: "FIELD(c.status, 'activo', 'inactivo', 'baja')", dir: 'asc' },
 };
 const PER_PAGE = 50;
 
@@ -170,29 +176,41 @@ const SELECT = `
   LEFT JOIN employees e ON e.id = c.employee_id
   LEFT JOIN clinic_user_events b ON b.id = (SELECT MAX(x.id) FROM clinic_user_events x WHERE x.clinic_user_id = c.id AND x.event_type = 'baja')`;
 
+// Listas "1,3" (filtros por columna con varios valores marcados).
+const listOf = (v, ok) => [...new Set(String(v || '').split(',').map((x) => x.trim()).filter(ok))];
+const idsOf = (v) => listOf(v, (x) => /^\d+$/.test(x)).map(Number);
+
 function filtersOf(query) {
+  const sort = SORTS[query.orden] ? query.orden : 'nombre';
   return {
     q: clean(query.q, 100),
-    status: STATUS[query.estado] ? query.estado : '',
-    profile: intOrNull(query.perfil),
-    sede: intOrNull(query.sede),
-    area: intOrNull(query.area),
+    username: clean(query.usuario, 60),
+    name: clean(query.nombre, 100),
+    supervisorText: clean(query.sup, 100),
+    status: listOf(query.estado, (x) => STATUS[x]),
+    profile: idsOf(query.perfil),
+    sede: idsOf(query.sede),
+    area: idsOf(query.area),
+    bucket: listOf(query.conexion, (x) => BUCKETS.some((b) => b.key === x)),
     supervisor: intOrNull(query.supervisor),
     alert: ALERTS[query.alerta] ? query.alerta : '',
-    bucket: BUCKETS.some((b) => b.key === query.conexion) ? query.conexion : '',
-    sort: SORTS[query.orden] ? query.orden : 'nombre',
+    sort,
+    dir: ['asc', 'desc'].includes(query.dir) ? query.dir : SORTS[sort].dir,
   };
 }
 
 function where(f) {
   const w = [];
   const params = [];
-  if (f.status) { w.push('c.status = ?'); params.push(f.status); }
-  if (f.profile) { w.push('c.profile_id = ?'); params.push(f.profile); }
-  if (f.sede) { w.push('c.sede_id = ?'); params.push(f.sede); }
-  if (f.area) { w.push('(c.area_item_id = ? OR (c.area_item_id IS NULL AND p.area_item_id = ?))'); params.push(f.area, f.area); }
+  if (f.status.length) { w.push('c.status IN (?)'); params.push(f.status); }
+  if (f.profile.length) { w.push('c.profile_id IN (?)'); params.push(f.profile); }
+  if (f.sede.length) { w.push('c.sede_id IN (?)'); params.push(f.sede); }
+  if (f.area.length) { w.push('COALESCE(c.area_item_id, p.area_item_id) IN (?)'); params.push(f.area); }
   if (f.supervisor) { w.push('c.supervisor_id = ?'); params.push(f.supervisor); }
-  if (f.bucket) { w.push(`(${BUCKET_SQL}) = ?`); params.push(f.bucket); }
+  if (f.bucket.length) { w.push(`(${BUCKET_SQL}) IN (?)`); params.push(f.bucket); }
+  if (f.username) { w.push('c.username LIKE ?'); params.push(`%${f.username}%`); }
+  if (f.name) { w.push('c.full_name LIKE ?'); params.push(`%${f.name}%`); }
+  if (f.supervisorText) { w.push('(sup.username LIKE ? OR sup.full_name LIKE ?)'); params.push(`%${f.supervisorText}%`, `%${f.supervisorText}%`); }
   if (f.q) {
     const like = `%${f.q}%`;
     w.push('(c.full_name LIKE ? OR c.username LIKE ? OR c.dni LIKE ? OR c.email LIKE ? OR o.registered_by LIKE ?)');
@@ -220,14 +238,16 @@ function where(f) {
 // Listado paginado ({ page }) o completo ({ all: true }, para exportar).
 async function list(f, { page = 1, all = false } = {}) {
   const { sql, params } = where(f);
-  const order = ` ORDER BY ${SORTS[f.sort] || SORTS.nombre}, c.id`;
+  const sort = SORTS[f.sort] || SORTS.nombre;
+  const dir = f.dir === 'desc' ? 'DESC' : 'ASC';
+  const order = ` ORDER BY (${sort.expr}) IS NULL, ${sort.expr} ${dir}, c.full_name, c.id`;
   if (all) {
     const [rows] = await pool.query(SELECT + sql + order, params);
     return { items: rows, total: rows.length, page: 1, pages: 1 };
   }
   const [[{ n }]] = await pool.query(
     `SELECT COUNT(*) AS n FROM clinic_users c LEFT JOIN clinic_profiles p ON p.id = c.profile_id
-     LEFT JOIN clinic_user_origin o ON o.clinic_user_id = c.id${sql}`, params
+     LEFT JOIN clinic_user_origin o ON o.clinic_user_id = c.id LEFT JOIN clinic_users sup ON sup.id = c.supervisor_id${sql}`, params
   );
   const pages = Math.max(1, Math.ceil(n / PER_PAGE));
   const current = Math.min(Math.max(1, Number(page) || 1), pages);

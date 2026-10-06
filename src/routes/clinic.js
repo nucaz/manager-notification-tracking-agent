@@ -40,7 +40,7 @@ router.get('/', async (req, res, next) => {
     ]);
     let supervisor = null;
     if (filters.supervisor) supervisor = await clinicService.get(filters.supervisor);
-    res.render('clinic/list', { title: 'Usuarios de Clinic', ...result, counts, bySede, filters, profiles, sedes, areas, supervisor,
+    res.render('clinic/list', { title: 'Usuarios de Clinic', ...result, counts, bySede, filters, profiles, sedes, areas, supervisor, query: req.query,
       SORTS: clinicService.SORTS, ...VIEW });
   } catch (err) {
     next(err);

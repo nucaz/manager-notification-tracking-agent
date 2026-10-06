@@ -144,10 +144,14 @@ Aplicación web para el seguimiento de:
 - **Panel principal**: además de los vencimientos, cuántos celulares y
   chips hay y cuántas computadoras, monitores e impresoras tiene GLPI
   (el conteo de GLPI se renueva cada 10 minutos)
-- **Tablas ajustables** (en todas las pantallas): **filtro en cada
+- **Tablas ajustables** (en todas las pantallas): **ordenar con clic en
+  el encabezado** (ascendente, descendente, original; números, montos y
+  fechas se ordenan como tales y los vacíos van al final), **filtro en cada
   columna** (embudo en el encabezado, como en Excel: se marcan los valores
-  a mostrar, con buscador y cantidad por valor; los filtros se combinan),
-  elija cuántos registros
+  a mostrar, con buscador y cantidad por valor; los filtros se combinan).
+  En los listados grandes que paginan en el servidor (Usuarios de Clinic)
+  el orden y los filtros se aplican sobre todos los registros, no solo la
+  página visible, y el Excel exportado los respeta. Elija cuántos registros
   ver (10, 20, 30, 40, 50, 100 o todos) con "Anterior / Siguiente", estire
   una columna arrastrando el borde derecho de su encabezado y cámbiela de
   lugar arrastrando el encabezado. Cada persona conserva su ajuste en su

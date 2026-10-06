@@ -295,6 +295,34 @@ async function main() {
     page = await get('/clinic?conexion=d30&q=PRUEBA');
     check('Listado por tramo de conexión ("Hasta 30 días")', page.text.includes(`href="/clinic/${u1.id}">PRUEBA.E2E1<`) && !page.text.includes('PRUEBA.E2E5'));
 
+    // ================= Orden y filtros por columna (en el servidor) =================
+    const order = (html) => [...html.matchAll(/href="\/clinic\/\d+">(PRUEBA\.E2E\d|prueba\.e2e\d)</g)].map((m) => m[1]);
+    page = await get('/clinic?q=PRUEBA&orden=usuario&dir=asc');
+    const asc = order(page.text);
+    page = await get('/clinic?q=PRUEBA&orden=usuario&dir=desc');
+    const desc = order(page.text);
+    const low = (l) => l.map((x) => x.toLowerCase());
+    const sortedAsc = (l) => low(l).every((v, i, a) => !i || a[i - 1] <= v);
+    check('Orden por columna en el servidor: usuario ascendente y descendente', asc.length >= 4 && sortedAsc(asc) && sortedAsc([...desc].reverse()) && low(asc)[0] !== low(desc)[0]);
+    check('Encabezados con orden y filtro declarados para tablas.js', page.text.includes('data-tabla="servidor"') && page.text.includes('data-orden="conexion"')
+      && page.text.includes('data-filtro="perfil"') && page.text.includes('data-filtro-texto="usuario"') && page.text.includes('aria-hidden') === page.text.includes('aria-hidden'));
+    page = await get('/clinic?q=PRUEBA&orden=conexion&dir=desc');
+    const byLogin = order(page.text);
+    check('Orden por última conexión: los recientes primero, los que nunca entraron al final', ['PRUEBA.E2E1', 'prueba.e2e9'].includes(byLogin[0])
+      && ['PRUEBA.E2E5', 'PRUEBA.E2E6', 'prueba.e2e2'].includes(byLogin[byLogin.length - 1]));
+    page = await get(`/clinic?q=PRUEBA&perfil=${pEsp.id},${pSup.id}&estado=activo,inactivo`);
+    check('Filtro por columna con varios valores (perfil y estado)', page.text.includes('PRUEBA.E2E1') && page.text.includes('prueba.e2e2')
+      && !page.text.includes('PRUEBA.E2E5') && page.text.includes('Varios (2)'));
+    page = await get('/clinic?usuario=e2e6');
+    check('Filtro de texto por columna: usuario contiene', page.text.includes('PRUEBA.E2E6') && !page.text.includes('href="/clinic/' + u1.id + '">PRUEBA.E2E1<')
+      && page.text.includes('Usuario contiene'));
+    page = await get(`/clinic?sup=${encodeURIComponent('SUPERVISORA UNO')}`);
+    check('Filtro de texto por columna: supervisor contiene', page.text.includes('prueba.e2e2') && page.text.includes('Supervisor contiene'));
+    const xls = await fetch(`${base}/clinic/exportar.xlsx?q=PRUEBA&usuario=e2e6`, { headers: { cookie } });
+    const xwb = new ExcelJS.Workbook();
+    await xwb.xlsx.load(Buffer.from(await xls.arrayBuffer()));
+    check('Exportar respeta los filtros por columna', xwb.worksheets[0].rowCount === 2);
+
     // ================= Pantallas =================
     const [[lastImp]] = await pool.query("SELECT id FROM clinic_imports WHERE file_name LIKE 'prueba_e2e%' ORDER BY id DESC LIMIT 1");
     const pages = ['/clinic/conexiones?estado=inactivo', '/clinic?alerta=depurar', '/clinic', '/clinic?orden=conexion&pagina=2', '/clinic?alerta=sin_aprobar', '/clinic/nuevo', `/clinic/${man.id}`, `/clinic/${man.id}/editar`,

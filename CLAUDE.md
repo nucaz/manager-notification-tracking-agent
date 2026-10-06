@@ -110,6 +110,21 @@ READMEs.
   relacionados (ej. país + código de llamada + dígitos esperados, ver
   `phone_country_codes`), usar una tabla propia en vez de forzarlo
   dentro de un `value` de texto.
+  Excepción: los usuarios de Clinic apuntan a `catalog_items` (sede, área)
+  por clave foránea; por eso "Unificar valores" mueve también esas FK
+  (`fk: true` en `catalogMergeService.PLACES`).
+- **Tablas de listado (estándar en toda la app)**: toda tabla con
+  `<thead>` dentro de `.table-responsive` recibe sola, de
+  `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por
+  columna** (embudo), mover y estirar columnas y registros por página. No
+  hace falta código por pantalla; `data-tabla="no"` la excluye y
+  `data-orden="no"` saca una columna del orden. Si la tabla **pagina en
+  el servidor** (`data-tabla="servidor"` o `.pagination` en su tarjeta),
+  el orden y los filtros deben ir al servidor: declare en cada `<th>`
+  `data-orden="clave"` (→ `?orden=&dir=`), `data-filtro="param"` con
+  `data-opciones='[["valor","texto"]]'` (→ `?param=v1,v2`) o
+  `data-filtro-texto="param"`, y el servicio los acepta (ver
+  `clinicService.filtersOf`). Prueba: `tests/tablas.dom.js` (jsdom).
 - **Valores sugeridos/autogenerados** (ej. correlativo de código de
   activo): siempre calculados de los datos reales en el momento
   (`MAX` sobre lo ya existente + 1), nunca con un contador aparte en

@@ -154,6 +154,13 @@ table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: elli
 .col-filtro-opcion { display: flex; align-items: center; padding: .15rem .3rem; border-radius: 4px; cursor: pointer; font-size: .85rem; margin: 0; }
 .col-filtro-opcion:hover { background: #f1f4fa; }
 .col-filtro-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Ordenar con clic en el encabezado: icono tenue hasta pasar el mouse; azul si ordena. */
+th.col-ordenable { cursor: pointer; user-select: none; }
+th.col-ordenable:hover { background-color: #f1f4fa; }
+.col-orden { margin-left: .25rem; font-size: .8rem; color: #c3c9d5; vertical-align: middle; }
+th.col-ordenable:hover .col-orden { color: #6b7488; }
+.col-orden.activo, th.col-ordenable:hover .col-orden.activo { color: #2d5be3; }
+.col-filtro-opcion[hidden] { display: none; }
 
 /* Tablero de celulares y chips (views/mobileDevices/board.ejs). */
 .widget .dona { width: 120px; height: 120px; border-radius: 50%; flex-shrink: 0; -webkit-mask: radial-gradient(circle, transparent 38%, #000 39%); mask: radial-gradient(circle, transparent 38%, #000 39%); }

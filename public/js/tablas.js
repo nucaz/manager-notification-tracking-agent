@@ -4,9 +4,20 @@
 // tabla con encabezado que este dentro de un .table-responsive; lo que cada
 // persona ajusta se recuerda en su navegador, por pantalla y por tabla.
 //
+// Ordenar: clic en el encabezado (ascendente, descendente, orden original).
+// Numeros, montos y fechas (DD/MM/AAAA o AAAA-MM-DD) se ordenan como tales;
+// una celda puede dar su valor de orden con data-valor. Un encabezado con
+// data-orden="no" no ordena.
+//
 // Para dejar una tabla como esta: <table data-tabla="no">.
 // Una tabla que ya pagina en el servidor (trae su propio .pagination en la
-// misma tarjeta) conserva su paginacion; solo gana las columnas ajustables.
+// misma tarjeta, o data-tabla="servidor") conserva su paginacion: ordena y
+// filtra en el servidor, sobre todos los registros, cuando sus encabezados
+// lo declaran:
+//   data-orden="clave"          -> ?orden=clave&dir=asc|desc
+//   data-filtro="param" data-opciones='[["valor","texto"],...]'
+//                               -> ?param=valor1,valor2 (marcar valores)
+//   data-filtro-texto="param"   -> ?param=texto (contiene)
 (function () {
   'use strict';
 
@@ -14,6 +25,219 @@
   var DEFAULT_SIZE = 50;
   var MIN_WIDTH = 48;
   var PAGER_FROM = 10; // con 10 filas o menos no hace falta paginar
+
+  // ---- valor de orden de una celda: numero, fecha o texto -------------
+  var DATE_DMY = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
+  var DATE_YMD = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/;
+  function dateKey(y, m, d, hh, mm, ss) {
+    return ((((Number(y) * 100 + Number(m)) * 100 + Number(d)) * 100 + Number(hh || 0)) * 100 + Number(mm || 0)) * 100 + Number(ss || 0);
+  }
+  function sortValue(cell) {
+    if (!cell) return null;
+    var raw = cell.getAttribute('data-valor');
+    var t = (raw !== null ? raw : cell.textContent).replace(/\s+/g, ' ').trim();
+    if (t === '' || t === '—' || t === '-') return null;
+    var m = t.match(DATE_YMD);
+    if (m) return dateKey(m[1], m[2], m[3], m[4], m[5], m[6]);
+    m = t.match(DATE_DMY);
+    if (m) return dateKey(m[3], m[2], m[1], m[4], m[5], m[6]);
+    var n = t.replace(/^(S\/|US\$|\$|€)\s*/i, '').replace(/\s*%$/, '');
+    if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(n)) n = n.replace(/,/g, '');
+    else if (/^-?\d+,\d+$/.test(n)) n = n.replace(',', '.');
+    if (/^-?\d+(\.\d+)?$/.test(n)) return Number(n);
+    return t;
+  }
+  function compareValues(a, b) {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1; // vacios al final, en ambos sentidos
+    if (b === null) return -1;
+    if (typeof a === 'number' && typeof b === 'number') return a - b;
+    if (typeof a === 'number') return -1;
+    if (typeof b === 'number') return 1;
+    return a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+  }
+
+  function orderIcon(th) {
+    var icon = th.querySelector('.col-orden');
+    if (!icon) {
+      icon = document.createElement('span');
+      icon.className = 'col-orden';
+      icon.setAttribute('aria-hidden', 'true');
+      th.appendChild(icon);
+    }
+    return icon;
+  }
+  function showOrder(th, dir) {
+    var icon = orderIcon(th);
+    icon.innerHTML = dir === 'asc' ? '<i class="bi bi-sort-up"></i>' : dir === 'desc' ? '<i class="bi bi-sort-down"></i>' : '<i class="bi bi-arrow-down-up"></i>';
+    icon.classList.toggle('activo', !!dir);
+    th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none');
+  }
+  // Un clic que viene de arrastrar la columna, estirarla o de un control
+  // dentro del encabezado no ordena.
+  function headerClickOk(table, ev) {
+    if (ev.target.closest('.col-filtro, .col-ancho, a, button, input, select, label')) return false;
+    return !(table._arrastre && Date.now() - table._arrastre < 400);
+  }
+
+  // ---- panel de filtro de una tabla paginada en el servidor -------------
+  function serverPanel(th, button, params, apply) {
+    var old = document.querySelector('.col-filtro-panel');
+    if (old) { old.remove(); if (old.getAttribute('data-de') === th.getAttribute('data-columna')) return; }
+    var title = th.getAttribute('data-columna').replace(/#\d+$/, '');
+    var panel = document.createElement('div');
+    panel.className = 'col-filtro-panel shadow';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', 'Filtrar ' + title);
+    panel.setAttribute('data-de', th.getAttribute('data-columna'));
+    var close = function () { panel.remove(); document.removeEventListener('mousedown', outside, true); };
+    var outside = function (ev) { if (!panel.contains(ev.target) && !ev.target.closest('.col-filtro')) close(); };
+    var actions = document.createElement('div');
+    actions.className = 'd-flex gap-2 mt-2';
+    var ok = document.createElement('button');
+    ok.type = 'button';
+    ok.className = 'btn btn-sm btn-primary';
+    ok.textContent = 'Aplicar';
+    var clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'btn btn-sm btn-outline-secondary';
+    clear.textContent = 'Quitar filtro';
+    var textParam = th.getAttribute('data-filtro-texto');
+    var getValue;
+    if (textParam) {
+      var input = document.createElement('input');
+      input.type = 'search';
+      input.className = 'form-control form-control-sm';
+      input.placeholder = title + ' contiene…';
+      input.value = params.get(textParam) || '';
+      input.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); ok.click(); }
+        if (ev.key === 'Escape') close();
+      });
+      panel.appendChild(input);
+      getValue = function () { return input.value.trim(); };
+      setTimeout(function () { input.focus(); }, 0);
+    } else {
+      var param = th.getAttribute('data-filtro');
+      var options = [];
+      try { options = JSON.parse(th.getAttribute('data-opciones') || '[]'); } catch (e) { options = []; }
+      var current = (params.get(param) || '').split(',').filter(Boolean);
+      var search = document.createElement('input');
+      search.type = 'search';
+      search.className = 'form-control form-control-sm mb-2';
+      search.placeholder = 'Buscar en ' + title + '…';
+      var tools = document.createElement('div');
+      tools.className = 'd-flex gap-2 mb-1 small';
+      var list = document.createElement('div');
+      list.className = 'col-filtro-lista';
+      var boxes = [];
+      options.forEach(function (o) {
+        var label = document.createElement('label');
+        label.className = 'col-filtro-opcion';
+        var box = document.createElement('input');
+        box.type = 'checkbox';
+        box.className = 'form-check-input me-2';
+        box.value = String(o[0]);
+        box.checked = !current.length || current.indexOf(String(o[0])) > -1;
+        var text = document.createElement('span');
+        text.className = 'col-filtro-texto';
+        text.textContent = o[1];
+        label.appendChild(box);
+        label.appendChild(text);
+        list.appendChild(label);
+        boxes.push({ box: box, label: label, text: String(o[1]).toLowerCase() });
+      });
+      var visible = function () { return boxes.filter(function (b) { return !b.label.hidden; }); };
+      search.addEventListener('input', function () {
+        var term = search.value.trim().toLowerCase();
+        boxes.forEach(function (b) { b.label.hidden = !!term && b.text.indexOf(term) === -1; });
+      });
+      search.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); boxes.forEach(function (b) { b.box.checked = !b.label.hidden; }); ok.click(); }
+        if (ev.key === 'Escape') close();
+      });
+      [['Marcar todos', true], ['Ninguno', false]].forEach(function (x) {
+        var a = document.createElement('button');
+        a.type = 'button';
+        a.className = 'btn btn-link btn-sm p-0';
+        a.textContent = x[0];
+        a.addEventListener('click', function () { visible().forEach(function (b) { b.box.checked = x[1]; }); });
+        tools.appendChild(a);
+      });
+      panel.appendChild(search);
+      panel.appendChild(tools);
+      panel.appendChild(list);
+      getValue = function () {
+        var chosen = boxes.filter(function (b) { return b.box.checked; }).map(function (b) { return b.box.value; });
+        return chosen.length === boxes.length || !chosen.length ? '' : chosen.join(',');
+      };
+      setTimeout(function () { search.focus(); }, 0);
+    }
+    ok.addEventListener('click', function () { apply(textParam || th.getAttribute('data-filtro'), getValue()); });
+    clear.addEventListener('click', function () { apply(textParam || th.getAttribute('data-filtro'), ''); });
+    actions.appendChild(ok);
+    actions.appendChild(clear);
+    panel.appendChild(actions);
+    document.body.appendChild(panel);
+    var r = button.getBoundingClientRect();
+    var left = Math.min(r.left + window.scrollX, window.scrollX + document.documentElement.clientWidth - panel.offsetWidth - 8);
+    panel.style.left = Math.max(window.scrollX + 8, left) + 'px';
+    panel.style.top = (r.bottom + window.scrollY + 4) + 'px';
+    document.addEventListener('mousedown', outside, true);
+  }
+
+  // Orden y filtros de una tabla paginada en el servidor: cambian la URL.
+  function setupServer(table, headRow) {
+    var params = new URLSearchParams(location.search);
+    var pOrden = table.getAttribute('data-param-orden') || 'orden';
+    var pDir = table.getAttribute('data-param-dir') || 'dir';
+    var pPagina = table.getAttribute('data-param-pagina') || 'pagina';
+    // Cada accion parte de la URL actual (copia) y vuelve a la pagina 1.
+    var go = function (change) {
+      var next = new URLSearchParams(location.search);
+      change(next);
+      next.delete(pPagina);
+      var s = next.toString();
+      location.href = location.pathname + (s ? '?' + s : '');
+    };
+    Array.prototype.forEach.call(headRow.cells, function (th) {
+      var key = th.getAttribute('data-orden');
+      if (key && key !== 'no') {
+        th.classList.add('col-ordenable');
+        var active = params.get(pOrden) === key;
+        showOrder(th, active ? (params.get(pDir) === 'desc' ? 'desc' : 'asc') : '');
+        th.title = 'Clic para ordenar por esta columna';
+        th.addEventListener('click', function (ev) {
+          if (!headerClickOk(table, ev)) return;
+          var first = th.getAttribute('data-orden-inicial') === 'desc' ? 'desc' : 'asc';
+          var dir = active ? (params.get(pDir) === 'desc' ? 'desc' : 'asc') : '';
+          go(function (next) {
+            if (!dir) { next.set(pOrden, key); next.set(pDir, first); }
+            else if (dir === first) { next.set(pOrden, key); next.set(pDir, first === 'asc' ? 'desc' : 'asc'); }
+            else { next.delete(pOrden); next.delete(pDir); }
+          });
+        });
+      }
+      var fParam = th.getAttribute('data-filtro') || th.getAttribute('data-filtro-texto');
+      if (!fParam) return;
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'col-filtro' + (params.get(fParam) ? ' activo' : '');
+      button.title = 'Filtrar esta columna';
+      button.setAttribute('aria-label', 'Filtrar ' + th.getAttribute('data-columna'));
+      button.innerHTML = '<i class="bi bi-funnel"></i>';
+      button.draggable = false;
+      button.addEventListener('mousedown', function (ev) { ev.stopPropagation(); });
+      button.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        serverPanel(th, button, params, function (param, value) {
+          go(function (next) { if (value) next.set(param, value); else next.delete(param); });
+        });
+      });
+      th.appendChild(button);
+    });
+  }
 
   function load(key) {
     try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { return {}; }
@@ -126,6 +350,7 @@
           document.removeEventListener('mousemove', move);
           document.removeEventListener('mouseup', up);
           document.body.classList.remove('ajustando-columna');
+          table._arrastre = Date.now();
           th.draggable = movable;
           prefs.anchos = prefs.anchos || {};
           Array.prototype.forEach.call(headRow.cells, function (cell) {
@@ -150,6 +375,7 @@
       });
       th.addEventListener('dragend', function () {
         table._desde = undefined;
+        table._arrastre = Date.now();
         Array.prototype.forEach.call(headRow.cells, function (c) { c.classList.remove('col-arrastrando', 'col-destino'); });
       });
       th.addEventListener('dragover', function (ev) {
@@ -189,6 +415,62 @@
     var rows = body ? Array.prototype.filter.call(body.rows, function (r) { return r.cells.length === total; }) : [];
     var card = table.closest ? table.closest('.card') : null;
     var serverPaged = table.getAttribute('data-tabla') === 'servidor' || !!(card && card.querySelector('.pagination'));
+
+    // --- Ordenar ---------------------------------------------------------
+    if (serverPaged) {
+      setupServer(table, headRow);
+    } else if (rows.length > 1) {
+      var original = rows.slice();
+      var originalAll = Array.prototype.slice.call(body.rows); // incluye filas de totales u otras
+      var sortState = prefs.ordenar && prefs.ordenar.col ? prefs.ordenar : null;
+      var sortable = function (th) {
+        return th.getAttribute('data-orden') !== 'no' && !th.querySelector('input') && th.textContent.replace(/\s+/g, '').length > 0;
+      };
+      var applySort = function (initial) {
+        var idx = sortState ? names().indexOf(sortState.col) : -1;
+        if (idx === -1) sortState = null;
+        var sorted = original.slice();
+        if (!sortState) {
+          // Sin orden: al cargar no se toca nada; al quitarlo, todo vuelve a su lugar.
+          if (!initial) originalAll.forEach(function (row) { body.appendChild(row); });
+        } else {
+          var desc = sortState.dir === 'desc';
+          sorted = original.map(function (row, i) { return { row: row, i: i, v: sortValue(row.cells[idx]) }; })
+            .sort(function (a, b) {
+              var c = compareValues(a.v, b.v);
+              if (desc && a.v !== null && b.v !== null) c = -c;
+              return c || a.i - b.i;
+            })
+            .map(function (k) { return k.row; });
+        }
+        if (sortState) {
+          sorted.forEach(function (row) { body.appendChild(row); });
+          originalAll.forEach(function (row) { if (original.indexOf(row) === -1) body.appendChild(row); });
+        }
+        rows.length = 0;
+        Array.prototype.push.apply(rows, sorted);
+        Array.prototype.forEach.call(headRow.cells, function (th) {
+          if (sortable(th)) showOrder(th, sortState && sortState.col === th.getAttribute('data-columna') ? sortState.dir : '');
+        });
+      };
+      Array.prototype.forEach.call(headRow.cells, function (th) {
+        if (!sortable(th)) return;
+        th.classList.add('col-ordenable');
+        th.title = 'Clic para ordenar; arrastre para mover la columna';
+        th.addEventListener('click', function (ev) {
+          if (!headerClickOk(table, ev)) return;
+          var col = th.getAttribute('data-columna');
+          if (!sortState || sortState.col !== col) sortState = { col: col, dir: 'asc' };
+          else if (sortState.dir === 'asc') sortState = { col: col, dir: 'desc' };
+          else sortState = null;
+          if (sortState) prefs.ordenar = sortState; else delete prefs.ordenar;
+          save(key, prefs);
+          applySort();
+          if (typeof render === 'function') { page = 0; render(); }
+        });
+      });
+      applySort(true);
+    }
 
     if (!serverPaged && rows.length > PAGER_FROM) {
       var size = SIZES.indexOf(Number(prefs.filas)) > -1 ? Number(prefs.filas) : DEFAULT_SIZE;
