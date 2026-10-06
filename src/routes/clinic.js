@@ -1,6 +1,7 @@
 // Inventario de usuarios de Clinic (ver src/services/clinicService.js e
 // importacion en clinicImportService.js). La contrasena de Clinic NO se
 // registra aqui: vive solo en Clinic.
+const crypto = require('crypto');
 const express = require('express');
 const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
@@ -18,7 +19,7 @@ const router = express.Router();
 router.use(requireAuth, moduleRequired('clinic'));
 
 const VIEW = { STATUS: clinicService.STATUS, APPROVAL: clinicService.APPROVAL, EVENTS: clinicService.EVENTS, ALERTS: clinicService.ALERTS,
-  IDLE_DAYS: clinicService.IDLE_DAYS };
+  IDLE_DAYS: clinicService.IDLE_DAYS, BUCKETS: clinicService.BUCKETS };
 
 async function formOptions(id = null) {
   const [profiles, sedes, areas, requesterOptions, supervisors] = await Promise.all([
@@ -84,7 +85,8 @@ router.post('/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
 
 // ------------------------------- importar -------------------------------
 async function importView(results = null) {
-  return { title: 'Importar usuarios de Clinic', results, imports: await clinicService.imports(20), columns: clinicImportService.IMPORT_COLUMNS };
+  return { title: 'Importar usuarios de Clinic', results, imports: await clinicService.imports(20), columns: clinicImportService.IMPORT_COLUMNS,
+    EMPLOYEE_MODES: clinicImportService.EMPLOYEE_MODES, token: null, fileName: null, APPROVAL: clinicService.APPROVAL, STATUS: clinicService.STATUS };
 }
 
 router.get('/importar', canWrite, async (req, res, next) => {
@@ -111,6 +113,27 @@ router.get('/importar/plantilla', canWrite, async (req, res, next) => {
   }
 });
 
+// Revisar antes de importar: el archivo queda en memoria (nunca en disco)
+// hasta que se confirma, se descarta o pasan 30 minutos. La revision corre
+// la importacion completa y la deshace (ver clinicImportService).
+const PENDING_TTL = 30 * 60 * 1000;
+const pending = new Map();
+function prunePending() {
+  const now = Date.now();
+  for (const [k, v] of pending) if (now - v.at > PENDING_TTL) pending.delete(k);
+  while (pending.size > 10) pending.delete(pending.keys().next().value);
+}
+function takePending(req) {
+  prunePending();
+  const p = pending.get(String(req.body.token || ''));
+  return p && p.userId === req.session.user.id ? p : null;
+}
+
+async function preview(req, res, p, employees) {
+  const results = await clinicImportService.importWorkbook(p.book, p.name, req.session.user, { dryRun: true, employees });
+  res.render('clinic/import', { ...(await importView(results)), token: p.token, fileName: p.name, EMPLOYEE_MODES: clinicImportService.EMPLOYEE_MODES });
+}
+
 router.post('/importar', canWrite, clinicImportUploader.single('file'), verifyCsrfToken, async (req, res, next) => {
   try {
     if (!req.file) {
@@ -124,10 +147,60 @@ router.post('/importar', canWrite, clinicImportUploader.single('file'), verifyCs
       req.flash('error', `No se pudo leer el archivo: ${err.message}`);
       return res.redirect('/clinic/importar');
     }
-    const results = await clinicImportService.importWorkbook(book, req.file.originalname, req.session.user);
-    await auditService.log(req, { user: req.session.user, action: 'clinic_importado', target: req.file.originalname,
-      detail: `${results.created} nuevo(s), ${results.updated} con cambios, ${results.unchanged} sin cambios, ${results.errors.length} con error` });
+    prunePending();
+    const p = { token: crypto.randomBytes(16).toString('hex'), book, name: req.file.originalname, userId: req.session.user.id, at: Date.now() };
+    pending.set(p.token, p);
+    await preview(req, res, p, req.body.employees);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Cambiar la opcion de empleados y volver a revisar.
+router.post('/importar/revisar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const p = takePending(req);
+    if (!p) {
+      req.flash('error', 'La revisión venció (30 minutos) o ya se usó: vuelva a subir el archivo.');
+      return res.redirect('/clinic/importar');
+    }
+    await preview(req, res, p, req.body.employees);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/importar/confirmar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const p = takePending(req);
+    if (!p) {
+      req.flash('error', 'La revisión venció (30 minutos) o ya se usó: vuelva a subir el archivo.');
+      return res.redirect('/clinic/importar');
+    }
+    if (req.body.action === 'descartar') {
+      pending.delete(p.token);
+      req.flash('success', 'Importación descartada: no se guardó nada.');
+      return res.redirect('/clinic/importar');
+    }
+    pending.delete(p.token);
+    const results = await clinicImportService.importWorkbook(p.book, p.name, req.session.user, { employees: req.body.employees });
+    await auditService.log(req, { user: req.session.user, action: 'clinic_importado', target: p.name,
+      detail: `${results.created} nuevo(s), ${results.updated} con cambios, ${results.unchanged} sin cambios, ${results.errors.length} con error; `
+        + `empleados: ${results.employees} (${results.employeesLinked} vinculado(s), ${results.employeesCreated} creado(s))` });
     res.render('clinic/import', await importView(results));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Tablero: antiguedad de la ultima conexion a Clinic.
+router.get('/conexiones', async (req, res, next) => {
+  try {
+    const status = req.query.estado === 'todos' ? '' : (clinicService.STATUS[req.query.estado] ? req.query.estado : 'activo');
+    const filters = { status, sede: clinicService.intOrNull(req.query.sede), profile: clinicService.intOrNull(req.query.perfil) };
+    const [data, sedes, profiles] = await Promise.all([clinicService.connectionDashboard(filters), clinicService.sedes(), clinicService.profiles()]);
+    res.render('clinic/connections', { title: 'Conexiones a Clinic', data, filters, sedes, profiles, BUCKETS: clinicService.BUCKETS,
+      PURGE_DAYS: clinicService.PURGE_DAYS, STATUS: clinicService.STATUS });
   } catch (err) {
     next(err);
   }

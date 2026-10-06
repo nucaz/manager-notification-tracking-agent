@@ -253,12 +253,14 @@ CREATE TABLE IF NOT EXISTS employees (
   area VARCHAR(100),
   sede VARCHAR(100),
   cargo VARCHAR(150),
+  source VARCHAR(20) NULL,                      -- NULL = directorio/planilla; 'clinic' = creado desde el listado de Clinic
   notes TEXT,
   created_by INT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_employee_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   UNIQUE KEY uniq_employee_dni (dni),
+  INDEX idx_employee_source (source),
   INDEX idx_employee_name (last_name, first_name),
   INDEX idx_employee_area (area),
   INDEX idx_employee_sede (sede)

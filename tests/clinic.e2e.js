@@ -66,7 +66,7 @@ async function main() {
     await pool.query("DELETE FROM clinic_profiles WHERE name LIKE 'PRUEBA-E2E%' OR clinic_id IN (99901, 99902, 99977)");
     await pool.query("DELETE FROM clinic_sedes WHERE name LIKE 'PRUEBA-E2E%' OR clinic_id = 99901");
     await pool.query("DELETE FROM catalog_items WHERE value LIKE 'PRUEBA-E2E%'");
-    await pool.query("DELETE FROM employees WHERE dni IN ('99000011', '99000019')");
+    await pool.query("DELETE FROM employees WHERE dni IN ('99000011', '99000019', '99000016')");
     await pool.query("DELETE FROM audit_log WHERE target LIKE 'Clinic%PRUEBA%' OR target LIKE 'prueba_e2e%' OR target LIKE 'area: PRUEBA-E2E%' OR detail LIKE '%PRUEBA Gerente%'");
   };
   await cleanup();
@@ -90,6 +90,7 @@ async function main() {
   });
   app.use('/clinic', require(path.join(ROOT, 'src/routes/clinic')));
   app.use('/configuracion/catalogos', require(path.join(ROOT, 'src/routes/catalogs')));
+  app.use('/empleados', require(path.join(ROOT, 'src/routes/employees')));
   app.use((err, req, res, next) => { console.error(err); res.status(500).send(`ERROR ${err.message}`); }); // eslint-disable-line no-unused-vars
   const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -102,12 +103,24 @@ async function main() {
     const r = keep(await fetch(base + u, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: body.toString() }));
     return { status: r.status, location: r.headers.get('location'), text: await r.text() };
   };
-  const upload = async (buf, name) => {
+  // Subir = revision previa (no guarda nada); confirmar = importar de verdad.
+  const review = async (buf, name, employees = 'vincular') => {
     const fd = new FormData();
     fd.append('_csrf', CSRF);
+    fd.append('employees', employees);
     fd.append('file', new Blob([buf]), name);
     const r = keep(await fetch(`${base}/clinic/importar`, { method: 'POST', headers: { cookie }, body: fd }));
-    return { status: r.status, text: await r.text() };
+    const text = await r.text();
+    return { status: r.status, text, token: (text.match(/name="token" value="([0-9a-f]{32})"/) || [])[1] };
+  };
+  const confirmImport = async (token, employees = 'vincular', action = 'confirmar') => {
+    const r = await form('/clinic/importar/confirmar', { token, employees, action });
+    return { status: r.status, text: r.text, location: r.location };
+  };
+  const upload = async (buf, name, employees = 'vincular') => {
+    const pre = await review(buf, name, employees);
+    const done = await confirmImport(pre.token, employees);
+    return { ...done, preview: pre };
   };
   const flashOf = async () => ((await get('/clinic/catalogo')).text.match(/alert-(?:danger|success)[^>]*>([\s\S]*?)<\/div>/g) || []).join(' ');
   const user = async (clinicId) => (await pool.query(
@@ -118,6 +131,19 @@ async function main() {
   const GERENTE = 'PRUEBA Gerente · DNI 99000019';
 
   try {
+    // ================= Revision previa: no guarda nada =================
+    const book1 = XLSX.write(clinicBook([U1, U2, U3, U4, U5]), { type: 'buffer', bookType: 'biff8' });
+    const pre = await review(book1, 'prueba_e2e_clinic.xls');
+    const [[none]] = await pool.query('SELECT COUNT(*) AS n FROM clinic_users WHERE clinic_id BETWEEN 990000 AND 990999');
+    const [[noProf]] = await pool.query('SELECT COUNT(*) AS n FROM clinic_profiles WHERE clinic_id IN (99901, 99902)');
+    check('Revisión previa: muestra nuevos, avisos y errores sin guardar nada', pre.status === 200 && pre.token
+      && pre.text.includes('Todavía no se guardó nada') && pre.text.includes('Nuevos (4)') && pre.text.includes('PRUEBA SUPERVISORA UNO')
+      && pre.text.includes('Errores (1)') && Number(none.n) === 0 && Number(noProf.n) === 0);
+    let r0 = await confirmImport(pre.token, 'vincular', 'descartar');
+    r0 = await confirmImport(pre.token);
+    check('Descartar invalida la revisión (no se puede confirmar después)', r0.status === 302 && r0.location === '/clinic/importar'
+      && Number((await pool.query('SELECT COUNT(*) AS n FROM clinic_users WHERE clinic_id BETWEEN 990000 AND 990999'))[0][0].n) === 0);
+
     // ================= Importar el .xls de Clinic =================
     let imp = await upload(XLSX.write(clinicBook([U1, U2, U3, U4, U5]), { type: 'buffer', bookType: 'biff8' }), 'prueba_e2e_clinic.xls');
     check('Importar .xls: 4 nuevos y 1 error (usuario vacío)', imp.status === 200 && imp.text.includes('Nuevos: 4') && imp.text.includes('Con errores: 1')
@@ -197,7 +223,7 @@ async function main() {
     const item = await require(path.join(ROOT, 'src/services/clinicService')).get(man.id);
     check('Baja: estado, fecha, motivo y solicitud en el historial', item.status === 'baja' && String(item.baja_date).startsWith('2026-10-05')
       && item.baja_reason === 'Renuncia' && (await eventsOf(man.id)).some((e) => e.event_type === 'baja' && e.request_id));
-    imp = await upload(XLSX.write(clinicBook([U9]), { type: 'buffer', bookType: 'biff8' }), 'prueba_e2e_clinic3.xls');
+    imp = await upload(XLSX.write(clinicBook([U9]), { type: 'buffer', bookType: 'biff8' }), 'prueba_e2e_clinic3.xls', 'ninguno');
     check('Si Clinic lo sigue mostrando ACTIVO tras la baja, se avisa y no se revierte', imp.text.includes('está DE BAJA aquí pero Clinic lo muestra ACTIVO')
       && (await pool.query('SELECT status FROM clinic_users WHERE id = ?', [man.id]))[0][0].status === 'baja');
     page = await get(`/clinic/${man.id}`);
@@ -231,9 +257,47 @@ async function main() {
     check('Unificar áreas mueve las claves foráneas de perfiles y usuarios de Clinic', r.status === 302 && movedP.area_item_id === area2.id
       && movedU.area_item_id === area2.id && !(await pool.query('SELECT id FROM catalog_items WHERE id = ?', [area.id]))[0].length);
 
+    // ================= Empleados: vincular o crear =================
+    const U6 = [990006, 'MARIA DEL PILAR PRUEBA QUISPE', 'PRUEBA.E2E6', 1, 99901, 99901, 'null', 'null', 'System', serial('2023-05-05T08:00:00'),
+      'null', 'null', 'null', 'null', '99000016', 'null', '3'];
+    const book6 = XLSX.write(clinicBook([U1, U6]), { type: 'buffer', bookType: 'biff8' });
+    let pv = await review(book6, 'prueba_e2e_clinic6.xls', 'vincular');
+    check('Revisión "solo vincular": cuenta el activo con DNI que no está en Empleados y no lo crea', pv.text.includes('99000016')
+      && /<div class="fs-5 fw-semibold">1<\/div>activos con DNI que no están en Empleados/.test(pv.text));
+    pv = await review(book6, 'prueba_e2e_clinic6.xls', 'crear');
+    const [[notYet]] = await pool.query("SELECT COUNT(*) AS n FROM employees WHERE dni = '99000016'");
+    check('Revisión "vincular y crear": muestra nombres y apellidos separados, sin crear todavía', pv.text.includes('MARIA DEL PILAR')
+      && pv.text.includes('PRUEBA QUISPE') && Number(notYet.n) === 0);
+    imp = await confirmImport(pv.token, 'crear');
+    const [[emp6]] = await pool.query("SELECT * FROM employees WHERE dni = '99000016'");
+    const u6 = await user(990006);
+    check('Vincular y crear: empleado marcado "desde Clinic" y vinculado al usuario', emp6 && emp6.source === 'clinic' && emp6.first_name === 'MARIA DEL PILAR'
+      && emp6.last_name === 'PRUEBA QUISPE' && emp6.cargo === 'PRUEBA-E2E ESPECIALISTA' && u6.employee_id === emp6.id && imp.text.includes('1 creado(s) en Empleados'));
+    page = await get('/clinic?alerta=sin_empleado&q=PRUEBA');
+    check('Un empleado creado desde Clinic no cuenta como planilla (sigue en "sin empleado en planilla")', page.text.includes('PRUEBA.E2E6')
+      && !page.text.includes(`href="/clinic/${u1.id}">PRUEBA.E2E1<`));
+    page = await get('/empleados?origen=clinic');
+    check('Empleados: filtro y marca "desde Clinic"', page.status === 200 && page.text.includes('99000016') && page.text.includes('desde Clinic')
+      && !page.text.includes('99000011'));
+    page = await get(`/clinic/${u6.id}`);
+    check('Aprobado 3 = "Pendiente de aprobación"', page.text.includes('Pendiente de aprobación'));
+    check('Alerta: activos pendientes de aprobación', (await get('/clinic?alerta=pendiente&q=PRUEBA')).text.includes('PRUEBA.E2E6'));
+
+    // ================= Tablero de conexiones =================
+    page = await get('/clinic/conexiones');
+    check('Tablero: antigüedad por tramos, por sede y por perfil', page.status === 200 && page.text.includes('Hasta 30 días')
+      && page.text.includes('Nunca entró') && page.text.includes(SEDE) && page.text.includes('Candidatos a depurar') && page.text.includes('Sin empleado en planilla'));
+    page = await get(`/clinic/conexiones?estado=todos&sede=${sedeRow.id}`);
+    check('Tablero filtrado por sede y todos los estados', page.status === 200 && page.text.includes('PRUEBA-E2E ESPECIALISTA'));
+    page = await get('/clinic?conexion=nunca&q=PRUEBA');
+    check('Listado por tramo de conexión ("Nunca entró")', page.text.includes('PRUEBA.E2E5') && page.text.includes('Última conexión: Nunca entró')
+      && !page.text.includes(`href="/clinic/${u1.id}">PRUEBA.E2E1<`));
+    page = await get('/clinic?conexion=d30&q=PRUEBA');
+    check('Listado por tramo de conexión ("Hasta 30 días")', page.text.includes(`href="/clinic/${u1.id}">PRUEBA.E2E1<`) && !page.text.includes('PRUEBA.E2E5'));
+
     // ================= Pantallas =================
     const [[lastImp]] = await pool.query("SELECT id FROM clinic_imports WHERE file_name LIKE 'prueba_e2e%' ORDER BY id DESC LIMIT 1");
-    const pages = ['/clinic', '/clinic?orden=conexion&pagina=2', '/clinic?alerta=sin_aprobar', '/clinic/nuevo', `/clinic/${man.id}`, `/clinic/${man.id}/editar`,
+    const pages = ['/clinic/conexiones?estado=inactivo', '/clinic?alerta=depurar', '/clinic', '/clinic?orden=conexion&pagina=2', '/clinic?alerta=sin_aprobar', '/clinic/nuevo', `/clinic/${man.id}`, `/clinic/${man.id}/editar`,
       `/clinic/${u1.id}`, '/clinic/catalogo', '/clinic/importar', `/clinic/importaciones/${lastImp.id}`, '/configuracion/catalogos/unificar?tipo=area'];
     const bad = [];
     for (const u of pages) {

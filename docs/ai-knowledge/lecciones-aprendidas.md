@@ -492,3 +492,17 @@ vulnerabilidades conocidas). Las fechas llegan como numero de serie y las
 horas como fraccion del dia (0.375 = 09:00): se convierten con
 `XLSX.SSF.parse_date_code`, sin pasar por `Date` (evita corrimientos de
 zona horaria).
+
+## 47. La revision previa de una importacion es la importacion con ROLLBACK
+
+Calcular aparte "lo que va a pasar" duplica la logica y se desincroniza.
+La revision de Clinic corre la misma importacion dentro de la transaccion y
+la deshace: lo que se muestra es exactamente lo que hara Confirmar. El
+archivo queda solo en memoria (30 min, atado al usuario), nunca en disco.
+
+## 48. Crear empleados desde otro sistema contamina el cruce con planilla
+
+Clinic tiene unos 1 000 usuarios activos y la planilla unas 360 personas.
+Si la importacion crea empleados, "activos sin empleado" deja de mostrar
+a quienes no son personal. Los creados desde Clinic llevan
+employees.source = 'clinic' y no cuentan como planilla.

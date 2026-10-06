@@ -13,9 +13,12 @@ async function get(id) {
   return rows[0] || null;
 }
 
-async function list(q) {
+// origen: 'clinic' (creados desde el listado de Clinic) o 'directorio' (el resto).
+async function list(q, origen = '') {
   let sql = 'SELECT * FROM employees WHERE 1=1';
   const params = [];
+  if (origen === 'clinic') sql += " AND source = 'clinic'";
+  if (origen === 'directorio') sql += ' AND source IS NULL';
   if (q) {
     sql += ' AND (dni LIKE ? OR first_name LIKE ? OR last_name LIKE ?)';
     params.push(`%${q}%`, `%${q}%`, `%${q}%`);

@@ -8,6 +8,16 @@
 //
 // Lo que dice Clinic manda (nombre, estado, perfil, sede, contacto), salvo
 // una baja registrada aqui: si Clinic lo sigue mostrando ACTIVO se avisa.
+//
+// Revision previa: dryRun corre la importacion completa dentro de la
+// transaccion y al final la deshace (ROLLBACK). Lo que se muestra antes de
+// confirmar es exactamente lo que va a pasar.
+//
+// Empleados (opcion employees):
+// - 'ninguno': no toca el vinculo con el directorio de empleados.
+// - 'vincular': enlaza por DNI con los empleados que ya existen.
+// - 'crear': ademas crea en Empleados a los usuarios ACTIVOS con DNI valido
+//   que no esten, marcados source = 'clinic' (no se confunden con planilla).
 const XLSX = require('xlsx');
 const pool = require('../db/pool');
 const clinic = require('./clinicService');
@@ -125,6 +135,22 @@ function toApproved(v) {
   return ['si', 'yes', 'true', 'aprobado'].includes(f) ? 1 : 0;
 }
 
+// "DANIELA DEL VALLE ROMERO GONZALEZ" -> nombres "DANIELA DEL VALLE",
+// apellidos "ROMERO GONZALEZ": los dos ultimos son los apellidos. Se puede
+// corregir despues en Empleados.
+function splitName(full) {
+  const w = clean(full).split(/\s+/).filter(Boolean);
+  if (w.length >= 3) return { first_name: w.slice(0, -2).join(' '), last_name: w.slice(-2).join(' ') };
+  if (w.length === 2) return { first_name: w[0], last_name: w[1] };
+  return { first_name: w[0] || '', last_name: '' };
+}
+
+const EMPLOYEE_MODES = {
+  vincular: 'Solo vincular por DNI con los empleados que ya existen',
+  crear: 'Vincular y crear en Empleados a los activos que falten',
+  ninguno: 'No tocar Empleados',
+};
+
 function toDni(v) {
   if (typeof v === 'number') return String(Math.trunc(v)).padStart(8, '0');
   const s = clean(v).replace(/\s/g, '');
@@ -132,10 +158,14 @@ function toDni(v) {
 }
 
 // --------------------------------- importar ---------------------------------
-async function importWorkbook(book, fileName, user) {
+async function importWorkbook(book, fileName, user, { dryRun = false, employees = 'vincular' } = {}) {
+  const mode = EMPLOYEE_MODES[employees] ? employees : 'vincular';
   const errors = [];
   const notes = [];
-  const stats = { created: 0, updated: 0, unchanged: 0, sedesNew: 0, sedesUpd: 0, profilesNew: 0, profilesUpd: 0 };
+  const stats = { created: 0, updated: 0, unchanged: 0, sedesNew: 0, sedesUpd: 0, profilesNew: 0, profilesUpd: 0,
+    employeesLinked: 0, employeesCreated: 0, employeesMissing: 0 };
+  // Detalle para la revision previa.
+  const plan = { created: [], changed: [], employeesCreated: [], employeesMissing: [] };
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -253,6 +283,9 @@ async function importWorkbook(book, fileName, user) {
     const [emps] = await conn.query('SELECT id, dni FROM employees');
     const employeeByDni = new Map(emps.map((e) => [e.dni, e.id]));
 
+    const nameOf = (cat, id) => { for (const r of cat.byName.values()) if (r.id === id) return r; return null; };
+    const rowsDone = [];
+
     const p = picker(book.users, USER_FIELDS);
     const seenClinicIds = new Set();
     const seenUsernames = new Map();
@@ -310,8 +343,9 @@ async function importWorkbook(book, fileName, user) {
       if (dni) next.dni = dni;
       if (email) next.email = email;
       if (phone) next.phone = phone;
-      const employeeId = dni && /^\d{8}$/.test(dni) ? employeeByDni.get(dni) : undefined;
+      const employeeId = mode !== 'ninguno' && dni && /^\d{8}$/.test(dni) ? employeeByDni.get(dni) : undefined;
       if (employeeId) next.employee_id = employeeId;
+      if (employeeId && (!existing || String(existing.employee_id ?? '') !== String(employeeId))) stats.employeesLinked += 1;
 
       let userId;
       if (existing) {
@@ -327,6 +361,7 @@ async function importWorkbook(book, fileName, user) {
           if (changes.length) {
             await clinic.addEvent(conn, { userId, type: 'importacion', detail: changes.join('; '), importId, by: user.id });
             stats.updated += 1;
+            plan.changed.push({ line, id: userId, username, full_name: existing.full_name, changes });
           } else stats.unchanged += 1;
         } else stats.unchanged += 1;
         Object.assign(existing, next);
@@ -343,7 +378,11 @@ async function importWorkbook(book, fileName, user) {
         if (clinicId !== null) byClinicId.set(clinicId, created);
         byUsername.set(uk, (byUsername.get(uk) || []).concat(created));
         stats.created += 1;
+        plan.created.push({ line, clinic_id: clinicId, username, full_name: data.full_name, status: data.status,
+          profile: (nameOf(profiles, profileId) || {}).name || '', sede: (nameOf(sedes, sedeId) || {}).name || '', dni: dni || '' });
       }
+      rowsDone.push({ userId, username, name: name || username.toUpperCase(), dni, profileId, sedeId, areaId,
+        status: existing && existing.status === 'baja' ? 'baja' : status });
       origins.push([userId, toDateTime(p(row, 'last_login')), clean(p(row, 'registered_by'), 150) || null, toDateTime(p(row, 'registered_at')),
         clean(p(row, 'edited_by'), 150) || null, toDateTime(p(row, 'edited_at')), importId]);
       const sup = p(row, 'supervisor');
@@ -385,6 +424,39 @@ async function importWorkbook(book, fileName, user) {
       }
     }
 
+    // ---- empleados: activos con DNI valido que no estan en el directorio
+    if (mode !== 'ninguno') {
+      const missing = new Map();
+      for (const r of rowsDone) {
+        if (r.status !== 'activo' || !r.dni || !/^\d{8}$/.test(r.dni) || employeeByDni.has(r.dni) || missing.has(r.dni)) continue;
+        missing.set(r.dni, r);
+      }
+      stats.employeesMissing = missing.size;
+      if (mode === 'crear' && missing.size) {
+        const areaById = new Map(areaRows.map((a) => [a.id, a.value]));
+        const [genNow] = await conn.query("SELECT id, value FROM catalog_items WHERE catalog_type = 'sede'");
+        const generalById = new Map(genNow.map((g) => [g.id, g.value]));
+        for (const r of missing.values()) {
+          const prof = nameOf(profiles, r.profileId) || {};
+          const sede = nameOf(sedes, r.sedeId) || {};
+          const emp = {
+            dni: r.dni, ...splitName(r.name), source: 'clinic', created_by: user.id,
+            area: areaById.get(r.areaId || prof.area_item_id) || null,
+            sede: generalById.get(sede.sede_item_id) || sede.name || null,
+            cargo: prof.name || null,
+            notes: `Creado desde el listado de Clinic (usuario ${r.username}). Verificar contra planilla.`,
+          };
+          const [ins] = await conn.query('INSERT INTO employees SET ?', [emp]);
+          employeeByDni.set(r.dni, ins.insertId);
+          await conn.query('UPDATE clinic_users SET employee_id = ? WHERE dni = ? AND employee_id IS NULL', [ins.insertId, r.dni]);
+          plan.employeesCreated.push({ dni: r.dni, first_name: emp.first_name, last_name: emp.last_name, username: r.username, area: emp.area, sede: emp.sede });
+        }
+        stats.employeesCreated = missing.size;
+      } else {
+        plan.employeesMissing = [...missing.values()].map((r) => ({ dni: r.dni, name: r.name, username: r.username }));
+      }
+    }
+
     // ---- avisos de calidad de datos
     const dupUsers = [...seenUsernames.entries()].filter(([, lines]) => lines.length > 1);
     if (dupUsers.length) {
@@ -408,10 +480,12 @@ async function importWorkbook(book, fileName, user) {
 
     await conn.query(
       'UPDATE clinic_imports SET created_count = ?, updated_count = ?, unchanged_count = ?, error_count = ?, summary_json = ? WHERE id = ?',
-      [stats.created, stats.updated, stats.unchanged, errors.length, JSON.stringify({ errors, notes, stats }), importId]
+      [stats.created, stats.updated, stats.unchanged, errors.length, JSON.stringify({ errors, notes, stats, employees: mode }), importId]
     );
-    await conn.commit();
-    return { importId, imported: stats.created + stats.updated + stats.unchanged, ...stats, errors, notes };
+    if (dryRun) await conn.rollback();
+    else await conn.commit();
+    return { importId: dryRun ? null : importId, dryRun, employees: mode, imported: stats.created + stats.updated + stats.unchanged,
+      ...stats, errors, notes, plan };
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -420,4 +494,4 @@ async function importWorkbook(book, fileName, user) {
   }
 }
 
-module.exports = { IMPORT_COLUMNS, readWorkbook, importWorkbook, toDateTime, toTime };
+module.exports = { IMPORT_COLUMNS, EMPLOYEE_MODES, readWorkbook, importWorkbook, splitName, toDateTime, toTime };

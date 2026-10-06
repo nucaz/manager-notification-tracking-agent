@@ -11,22 +11,48 @@ const STATUS = {
   inactivo: { label: 'Inactivo', badge: 'text-bg-secondary' },
   baja: { label: 'De baja', badge: 'text-bg-danger' },
 };
-// "Aprobado" de Clinic. El 3 aparece solo en 5 usuarios inactivos y Clinic
-// no dice que significa: se muestra tal cual.
+// "Aprobado" de Clinic (codigos de Clinic).
 const APPROVAL = {
-  0: { label: 'Sin aprobar', badge: 'text-bg-light border' },
+  0: { label: 'No aprobado', badge: 'text-bg-light border' },
   1: { label: 'Aprobado', badge: 'text-bg-info' },
-  3: { label: 'Código 3 de Clinic', badge: 'text-bg-warning' },
+  3: { label: 'Pendiente de aprobación', badge: 'text-bg-warning' },
 };
 const EVENTS = {
   alta: 'Alta', edicion: 'Edición', baja: 'Baja', reactivacion: 'Reactivación', importacion: 'Importación',
 };
-// Un activo sin entrar a Clinic en este tiempo es candidato a desactivarse.
+// Un activo sin entrar a Clinic en este tiempo es candidato a desactivarse;
+// desde PURGE_DAYS (o si nunca entro y se creo hace mas de un mes),
+// candidato a depurar.
 const IDLE_DAYS = 90;
+const PURGE_DAYS = 180;
+// Antiguedad de la ultima conexion, de la mas reciente a nunca.
+const BUCKETS = [
+  { key: 'd30', label: 'Hasta 30 días', tone: 'ok' },
+  { key: 'd90', label: '31 a 90 días', tone: 'ok' },
+  { key: 'd180', label: '91 a 180 días', tone: 'warn' },
+  { key: 'd365', label: '181 días a 1 año', tone: 'bad' },
+  { key: 'mas365', label: 'Más de 1 año', tone: 'bad' },
+  { key: 'nunca', label: 'Nunca entró', tone: 'bad' },
+];
+const BUCKET_SQL = `CASE WHEN o.last_login_at IS NULL THEN 'nunca'
+  WHEN o.last_login_at >= NOW() - INTERVAL 30 DAY THEN 'd30'
+  WHEN o.last_login_at >= NOW() - INTERVAL 90 DAY THEN 'd90'
+  WHEN o.last_login_at >= NOW() - INTERVAL 180 DAY THEN 'd180'
+  WHEN o.last_login_at >= NOW() - INTERVAL 365 DAY THEN 'd365'
+  ELSE 'mas365' END`;
+const PURGE_SQL = `(c.status = 'activo' AND (o.last_login_at < NOW() - INTERVAL ${PURGE_DAYS} DAY
+  OR (o.last_login_at IS NULL AND COALESCE(o.registered_at, c.created_at) < NOW() - INTERVAL 30 DAY)))`;
+// "Empleado de planilla": vinculado a un empleado del directorio que no se
+// creo desde Clinic (employees.source NULL).
+const NO_PAYROLL_SQL = "(c.employee_id IS NULL OR c.employee_id IN (SELECT x.id FROM employees x WHERE x.source = 'clinic'))";
 const ALERTS = {
+  depurar: `Candidatos a depurar (+${PURGE_DAYS} días o nunca)`,
   sin_conexion: `Activos sin entrar en ${IDLE_DAYS} días`,
   nunca: 'Nunca entraron',
-  sin_aprobar: 'Activos sin aprobar',
+  sin_empleado: 'Activos sin empleado en planilla',
+  sin_area: 'Activos sin área',
+  sin_aprobar: 'Activos no aprobados',
+  pendiente: 'Activos pendientes de aprobación',
   dni_repetido: 'DNI repetido',
   usuario_repetido: 'Usuario repetido',
   sin_dni: 'Activos sin DNI',
@@ -153,6 +179,7 @@ function filtersOf(query) {
     area: intOrNull(query.area),
     supervisor: intOrNull(query.supervisor),
     alert: ALERTS[query.alerta] ? query.alerta : '',
+    bucket: BUCKETS.some((b) => b.key === query.conexion) ? query.conexion : '',
     sort: SORTS[query.orden] ? query.orden : 'nombre',
   };
 }
@@ -165,6 +192,7 @@ function where(f) {
   if (f.sede) { w.push('c.sede_id = ?'); params.push(f.sede); }
   if (f.area) { w.push('(c.area_item_id = ? OR (c.area_item_id IS NULL AND p.area_item_id = ?))'); params.push(f.area, f.area); }
   if (f.supervisor) { w.push('c.supervisor_id = ?'); params.push(f.supervisor); }
+  if (f.bucket) { w.push(`(${BUCKET_SQL}) = ?`); params.push(f.bucket); }
   if (f.q) {
     const like = `%${f.q}%`;
     w.push('(c.full_name LIKE ? OR c.username LIKE ? OR c.dni LIKE ? OR c.email LIKE ? OR o.registered_by LIKE ?)');
@@ -174,7 +202,11 @@ function where(f) {
     case 'sin_conexion':
       w.push(`c.status = 'activo' AND (o.last_login_at IS NULL OR o.last_login_at < NOW() - INTERVAL ${IDLE_DAYS} DAY)`); break;
     case 'nunca': w.push('o.last_login_at IS NULL'); break;
-    case 'sin_aprobar': w.push("c.status = 'activo' AND c.approved <> 1"); break;
+    case 'depurar': w.push(PURGE_SQL); break;
+    case 'sin_empleado': w.push(`c.status = 'activo' AND ${NO_PAYROLL_SQL}`); break;
+    case 'sin_area': w.push("c.status = 'activo' AND c.area_item_id IS NULL AND p.area_item_id IS NULL"); break;
+    case 'sin_aprobar': w.push("c.status = 'activo' AND c.approved = 0"); break;
+    case 'pendiente': w.push("c.status = 'activo' AND c.approved = 3"); break;
     case 'sin_dni': w.push("c.status = 'activo' AND (c.dni IS NULL OR c.dni = '')"); break;
     case 'dni_repetido':
       w.push('c.dni IN (SELECT d.dni FROM clinic_users d WHERE d.dni IS NOT NULL AND d.dni <> \'\' GROUP BY d.dni HAVING COUNT(*) > 1)'); break;
@@ -209,9 +241,14 @@ async function counts() {
   const [[a]] = await pool.query(
     `SELECT
        SUM(c.status = 'activo' AND (o.last_login_at IS NULL OR o.last_login_at < NOW() - INTERVAL ${IDLE_DAYS} DAY)) AS sin_conexion,
-       SUM(c.status = 'activo' AND c.approved <> 1) AS sin_aprobar,
-       SUM(c.status = 'activo' AND (c.dni IS NULL OR c.dni = '')) AS sin_dni
-     FROM clinic_users c LEFT JOIN clinic_user_origin o ON o.clinic_user_id = c.id`
+       SUM(c.status = 'activo' AND c.approved = 0) AS sin_aprobar,
+       SUM(c.status = 'activo' AND c.approved = 3) AS pendiente,
+       SUM(c.status = 'activo' AND (c.dni IS NULL OR c.dni = '')) AS sin_dni,
+       SUM(${PURGE_SQL}) AS depurar,
+       SUM(c.status = 'activo' AND ${NO_PAYROLL_SQL}) AS sin_empleado,
+       SUM(c.status = 'activo' AND c.area_item_id IS NULL AND p.area_item_id IS NULL) AS sin_area
+     FROM clinic_users c LEFT JOIN clinic_user_origin o ON o.clinic_user_id = c.id
+     LEFT JOIN clinic_profiles p ON p.id = c.profile_id`
   );
   const [[d]] = await pool.query(
     "SELECT COUNT(*) AS n FROM (SELECT dni FROM clinic_users WHERE dni IS NOT NULL AND dni <> '' GROUP BY dni HAVING COUNT(*) > 1) t"
@@ -219,9 +256,53 @@ async function counts() {
   const [[u]] = await pool.query('SELECT COUNT(*) AS n FROM (SELECT username FROM clinic_users GROUP BY username HAVING COUNT(*) > 1) t');
   out.alerts = {
     sin_conexion: Number(a.sin_conexion || 0), sin_aprobar: Number(a.sin_aprobar || 0), sin_dni: Number(a.sin_dni || 0),
+    pendiente: Number(a.pendiente || 0), depurar: Number(a.depurar || 0), sin_empleado: Number(a.sin_empleado || 0),
+    sin_area: Number(a.sin_area || 0),
     dni_repetido: Number(d.n), usuario_repetido: Number(u.n),
   };
   return out;
+}
+
+// Tablero de antiguedad de conexion. status: 'activo' (por defecto), 'inactivo' o '' (todos).
+async function connectionDashboard({ status = 'activo', sede = null, profile = null } = {}) {
+  const w = ['1 = 1'];
+  const params = [];
+  if (STATUS[status]) { w.push('c.status = ?'); params.push(status); }
+  if (sede) { w.push('c.sede_id = ?'); params.push(sede); }
+  if (profile) { w.push('c.profile_id = ?'); params.push(profile); }
+  const from = `FROM clinic_users c LEFT JOIN clinic_user_origin o ON o.clinic_user_id = c.id
+                LEFT JOIN clinic_sedes s ON s.id = c.sede_id LEFT JOIN clinic_profiles p ON p.id = c.profile_id
+                WHERE ${w.join(' AND ')}`;
+  const [byBucket] = await pool.query(`SELECT ${BUCKET_SQL} AS b, COUNT(*) AS n, SUM(${NO_PAYROLL_SQL}) AS sin_empleado ${from} GROUP BY b`, params);
+  const [bySede] = await pool.query(`SELECT s.id, COALESCE(s.name, '(sin sede)') AS name, ${BUCKET_SQL} AS b, COUNT(*) AS n ${from} GROUP BY s.id, s.name, b`, params);
+  const [byProfile] = await pool.query(`SELECT p.id, COALESCE(p.name, '(sin perfil)') AS name, ${BUCKET_SQL} AS b, COUNT(*) AS n ${from} GROUP BY p.id, p.name, b`, params);
+  const [[k]] = await pool.query(
+    `SELECT COUNT(*) AS total, SUM(${PURGE_SQL}) AS depurar, SUM(${NO_PAYROLL_SQL}) AS sin_empleado,
+            COUNT(DISTINCT CASE WHEN c.dni REGEXP '^[0-9]{8}$' THEN c.dni END) AS personas, MAX(o.last_login_at) AS ultima ${from}`, params
+  );
+  const [[emp]] = await pool.query("SELECT SUM(source IS NULL) AS directorio, SUM(source = 'clinic') AS desde_clinic FROM employees");
+  const [[imp]] = await pool.query('SELECT created_at, file_name FROM clinic_imports ORDER BY id DESC LIMIT 1');
+  const pivot = (rows) => {
+    const m = new Map();
+    for (const r of rows) {
+      const e = m.get(r.id) || { id: r.id, name: r.name, total: 0 };
+      e[r.b] = Number(r.n);
+      e.total += Number(r.n);
+      m.set(r.id, e);
+    }
+    return [...m.values()].sort((a, b) => b.total - a.total);
+  };
+  const buckets = BUCKETS.map((b) => {
+    const r = byBucket.find((x) => x.b === b.key) || {};
+    return { ...b, n: Number(r.n || 0), sinEmpleado: Number(r.sin_empleado || 0) };
+  });
+  return {
+    buckets, bySede: pivot(bySede), byProfile: pivot(byProfile),
+    kpi: { total: Number(k.total || 0), depurar: Number(k.depurar || 0), sinEmpleado: Number(k.sin_empleado || 0), personas: Number(k.personas || 0),
+      ultima: k.ultima, recientes: (buckets.find((b) => b.key === 'd30') || {}).n || 0 },
+    employees: { directorio: Number(emp.directorio || 0), desdeClinic: Number(emp.desde_clinic || 0) },
+    lastImport: imp || null,
+  };
 }
 
 // Activos e inactivos por sede (resumen del listado).
@@ -449,9 +530,9 @@ async function getImport(id) {
 }
 
 module.exports = {
-  STATUS, APPROVAL, EVENTS, ALERTS, SORTS, IDLE_DAYS, PER_PAGE, USERNAME, EMAIL,
+  STATUS, APPROVAL, EVENTS, ALERTS, SORTS, IDLE_DAYS, PURGE_DAYS, BUCKETS, PER_PAGE, USERNAME, EMAIL,
   clean, fold, normUsername, intOrNull,
   areas, generalSedes, profiles, sedes, saveCatalog,
-  filtersOf, list, counts, bySede, get, events, addEvent, supervisorOptions, validate, create, update, setBaja, reactivate,
+  filtersOf, list, counts, bySede, connectionDashboard, get, events, addEvent, supervisorOptions, validate, create, update, setBaja, reactivate,
   describeChanges, imports, getImport,
 };

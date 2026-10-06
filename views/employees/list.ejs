@@ -16,6 +16,14 @@
     <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar por DNI, nombres o apellidos...">
   </div>
   <div class="col-auto">
+    <label class="visually-hidden" for="origen">Origen</label>
+    <select class="form-select" id="origen" name="origen">
+      <option value="">Todos los orígenes</option>
+      <option value="directorio" <%= typeof origen !== 'undefined' && origen === 'directorio' ? 'selected' : '' %>>Directorio / planilla</option>
+      <option value="clinic" <%= typeof origen !== 'undefined' && origen === 'clinic' ? 'selected' : '' %>>Creados desde Clinic</option>
+    </select>
+  </div>
+  <div class="col-auto">
     <button class="btn btn-outline-secondary" type="submit">Buscar</button>
   </div>
 </form>
@@ -27,7 +35,8 @@
       <tbody>
         <% items.forEach(function(e) { %>
           <tr>
-            <td><a href="/empleados/<%= e.id %>"><%= e.dni %></a></td>
+            <td><a href="/empleados/<%= e.id %>"><%= e.dni %></a>
+              <% if (e.source === 'clinic') { %><span class="badge text-bg-warning ms-1" title="Creado desde el listado de Clinic: verificar contra planilla">desde Clinic</span><% } %></td>
             <td><%= e.first_name %></td>
             <td><%= e.last_name %></td>
             <td><%= e.area || '—' %></td>

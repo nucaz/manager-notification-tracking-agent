@@ -489,11 +489,21 @@ se escribe si no está; se guarda como foto con la fecha y una referencia
   tiene usuarios repetidos salvo un espacio invisible), deja en el
   historial lo que cambió y avisa de usuarios sin nombre de usuario,
   usuarios o DNI repetidos, usuarios que ya no vienen en el archivo y bajas
-  registradas aquí que Clinic sigue mostrando ACTIVAS. Todo en una
-  transacción; cada importación queda registrada. El listado marca para
-  revisar los **activos sin entrar en 90 días**, los activos sin aprobar o
-  sin DNI y los DNI o usuarios repetidos. La contraseña de Clinic no se
-  guarda aquí.
+  registradas aquí que Clinic sigue mostrando ACTIVAS. Antes de guardar
+  muestra una **revisión** (nuevos, qué cambia, empleados, avisos y
+  errores): la importación corre completa y se deshace; nada se guarda
+  hasta *Confirmar*. Con **Empleados** se elige: *solo vincular por DNI*
+  (recomendado), *vincular y crear* a los activos que falten (quedan
+  marcados "desde Clinic" para no mezclarlos con la planilla) o no tocar
+  Empleados. Todo en una transacción; cada importación queda registrada.
+  El listado marca para revisar los activos sin entrar en 90 días, los
+  candidatos a depurar, los activos sin empleado en planilla, sin área, no
+  aprobados o pendientes de aprobación (Aprobado: 0 no aprobado, 1
+  aprobado, 3 pendiente), sin DNI y los DNI o usuarios repetidos.
+  **Conexiones** es el tablero por antigüedad de la última conexión (30 /
+  90 / 180 días, 1 año, más, nunca), por sede y por perfil, con los
+  candidatos a depurar (activos sin entrar en 180 días o que nunca
+  entraron) para exportar. La contraseña de Clinic no se guarda aquí.
 - **Microsoft 365** (menú *Microsoft 365*): inventario de cuentas y
   solicitudes con flujo: *pendiente → aprobada → en proceso → completada*.
   Cada tipo genera sus pasos (alta, licencias, bloqueo, desbloqueo,

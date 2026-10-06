@@ -1,6 +1,6 @@
 <%- include('../partials/head', { title: title }) %>
 <% const P = { q: filters.q, estado: filters.status, perfil: filters.profile, sede: filters.sede, area: filters.area, supervisor: filters.supervisor,
-     alerta: filters.alert, orden: filters.sort === 'nombre' ? '' : filters.sort };
+     alerta: filters.alert, conexion: filters.bucket, orden: filters.sort === 'nombre' ? '' : filters.sort };
    const qs = function (over) {
      const o = Object.assign({}, P, over || {});
      return Object.keys(o).filter(function (k) { return o[k] !== '' && o[k] !== null && o[k] !== undefined; })
@@ -25,6 +25,7 @@
     </div>
   </div>
   <div class="d-flex flex-wrap gap-2">
+    <a href="/clinic/conexiones" class="btn btn-outline-secondary"><i class="bi bi-bar-chart"></i> Conexiones</a>
     <a href="/clinic/catalogo" class="btn btn-outline-secondary"><i class="bi bi-diagram-2"></i> Perfiles y sedes</a>
     <a href="/clinic/exportar.xlsx<%= qs() ? '?' + qs() : '' %>" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-excel"></i> Exportar</a>
     <% if (currentUser.role !== 'lector') { %>
@@ -93,16 +94,18 @@
     </select></div>
   <div class="col-md-1 col-12 d-flex gap-1">
     <% if (filters.alert) { %><input type="hidden" name="alerta" value="<%= filters.alert %>"><% } %>
+    <% if (filters.bucket) { %><input type="hidden" name="conexion" value="<%= filters.bucket %>"><% } %>
     <% if (filters.supervisor) { %><input type="hidden" name="supervisor" value="<%= filters.supervisor %>"><% } %>
     <% if (filters.sort !== 'nombre') { %><input type="hidden" name="orden" value="<%= filters.sort %>"><% } %>
     <button class="btn btn-outline-primary w-100" type="submit">Filtrar</button>
   </div>
 </form>
 
-<% if (supervisor || filters.alert || qs({ orden: '' })) { %>
+<% if (supervisor || filters.alert || filters.bucket || qs({ orden: '' })) { %>
   <div class="d-flex flex-wrap gap-2 align-items-center mb-2 small">
     <% if (supervisor) { %><span class="badge text-bg-primary">Equipo de <%= supervisor.username %> · <%= supervisor.full_name %></span><% } %>
     <% if (filters.alert) { %><span class="badge text-bg-warning"><%= ALERTS[filters.alert] %></span><% } %>
+    <% if (filters.bucket) { %><span class="badge text-bg-info">Última conexión: <%= (BUCKETS.find(function (b) { return b.key === filters.bucket; }) || {}).label %></span><% } %>
     <a href="/clinic" class="link-secondary">Quitar filtros</a>
   </div>
 <% } %>

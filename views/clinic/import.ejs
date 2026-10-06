@@ -1,48 +1,154 @@
 <%- include('../partials/head', { title: title }) %>
+<% const MAX = 300;
+   const isPreview = results && results.dryRun;
+   const plan = (results && results.plan) || { created: [], changed: [], employeesCreated: [], employeesMissing: [] };
+   const total = results ? (results.created || 0) + (results.updated || 0) + (results.unchanged || 0) : 0; %>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="mb-0"><%= title %></h2>
+  <h2 class="mb-0"><%= isPreview ? 'Revisar la importación' : title %></h2>
   <a href="/clinic" class="btn btn-outline-secondary">Volver al listado</a>
 </div>
 
 <% if (results) { %>
-  <div class="card p-3 mb-4" id="resultado">
-    <h5 class="mb-1">Resultado de la importación<%= results.past ? ' #' + results.past.id : '' %></h5>
+  <% if (isPreview) { %>
+    <div class="alert alert-info"><i class="bi bi-eye"></i> <strong>Todavía no se guardó nada.</strong>
+      Esto es lo que pasará al confirmar la importación de <span class="font-monospace"><%= fileName %></span>.
+      La revisión vale 30 minutos.</div>
+  <% } %>
+
+  <div class="card p-3 mb-3" id="resultado">
+    <h5 class="mb-1"><%= isPreview ? 'Resumen' : 'Resultado de la importación' + (results.past ? ' #' + results.past.id : '') %></h5>
     <% if (results.past) { %><div class="small text-muted mb-2"><%= results.past.file_name %> · <%= String(results.past.created_at).slice(0, 16) %> · <%= results.past.created_by_name || '' %></div><% } %>
     <p class="mb-2">
-      <span class="badge bg-success">Importados: <%= (results.created || 0) + (results.updated || 0) + (results.unchanged || 0) %></span>
+      <span class="badge bg-success"><%= isPreview ? 'Filas válidas' : 'Importados' %>: <%= total %></span>
       <span class="badge text-bg-primary">Nuevos: <%= results.created || 0 %></span>
       <span class="badge text-bg-info">Con cambios: <%= results.updated || 0 %></span>
       <span class="badge text-bg-light border">Sin cambios: <%= results.unchanged || 0 %></span>
       <span class="badge bg-danger">Con errores: <%= results.errors.length %></span>
       <% if (results.notes.length) { %><span class="badge bg-warning text-dark">Avisos: <%= results.notes.length %></span><% } %>
     </p>
-    <% if (results.notes.length) { %>
-      <ul class="small mb-2" style="max-height: 320px; overflow-y: auto">
-        <% results.notes.forEach(function (n) { %><li><%= n %></li><% }); %>
+    <% if (!isPreview) { %>
+      <div class="small text-muted">Empleados: <%= results.employeesLinked || 0 %> vinculado(s) por DNI<% if (results.employeesCreated) { %>, <%= results.employeesCreated %> creado(s) en Empleados (marcados "desde Clinic")<% } %>.
+        Lo que cambió de cada usuario queda en su historial. <a href="/clinic/conexiones">Ver conexiones</a></div>
+    <% } %>
+  </div>
+
+  <% if (isPreview) { %>
+    <div class="card p-3 mb-3 border-primary">
+      <h5>Empleados (DNI)</h5>
+      <p class="small mb-2">La planilla de la empresa tiene unas 360 personas; Clinic, muchos más usuarios activos. Para saber cuáles son personal real,
+        lo recomendado es <strong>solo vincular</strong>: así el tablero muestra los activos sin empleado en planilla. Crear empleados desde Clinic
+        los marca como <em>desde Clinic</em> para no mezclarlos con la planilla.</p>
+      <div class="row g-2 small mb-2" style="font-variant-numeric: tabular-nums">
+        <div class="col-md-4"><div class="border rounded p-2"><div class="fs-5 fw-semibold"><%= results.employeesLinked %></div>se vinculan con un empleado que ya existe</div></div>
+        <div class="col-md-4"><div class="border rounded p-2"><div class="fs-5 fw-semibold"><%= results.employeesMissing %></div>activos con DNI que no están en Empleados</div></div>
+        <div class="col-md-4"><div class="border rounded p-2 <%= results.employees === 'crear' ? 'border-warning' : '' %>"><div class="fs-5 fw-semibold"><%= results.employeesCreated %></div>se crearán en Empleados</div></div>
+      </div>
+      <form method="post" action="/clinic/importar/revisar" class="d-flex flex-wrap gap-2 align-items-end">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="token" value="<%= token %>">
+        <div><label class="form-label small mb-0" for="employees_mode">Con Empleados</label>
+          <select class="form-select form-select-sm" id="employees_mode" name="employees" onchange="this.form.submit()">
+            <% Object.keys(EMPLOYEE_MODES).forEach(function (k) { %><option value="<%= k %>" <%= results.employees === k ? 'selected' : '' %>><%= EMPLOYEE_MODES[k] %></option><% }); %>
+          </select></div>
+        <noscript><button class="btn btn-sm btn-outline-primary">Volver a revisar</button></noscript>
+      </form>
+    </div>
+
+    <div class="card p-3 mb-3">
+      <ul class="nav nav-tabs small" role="tablist">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t_nuevos" type="button" role="tab">Nuevos (<%= plan.created.length %>)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t_cambios" type="button" role="tab">Con cambios (<%= plan.changed.length %>)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t_empleados" type="button" role="tab">Empleados (<%= results.employees === 'crear' ? plan.employeesCreated.length : plan.employeesMissing.length %>)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t_avisos" type="button" role="tab">Avisos (<%= results.notes.length %>)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t_errores" type="button" role="tab">Errores (<%= results.errors.length %>)</button></li>
       </ul>
+      <div class="tab-content pt-2">
+        <div class="tab-pane fade show active" id="t_nuevos" role="tabpanel">
+          <% if (!plan.created.length) { %><p class="small text-muted mb-0">Ningún usuario nuevo.</p><% } else { %>
+          <div class="table-responsive" style="max-height: 420px; overflow-y: auto">
+            <table class="table table-sm small mb-0">
+              <thead class="sticky-top bg-body"><tr><th>Fila</th><th>Id</th><th>Usuario</th><th>Nombre</th><th>DNI</th><th>Perfil</th><th>Sede</th><th>Estado</th></tr></thead>
+              <tbody><% plan.created.slice(0, MAX).forEach(function (u) { %>
+                <tr><td><%= u.line %></td><td><%= u.clinic_id || '' %></td><td class="font-monospace"><%= u.username %></td><td><%= u.full_name %></td><td><%= u.dni %></td>
+                  <td><%= u.profile %></td><td><%= u.sede %></td><td><%= (STATUS[u.status] || {}).label || u.status %></td></tr>
+              <% }); %></tbody>
+            </table>
+          </div>
+          <% if (plan.created.length > MAX) { %><div class="small text-muted mt-1">Se muestran <%= MAX %> de <%= plan.created.length %>.</div><% } } %>
+        </div>
+        <div class="tab-pane fade" id="t_cambios" role="tabpanel">
+          <% if (!plan.changed.length) { %><p class="small text-muted mb-0">Ningún usuario cambia.</p><% } else { %>
+          <div class="table-responsive" style="max-height: 420px; overflow-y: auto">
+            <table class="table table-sm small mb-0">
+              <thead class="sticky-top bg-body"><tr><th>Fila</th><th>Usuario</th><th>Nombre</th><th>Qué cambia</th></tr></thead>
+              <tbody><% plan.changed.slice(0, MAX).forEach(function (u) { %>
+                <tr><td><%= u.line %></td><td class="font-monospace"><a href="/clinic/<%= u.id %>"><%= u.username %></a></td><td><%= u.full_name %></td>
+                  <td><% u.changes.forEach(function (c) { %><div><%= c %></div><% }); %></td></tr>
+              <% }); %></tbody>
+            </table>
+          </div>
+          <% if (plan.changed.length > MAX) { %><div class="small text-muted mt-1">Se muestran <%= MAX %> de <%= plan.changed.length %>.</div><% } } %>
+        </div>
+        <div class="tab-pane fade" id="t_empleados" role="tabpanel">
+          <% const emps = results.employees === 'crear' ? plan.employeesCreated : plan.employeesMissing; %>
+          <p class="small mb-2"><%= results.employees === 'crear' ? 'Se crearán en Empleados (nombres y apellidos separados automáticamente: los dos últimos son los apellidos).'
+            : (results.employees === 'ninguno' ? 'No se tocará Empleados.' : 'Activos con DNI que no están en Empleados: no se crean; aparecerán en "Activos sin empleado en planilla".') %></p>
+          <% if (emps.length) { %>
+          <div class="table-responsive" style="max-height: 420px; overflow-y: auto">
+            <table class="table table-sm small mb-0">
+              <thead class="sticky-top bg-body"><tr><th>DNI</th><th>Usuario</th><% if (results.employees === 'crear') { %><th>Nombres</th><th>Apellidos</th><th>Área</th><th>Sede</th><% } else { %><th>Nombre</th><% } %></tr></thead>
+              <tbody><% emps.slice(0, MAX).forEach(function (e) { %>
+                <tr><td><%= e.dni %></td><td class="font-monospace"><%= e.username %></td>
+                  <% if (results.employees === 'crear') { %><td><%= e.first_name %></td><td><%= e.last_name %></td><td><%= e.area || '—' %></td><td><%= e.sede || '—' %></td><% } else { %><td><%= e.name %></td><% } %></tr>
+              <% }); %></tbody>
+            </table>
+          </div>
+          <% if (emps.length > MAX) { %><div class="small text-muted mt-1">Se muestran <%= MAX %> de <%= emps.length %>.</div><% } } %>
+        </div>
+        <div class="tab-pane fade" id="t_avisos" role="tabpanel">
+          <% if (!results.notes.length) { %><p class="small text-muted mb-0">Sin avisos.</p><% } else { %>
+          <ul class="small mb-0" style="max-height: 420px; overflow-y: auto"><% results.notes.forEach(function (n) { %><li><%= n %></li><% }); %></ul><% } %>
+        </div>
+        <div class="tab-pane fade" id="t_errores" role="tabpanel">
+          <% if (!results.errors.length) { %><p class="small text-muted mb-0">Sin errores.</p><% } else { %>
+          <table class="table table-sm small mb-0"><thead><tr><th style="width: 90px">Fila</th><th>Error (no se importa)</th></tr></thead>
+            <tbody><% results.errors.forEach(function (e) { %><tr><td><%= e.row %></td><td><%= e.message %></td></tr><% }); %></tbody></table><% } %>
+        </div>
+      </div>
+    </div>
+
+    <form method="post" action="/clinic/importar/confirmar" class="card p-3 mb-4 d-flex flex-row flex-wrap gap-2 align-items-center"
+          onsubmit="return event.submitter && event.submitter.value === 'descartar' ? true : confirm('¿Importar ahora? Se aplican todos los cambios mostrados.');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="token" value="<%= token %>">
+      <input type="hidden" name="employees" value="<%= results.employees %>">
+      <button class="btn btn-primary" name="action" value="confirmar"><i class="bi bi-check2-circle"></i> Confirmar importación</button>
+      <button class="btn btn-outline-secondary" name="action" value="descartar">Descartar</button>
+      <span class="small text-muted">Empleados: <%= EMPLOYEE_MODES[results.employees] %>.</span>
+    </form>
+  <% } else { %>
+    <% if (results.notes.length) { %>
+      <div class="card p-3 mb-3"><h6>Avisos</h6><ul class="small mb-0" style="max-height: 320px; overflow-y: auto"><% results.notes.forEach(function (n) { %><li><%= n %></li><% }); %></ul></div>
     <% } %>
     <% if (results.errors.length) { %>
-      <div class="table-responsive" style="max-height: 320px; overflow-y: auto">
-        <table class="table table-sm small mb-0">
-          <thead><tr><th style="width: 90px">Fila</th><th>Error</th></tr></thead>
-          <tbody><% results.errors.forEach(function (e) { %><tr><td><%= e.row %></td><td><%= e.message %></td></tr><% }); %></tbody>
-        </table>
-      </div>
+      <div class="card p-3 mb-3"><h6>Errores</h6>
+        <table class="table table-sm small mb-0"><thead><tr><th style="width: 90px">Fila</th><th>Error</th></tr></thead>
+          <tbody><% results.errors.forEach(function (e) { %><tr><td><%= e.row %></td><td><%= e.message %></td></tr><% }); %></tbody></table></div>
     <% } %>
-    <div class="small text-muted mt-2">Lo que cambió de cada usuario queda en su historial. Los cambios se aplican todos juntos: si algo falla, no se guarda nada.</div>
-  </div>
+  <% } %>
 <% } %>
 
+<% if (!isPreview) { %>
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="card p-4">
-      <p class="mb-2">Suba el archivo que exporta Clinic <strong>tal cual</strong> (<span class="font-monospace">Usuarios_roles_sedes_permisos.xls</span>):</p>
+      <p class="mb-2">Suba el archivo que exporta Clinic <strong>tal cual</strong> (<span class="font-monospace">Usuarios_roles_sedes_permisos.xls</span>).
+        Antes de guardar nada verá una <strong>revisión</strong> con los usuarios nuevos, lo que cambia, los avisos y los errores.</p>
       <ul class="small">
         <li>Las hojas <strong>SEDES</strong> y <strong>PERFILES</strong> alimentan el catálogo de Clinic (con su Id) y las sedes nuevas se agregan al catálogo general.</li>
         <li>La hoja <strong>USUARIOS</strong> crea o actualiza cada usuario por su <strong>IdUsuario</strong>; lo que cambió queda en su historial.</li>
         <li>Una baja registrada aquí no se revierte: si Clinic lo sigue mostrando ACTIVO, se avisa para desactivarlo allá.</li>
-        <li>Se avisa de usuarios sin nombre de usuario, usuarios o DNI repetidos y usuarios que ya no vienen en el archivo.</li>
       </ul>
       <form method="post" action="/clinic/importar" enctype="multipart/form-data">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -50,7 +156,14 @@
           <label class="form-label" for="file">Archivo (.xls, .xlsx o .csv)</label>
           <input type="file" id="file" name="file" class="form-control" accept=".xls,.xlsx,.csv" required>
         </div>
-        <button type="submit" class="btn btn-primary">Importar</button>
+        <div class="mb-3">
+          <label class="form-label" for="employees">Con Empleados</label>
+          <select class="form-select" id="employees" name="employees">
+            <% Object.keys(EMPLOYEE_MODES).forEach(function (k) { %><option value="<%= k %>" <%= k === 'vincular' ? 'selected' : '' %>><%= EMPLOYEE_MODES[k] %><%= k === 'vincular' ? ' (recomendado)' : '' %></option><% }); %>
+          </select>
+          <div class="form-text">Se puede cambiar en la revisión, antes de confirmar.</div>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-eye"></i> Revisar</button>
         <a href="/clinic/importar/plantilla" class="btn btn-link">Descargar plantilla vacía</a>
       </form>
       <details class="mt-3 small">
@@ -83,5 +196,6 @@
     </div>
   </div>
 </div>
+<% } %>
 
 <%- include('../partials/foot') %>

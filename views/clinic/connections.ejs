@@ -1,0 +1,102 @@
+<%- include('../partials/head', { title: title }) %>
+<% const k = data.kpi;
+   const max = Math.max(1, ...data.buckets.map(function (b) { return b.n; }));
+   const pct = function (n) { return k.total ? Math.round(n * 1000 / k.total) / 10 : 0; };
+   const TONE = { ok: 'bg-success', warn: 'bg-warning', bad: 'bg-danger' };
+   const base = function (extra) {
+     const o = Object.assign({ estado: filters.status || '', sede: filters.sede || '', perfil: filters.profile || '' }, extra || {});
+     return '/clinic?' + Object.keys(o).filter(function (x) { return o[x] !== '' && o[x] !== null; }).map(function (x) { return x + '=' + encodeURIComponent(o[x]); }).join('&');
+   };
+   const heat = function (n, row) {
+     if (!n) return '';
+     const a = Math.min(0.85, 0.12 + (n / Math.max(1, row.total)) * 0.8);
+     return 'background: rgba(var(--bs-danger-rgb), ' + a.toFixed(2) + ')';
+   }; %>
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h2 class="mb-0">Conexiones a Clinic</h2>
+    <div class="small text-muted">Antigüedad de la última conexión según el último listado importado
+      <% if (data.lastImport) { %>(<%= String(data.lastImport.created_at).slice(0, 16) %>, última conexión registrada <%= k.ultima ? String(k.ultima).slice(0, 10) : '—' %>)<% } else { %>(aún no se importó ninguno)<% } %>.
+      Importe el listado seguido para que los días sean reales.</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/clinic/exportar.xlsx?alerta=depurar" class="btn btn-outline-danger"><i class="bi bi-file-earmark-excel"></i> Exportar candidatos a depurar</a>
+    <a href="/clinic" class="btn btn-outline-secondary">Volver al listado</a>
+  </div>
+</div>
+
+<form class="row g-2 mb-3 align-items-end" method="get">
+  <div class="col-md-3 col-6"><label class="form-label small mb-0" for="c_estado">Usuarios</label>
+    <select class="form-select" id="c_estado" name="estado" onchange="this.form.submit()">
+      <option value="activo" <%= filters.status === 'activo' ? 'selected' : '' %>>Activos</option>
+      <option value="inactivo" <%= filters.status === 'inactivo' ? 'selected' : '' %>>Inactivos</option>
+      <option value="todos" <%= !filters.status ? 'selected' : '' %>>Todos</option>
+    </select></div>
+  <div class="col-md-3 col-6"><label class="form-label small mb-0" for="c_sede">Sede</label>
+    <select class="form-select" id="c_sede" name="sede" onchange="this.form.submit()"><option value="">Todas</option>
+      <% sedes.forEach(function (s) { %><option value="<%= s.id %>" <%= filters.sede === s.id ? 'selected' : '' %>><%= s.name %></option><% }); %></select></div>
+  <div class="col-md-4"><label class="form-label small mb-0" for="c_perfil">Perfil</label>
+    <select class="form-select" id="c_perfil" name="perfil" onchange="this.form.submit()"><option value="">Todos</option>
+      <% profiles.forEach(function (p) { %><option value="<%= p.id %>" <%= filters.profile === p.id ? 'selected' : '' %>><%= p.name %></option><% }); %></select></div>
+  <noscript><div class="col-md-2"><button class="btn btn-outline-primary w-100">Ver</button></div></noscript>
+</form>
+
+<div class="row g-3 mb-3" style="font-variant-numeric: tabular-nums">
+  <div class="col-md-3 col-6"><div class="card p-3 h-100"><div class="small text-muted">Usuarios <%= filters.status ? STATUS[filters.status].label.toLowerCase() + 's' : '' %></div>
+    <div class="fs-3 fw-semibold"><%= k.total %></div><div class="small text-muted"><%= k.personas %> DNI distintos</div></div></div>
+  <div class="col-md-3 col-6"><div class="card p-3 h-100"><div class="small text-muted">Entraron en los últimos 30 días</div>
+    <div class="fs-3 fw-semibold text-success"><%= k.recientes %></div><div class="small text-muted"><%= pct(k.recientes) %> %</div></div></div>
+  <div class="col-md-3 col-6"><a class="card p-3 h-100 text-decoration-none border-danger" href="<%= base({ alerta: 'depurar', estado: 'activo' }) %>">
+    <div class="small text-muted">Candidatos a depurar</div><div class="fs-3 fw-semibold text-danger"><%= k.depurar %></div>
+    <div class="small text-muted">activos sin entrar en <%= PURGE_DAYS %> días o que nunca entraron (creados hace más de un mes)</div></a></div>
+  <div class="col-md-3 col-6"><a class="card p-3 h-100 text-decoration-none" href="<%= base({ alerta: 'sin_empleado' }) %>">
+    <div class="small text-muted">Sin empleado en planilla</div><div class="fs-3 fw-semibold text-warning-emphasis"><%= k.sinEmpleado %></div>
+    <div class="small text-muted">Empleados en el directorio: <%= data.employees.directorio %><% if (data.employees.desdeClinic) { %> (+<%= data.employees.desdeClinic %> creados desde Clinic)<% } %></div></a></div>
+</div>
+
+<div class="card p-3 mb-3">
+  <h5 class="mb-3">Antigüedad de la última conexión</h5>
+  <div class="d-flex flex-column gap-2">
+    <% data.buckets.forEach(function (b) { %>
+      <a href="<%= base({ conexion: b.key }) %>" class="d-flex align-items-center gap-2 text-decoration-none text-body" style="font-variant-numeric: tabular-nums">
+        <span class="small" style="width: 140px; flex: none"><%= b.label %></span>
+        <span class="flex-grow-1 bg-body-tertiary rounded" style="height: 1.4rem">
+          <span class="d-block h-100 rounded <%= TONE[b.tone] %>" style="width: <%= (b.n * 100 / max).toFixed(1) %>%; min-width: <%= b.n ? '2px' : '0' %>"></span></span>
+        <span class="small text-end" style="width: 120px; flex: none"><strong><%= b.n %></strong> · <%= pct(b.n) %> %</span>
+        <span class="small text-muted d-none d-md-inline" style="width: 150px; flex: none"><%= b.sinEmpleado %> sin empleado</span>
+      </a>
+    <% }); %>
+  </div>
+  <div class="form-text mt-2">Cada barra abre el listado con esos usuarios (y desde ahí se exporta). Verde: uso normal; amarillo: revisar; rojo: candidatos a desactivar o depurar en Clinic.</div>
+</div>
+
+<% [['Por sede', data.bySede, 'sede'], ['Por perfil', data.byProfile, 'perfil']].forEach(function (t) { %>
+<div class="card p-3 mb-3">
+  <h5><%= t[0] %></h5>
+  <div class="table-responsive">
+    <table class="table table-sm small align-middle mb-0" style="font-variant-numeric: tabular-nums">
+      <thead><tr><th><%= t[2] === 'sede' ? 'Sede' : 'Perfil' %></th>
+        <% data.buckets.forEach(function (b) { %><th class="text-end"><%= b.label %></th><% }); %><th class="text-end">Total</th><th class="text-end">% sin entrar +180 d</th></tr></thead>
+      <tbody>
+        <% t[1].forEach(function (row) { const old = (row.d365 || 0) + (row.mas365 || 0) + (row.nunca || 0); %>
+          <tr><td><%= row.name %></td>
+            <% data.buckets.forEach(function (b) { const n = row[b.key] || 0; %>
+              <td class="text-end" style="<%= b.tone === 'bad' ? heat(n, row) : '' %>"><% if (n && row.id) { %><a class="link-body-emphasis" href="<%= base(Object.assign({ conexion: b.key }, t[2] === 'sede' ? { sede: row.id } : { perfil: row.id })) %>"><%= n %></a><% } else { %><%= n || '' %><% } %></td>
+            <% }); %>
+            <td class="text-end fw-semibold"><%= row.total %></td><td class="text-end"><%= row.total ? Math.round(old * 100 / row.total) : 0 %> %</td></tr>
+        <% }); %>
+        <% if (!t[1].length) { %><tr><td colspan="9" class="text-center text-muted">Sin datos.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<% }); %>
+
+<div class="card p-3 small text-muted">
+  <strong class="text-body">Cómo usarlo para depurar.</strong> 1) Exporte los candidatos y valídelos con cada jefe de sede. 2) Los que ya no trabajan:
+  regístreles la baja aquí (queda quién la pidió) y desactívelos en Clinic. 3) Vuelva a importar el listado: los que sigan ACTIVOS en Clinic tras la baja aparecen como aviso.
+  Cruce con Empleados: importe primero la planilla en <a href="/empleados">Empleados</a> y luego el listado de Clinic con "Solo vincular"; los activos sin empleado en planilla son los que más urge revisar.
+</div>
+
+<%- include('../partials/foot') %>

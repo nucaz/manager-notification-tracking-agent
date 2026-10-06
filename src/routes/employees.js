@@ -43,8 +43,9 @@ const IMPORT_COLUMNS = [
 router.get('/', async (req, res, next) => {
   try {
     const { q } = req.query;
-    const items = await employeeService.list(q);
-    res.render('employees/list', { title: 'Empleados', items, q: q || '' });
+    const origen = ['clinic', 'directorio'].includes(req.query.origen) ? req.query.origen : '';
+    const items = await employeeService.list(q, origen);
+    res.render('employees/list', { title: 'Empleados', items, q: q || '', origen });
   } catch (err) {
     next(err);
   }
