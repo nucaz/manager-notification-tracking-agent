@@ -258,6 +258,44 @@ Pruebas de extremo a extremo (WebDAV, SFTP y S3 reales con `rclone serve`,
 cifrado, restauración, caída de un destino y retención):
 `docker compose exec devops-sidecar python tests/test_respaldos_externos.py`
 
+#### Sistemas externos: bases en Azure y sitios WordPress
+
+**Respaldos > Sistemas externos** registra bases y sitios que viven fuera
+de este servidor; se marcan en un trabajo programado como cualquier otro
+contenido (mismo horario, destinos, cifrado, SHA-256 y retención). Cada
+ejecución es un completo por sistema, con `RESTAURAR.txt` y
+`manifest.json`.
+
+| Tipo | Cómo se copia | Archivo |
+|---|---|---|
+| MySQL / MariaDB (Azure Database for MySQL, cPanel) | `mariadb-dump --single-transaction` (consistente, sin detener la app), sin `CREATE DATABASE`: se restaura en cualquier base | `.sql.gz` |
+| PostgreSQL (Azure Database for PostgreSQL) | `pg_dump` 18 en formato personalizado (respalda servidores hasta la 18) | `.dump` |
+| Azure SQL / SQL Server | `sqlpackage` Export | `.bacpac` |
+| WordPress en un hosting (cPanel) | archivos por FTPS/SFTP a un espejo local (solo baja lo que cambió) + la base MySQL (datos de `wp-config.php` si no se indican) | `_archivos.tar.gz` + `_basedatos.sql.gz` |
+
+- **Solo lectura**: use un usuario de solo lectura (la ayuda de cada tipo
+  trae el `GRANT`); **Probar** avisa si el usuario puede escribir. Nunca se
+  escribe en el sistema de origen: en Restaurar estos respaldos se
+  **verifican** (SHA-256 y lectura completa: `pg_restore --list`, el pie
+  `Dump completed`, el zip del `.bacpac`) o se **descargan**; no se suben a
+  Git ni se "aplican".
+- **Firewall**: Azure y cPanel ("MySQL remoto") deben permitir la IP
+  pública de salida de la empresa. Si no responde, el error lo sugiere.
+- **TLS**: por defecto se verifica el certificado (Azure). Para un hosting
+  con certificado propio: "Cifrado sin verificar"; FTP sin cifrar existe
+  pero no se recomienda.
+- **Azure SQL**: un `.bacpac` no es una foto en un instante; si la base
+  recibe escrituras durante la exportación, exporte una copia
+  (`CREATE DATABASE copia AS COPY OF base`). `sqlpackage` solo existe para
+  x64.
+- El respaldo de WordPress incluye `wp-config.php` (con la clave de la
+  base): envíelo a un destino cifrado.
+
+Pruebas contra servidores reales desechables (MySQL 8.4, MariaDB 11.4,
+PostgreSQL 18, SQL Server 2022 y Pure-FTPd con TLS obligatorio, el FTP de
+cPanel), incluida la restauración de cada respaldo en una base nueva:
+ver el comentario al inicio de `tests/test_sistemas_externos.py`.
+
 ### 3.7 Mirror de respaldo y cuenta colaboradora → principal
 
 En la página de cada repositorio, sección **Mirror de respaldo y

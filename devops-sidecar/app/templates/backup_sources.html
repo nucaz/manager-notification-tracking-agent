@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Sistemas externos{% endblock %}
+{% block content %}
+{% include "_backup_tabs.html" %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Sistemas externos</h2>
+  <button class="btn btn-primary" id="btnNew"><i class="bi bi-plus-lg"></i> Nuevo sistema</button>
+</div>
+<div class="alert alert-light border small">
+  Bases de datos y sitios que viven fuera de este servidor y se respaldan con los <a href="/backups/trabajos">trabajos programados</a>:
+  Azure Database for MySQL/MariaDB y PostgreSQL, Azure SQL / SQL Server, y sitios WordPress en un hosting (cPanel) por FTPS o SFTP.
+  Cada respaldo queda en el servidor y se envía a los mismos <a href="/backups/destinos">destinos externos</a>, con su SHA-256.
+  <strong>Solo se lee</strong> del sistema: use un usuario de solo lectura. Desde aquí nunca se escribe en el sistema de origen;
+  en <a href="/backups/restaurar">Restaurar</a> cada respaldo se verifica o se descarga, y trae <code>RESTAURAR.txt</code> con los comandos para levantarlo en otra base u otro hosting.
+</div>
+<div id="msg"></div>
+
+<div class="card p-3 mb-3 d-none" id="formCard">
+  <h5 id="formTitle">Nuevo sistema</h5>
+  <form id="srcForm" autocomplete="off">
+    <div class="row g-2">
+      <div class="col-md-4"><label class="form-label" for="fName">Nombre</label>
+        <input class="form-control" name="name" id="fName" required maxlength="120" placeholder="BD ventas (Azure)"></div>
+      <div class="col-md-5"><label class="form-label" for="kindSelect">Tipo</label>
+        <select class="form-select" name="kind" id="kindSelect"></select></div>
+      <div class="col-md-3 d-flex align-items-end">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="enabled" id="fEnabled" checked>
+          <label class="form-check-label" for="fEnabled">Activo</label></div>
+      </div>
+    </div>
+    <div class="alert alert-info small py-2 mt-2 mb-0" id="kindHelp"></div>
+    <div class="row g-2 mt-1" id="kindFields"></div>
+    <div class="mt-3 d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Guardar</button>
+      <button type="button" class="btn btn-outline-secondary" id="btnCancel">Cancelar</button>
+    </div>
+  </form>
+</div>
+
+<div class="card p-3">
+  <div class="table-responsive">
+  <table class="table align-middle mb-0">
+    <thead><tr><th>Sistema</th><th>Tipo</th><th>Conexión</th><th>Última prueba</th><th></th></tr></thead>
+    <tbody id="srcTable"><tr><td colspan="5" class="text-muted text-center py-4">Cargando…</td></tr></tbody>
+  </table>
+  </div>
+</div>
+
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let KINDS = {}; let SRCS = []; let editing = null;
+const form = document.getElementById('srcForm');
+const msg = document.getElementById('msg');
+
+function show(text, kind = 'success') { msg.innerHTML = `<div class="alert alert-${kind}">${esc(text)}</div>`; window.scrollTo(0, 0); }
+
+function fieldHtml(f, src, kind) {
+  const isSecret = !!f.secret;
+  const already = src && (src.secrets_set || []).includes(f.key);
+  const value = src && !isSecret ? (src.config[f.key] ?? f.default ?? '') : (f.default ?? '');
+  const ph = isSecret && already ? 'Configurado - dejar vacío para conservarlo' : (f.key === 'port' && KINDS[kind].default_port ? KINDS[kind].default_port : '');
+  const req = f.required && !(isSecret && already) ? 'required' : '';
+  const id = `cfg_${f.key}`;
+  let input;
+  if (f.type === 'select') {
+    input = `<select class="form-select" name="${id}" id="${id}">` + f.options.map(([v, l]) =>
+      `<option value="${esc(v)}" ${String(value) === v ? 'selected' : ''}>${esc(l)}</option>`).join('') + '</select>';
+  } else if (f.type === 'textarea') {
+    input = `<textarea class="form-control font-monospace small" rows="2" name="${id}" id="${id}">${esc(value)}</textarea>`;
+  } else {
+    input = `<input class="form-control" type="${f.type === 'password' ? 'password' : 'text'}" name="${id}" id="${id}" value="${isSecret ? '' : esc(value)}" ${req} placeholder="${esc(ph)}" autocomplete="new-password">`;
+  }
+  const wide = f.type === 'textarea' ? 'col-12' : 'col-md-6';
+  return `<div class="${wide}"><label class="form-label" for="${id}">${esc(f.label)}</label>${input}${f.help ? `<div class="form-text">${esc(f.help)}</div>` : ''}</div>`;
+}
+
+function renderKind(src) {
+  const kind = document.getElementById('kindSelect').value;
+  document.getElementById('kindHelp').textContent = KINDS[kind].help || '';
+  document.getElementById('kindFields').innerHTML = KINDS[kind].fields.map((f) => fieldHtml(f, src, kind)).join('');
+}
+
+function openForm(src) {
+  editing = src ? src.id : null;
+  document.getElementById('formTitle').textContent = src ? `Editar: ${src.name}` : 'Nuevo sistema';
+  form.elements['name'].value = src ? src.name : '';
+  form.elements['kind'].value = src ? src.kind : 'mysql';
+  form.elements['kind'].disabled = !!src;
+  form.elements['enabled'].checked = src ? src.enabled : true;
+  renderKind(src);
+  document.getElementById('formCard').classList.remove('d-none');
+  form.elements['name'].focus();
+}
+
+document.getElementById('kindSelect').addEventListener('change', () => renderKind(null));
+document.getElementById('btnNew').addEventListener('click', () => openForm(null));
+document.getElementById('btnCancel').addEventListener('click', () => document.getElementById('formCard').classList.add('d-none'));
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const config = {};
+  form.querySelectorAll('[name^="cfg_"]').forEach((el) => { config[el.name.slice(4)] = el.value; });
+  const payload = { name: form.elements['name'].value, kind: form.elements['kind'].value, enabled: form.elements['enabled'].checked, config };
+  if (editing && !confirm('¿Guardar los cambios en este sistema?')) return;
+  const res = await fetch(editing ? `/api/external-sources/${editing}` : '/api/external-sources', {
+    method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { show(typeof data.detail === 'string' ? data.detail : 'Revise los datos del formulario.', 'danger'); return; }
+  document.getElementById('formCard').classList.add('d-none');
+  show(`"${data.name}" guardado. Use "Probar" y luego márquelo en un trabajo programado.`);
+  load();
+});
+
+async function load() {
+  SRCS = await (await fetch('/api/external-sources')).json();
+  const tb = document.getElementById('srcTable');
+  if (!SRCS.length) { tb.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Todavía no hay sistemas. Agregue uno con "Nuevo sistema".</td></tr>'; return; }
+  tb.innerHTML = SRCS.map((s) => `
+    <tr>
+      <td><strong>${esc(s.name)}</strong> ${s.enabled ? '' : '<span class="badge bg-secondary">desactivado</span>'}</td>
+      <td class="small">${esc(s.kind_label)}</td>
+      <td class="small font-monospace">${esc(s.summary)}</td>
+      <td class="small">${s.last_test_at ? `<span class="${s.last_test_ok ? 'text-success' : 'text-danger'}">${s.last_test_ok ? 'OK' : 'ERROR'}</span> ${esc(new Date(s.last_test_at + 'Z').toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }))}<div class="text-muted">${esc(s.last_test_message || '')}</div>` : '<span class="text-muted">sin probar</span>'}</td>
+      <td class="text-end text-nowrap">
+        <button class="btn btn-sm btn-outline-primary" data-act="test" data-id="${s.id}">Probar</button>
+        <button class="btn btn-sm btn-outline-secondary" data-act="edit" data-id="${s.id}">Editar</button>
+        <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${s.id}" aria-label="Eliminar"><i class="bi bi-trash"></i></button>
+      </td>
+    </tr>`).join('');
+}
+
+document.getElementById('srcTable').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const s = SRCS.find((x) => x.id === Number(btn.dataset.id));
+  if (btn.dataset.act === 'edit') { openForm(s); return; }
+  if (btn.dataset.act === 'del') {
+    if (!confirm(`¿Eliminar "${s.name}"? Sus respaldos ya generados NO se borran.`)) return;
+    const res = await fetch(`/api/external-sources/${s.id}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    show(data.message || data.detail || 'Listo.', res.ok ? 'success' : 'danger');
+    load();
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Probando…';
+  const res = await fetch(`/api/external-sources/${s.id}/test`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  show(data.message || data.detail || 'Error de red.', res.ok && data.ok ? 'success' : 'danger');
+  load();
+});
+
+(async () => {
+  KINDS = (await (await fetch('/api/external-sources/kinds')).json()).kinds;
+  document.getElementById('kindSelect').innerHTML = Object.entries(KINDS).map(([key, v]) => `<option value="${key}">${esc(v.label)}</option>`).join('');
+  load();
+})();
+</script>
+{% endblock %}

@@ -335,6 +335,16 @@ def _conf_sections(dest, config: dict, tmp: Path) -> tuple[str, str]:
     elif kind == "webdav":
         base.update({"url": config["url"], "vendor": config.get("vendor") or "other", "user": config["user"],
                      "pass": _obscure(config["pass"])})
+    elif kind == "ftp":
+        # Solo como origen (archivos de un hosting, ver external_sources).
+        base.update({"host": config["host"], "port": config.get("port") or "21", "user": config["user"],
+                     "pass": _obscure(config["pass"])})
+        if config.get("tls_mode") == "ftps":
+            base["explicit_tls"] = "true"
+        elif config.get("tls_mode") == "ftps_implicit":
+            base["tls"] = "true"
+        if config.get("no_check_certificate"):
+            base["no_check_certificate"] = "true"
     for k in ("client_id", "client_secret"):
         if config.get(k):
             base[k] = config[k]
@@ -345,6 +355,8 @@ def _conf_sections(dest, config: dict, tmp: Path) -> tuple[str, str]:
         remote_path = dest.remote_path.rstrip("/")
     else:
         remote_path = dest.remote_path.strip().strip("/")
+        if remote_path == ".":
+            remote_path = ""
     lines = ["[dst]"] + [f"{k} = {v}" for k, v in base.items() if v != ""]
     target = f"dst:{remote_path}"
     if dest.encrypt:
@@ -365,7 +377,8 @@ class RcloneSession:
 
     def __init__(self, dest):
         self.dest = dest
-        self.config = load_config(dest)
+        # Un origen externo trae la configuracion ya descifrada en .config.
+        self.config = dest.config if isinstance(getattr(dest, "config", None), dict) else load_config(dest)
         self.new_token = None
 
     def __enter__(self):

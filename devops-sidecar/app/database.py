@@ -26,6 +26,7 @@ _ADDED_COLUMNS = {
     "backup_jobs": [
         ("include_repos", "BOOLEAN NOT NULL DEFAULT 1"),
         ("include_main_app", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("source_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
     ],
 }
 

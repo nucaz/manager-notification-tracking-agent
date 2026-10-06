@@ -69,7 +69,7 @@ const kb = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).t
 const $ = (id) => document.getElementById(id);
 const ST = { ok: 'success', error: 'danger', en_curso: 'info' };
 const MODES = { verificar: 'prueba', descargar: 'descarga', subir: 'subida a Git', aplicar: 'restauración en la aplicación' };
-const label = (c) => (c.is_db ? 'Base del sidecar' : (c.is_app ? 'Aplicación completa' : c.repo));
+const label = (c) => (c.is_db ? 'Base del sidecar' : (c.is_app ? 'Aplicación completa' : (c.is_ext ? 'Sistema externo: ' + (c.repo || '').replace(/^_externo_/, '') : c.repo)));
 let selection = null;  // { point_id } o { destination_id, chain_path, seq }
 
 function show(text, kind = 'success') { $('msg').innerHTML = `<div class="alert alert-${kind}">${esc(text)}</div>`; window.scrollTo(0, 0); }
@@ -121,7 +121,7 @@ $('btnExplore').addEventListener('click', async () => {
     const seq = Number($(`seq_${b.dataset.i}`).value);
     $('pointCard').classList.add('d-none');
     select({ destination_id: Number(id), chain_path: c.path, seq },
-      `<strong>${esc(label(c))}</strong>, cadena <span class="font-monospace">${esc(c.chain_label)}</span>, punto ${seq === 0 ? 'completo' : '#' + seq} — desde <strong>${esc(data.destination)}</strong>`, c.is_db, c.is_app);
+      `<strong>${esc(label(c))}</strong>, cadena <span class="font-monospace">${esc(c.chain_label)}</span>, punto ${seq === 0 ? 'completo' : '#' + seq} — desde <strong>${esc(data.destination)}</strong>`, c.is_db || c.is_ext, c.is_app);
   }));
 });
 
@@ -151,7 +151,7 @@ async function loadHistory() {
   $('history').innerHTML = rows.length ? rows.map((r) => `
     <details class="mb-2" ${r.status === 'en_curso' ? 'open' : ''}><summary>
       <span class="badge bg-${ST[r.status] || 'secondary'}">${esc(r.status)}</span>
-      #${r.id} ${esc(fmt(r.created_at))} — ${esc(MODES[r.mode] || r.mode)} de <strong>${esc(r.repo === '_sidecar_db' ? 'base del sidecar' : (r.repo === '_aplicacion' ? 'aplicación completa' : r.repo))}</strong>
+      #${r.id} ${esc(fmt(r.created_at))} — ${esc(MODES[r.mode] || r.mode)} de <strong>${esc(r.repo === '_sidecar_db' ? 'base del sidecar' : (r.repo === '_aplicacion' ? 'aplicación completa' : r.repo.replace(/^_externo_/, 'sistema externo ')))}</strong>
       punto ${r.seq === 0 ? 'completo' : '#' + r.seq} desde ${esc(r.source)}</summary>
       ${r.outputs.map((o) => `<a class="btn btn-sm btn-success mt-1 me-1" href="/api/restores/${r.id}/archivo/${encodeURIComponent(o.name)}"><i class="bi bi-download"></i> ${esc(o.name)} (${kb(o.size)})</a>`).join('')}
       <pre class="bg-light p-2 small mb-0 mt-1" style="white-space: pre-wrap">${esc(r.log || 'En curso…')}</pre></details>`).join('')
@@ -172,7 +172,7 @@ async function loadHistory() {
   $('pointSource').innerHTML = data.sources.length ? data.sources.map((s) => `<option value="${esc(s.source)}">${esc(s.label)}</option>`).join('')
     : '<option value="">No está en el servidor ni confirmado en ningún destino</option>';
   $('pointCard').classList.remove('d-none');
-  if (data.sources.length) select({ point_id: p.id }, 'El punto seleccionado arriba.', p.is_db, p.is_app);
+  if (data.sources.length) select({ point_id: p.id }, 'El punto seleccionado arriba.', p.is_db || p.is_ext, p.is_app);
 })();
 </script>
 {% endblock %}

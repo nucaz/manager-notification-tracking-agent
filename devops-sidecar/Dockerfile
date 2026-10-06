@@ -27,6 +27,35 @@ RUN apt-get update \
   && apt-get purge -y curl unzip && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
+# Sistemas externos (services/external_sources.py), solo para LEER:
+# - mariadb-client: mariadb-dump para MySQL/MariaDB (Azure, cPanel).
+# - postgresql-client del repositorio oficial PGDG: pg_dump no respalda un
+#   servidor MAS NUEVO que el; el de Debian (17) se quedaria corto con
+#   Azure PostgreSQL 18. La llave del repo se verifica por su huella.
+# - sqlpackage (Azure SQL / SQL Server, .bacpac): version fija y SHA-256
+#   verificado; Microsoft solo lo publica para x64 (en arm64 se omite y
+#   "Probar conexion" lo informa). Necesita libicu.
+ARG PG_CLIENT_MAJOR=18
+ARG PGDG_KEY_FPR=B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+ARG SQLPACKAGE_URL=https://download.microsoft.com/download/18a5e51e-8332-4cbe-bb50-6d3a50c704c5/sqlpackage-linux-x64-en-170.4.83.3.zip
+ARG SQLPACKAGE_SHA=e81ede2429f3a15d9e752845c8928569c7706b3a911fad2d1717c0f03e0fc7c3
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl gnupg unzip mariadb-client libicu76 \
+  && curl -fsSL -o /tmp/pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  && gpg --batch --show-keys --with-colons /tmp/pgdg.asc | grep -q "^fpr:::::::::${PGDG_KEY_FPR}:" \
+  && gpg --batch --dearmor -o /usr/share/keyrings/pgdg.gpg /tmp/pgdg.asc \
+  && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update && apt-get install -y --no-install-recommends "postgresql-client-${PG_CLIENT_MAJOR}" \
+  && ARCH="${TARGETARCH:-amd64}" \
+  && if [ "$ARCH" = "amd64" ]; then \
+       curl -fsSL -o /tmp/sqlpackage.zip "$SQLPACKAGE_URL" \
+       && echo "${SQLPACKAGE_SHA}  /tmp/sqlpackage.zip" | sha256sum -c - \
+       && mkdir -p /opt/sqlpackage && unzip -q /tmp/sqlpackage.zip -d /opt/sqlpackage \
+       && chmod 755 /opt/sqlpackage/sqlpackage && rm /tmp/sqlpackage.zip; \
+     fi \
+  && rm -f /tmp/pgdg.asc && apt-get purge -y curl gnupg unzip && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/* /root/.gnupg
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

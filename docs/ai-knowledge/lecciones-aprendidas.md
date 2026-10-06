@@ -426,3 +426,20 @@ Una carpeta SMB (o un WebDAV genérico) no tiene hashes: sin cifrado,
 "does not support any hashes" y cada subida quedaba en error. Ahora, ante
 ese mensaje, se verifica con `check --download` (descarga, descifra y
 compara byte a byte). Las pruebas incluyen un WebDAV cifrado.
+
+## 39. Respaldar MySQL con el cliente de MariaDB: probarlo con el de MySQL
+
+`mariadb-dump` 11 empieza con `/*M!999999\- enable the sandbox mode */`.
+La forma actual (`/*M!`) la aceptan los clientes de MySQL 8.0 y 8.4
+(probado); la forma antigua (`/*!999999\-`) la rechazaban. Al respaldar
+un MySQL se quita igual (solo protege al restaurar en MariaDB) y el
+volcado se probo con el cliente oficial de MySQL 8.0, no solo con el de
+MariaDB.
+Y `pg_dump` no respalda un servidor de version mayor: el cliente se
+instala del repositorio oficial PGDG, no el de la distribucion.
+
+## 40. Un servidor de prueba que no se comporta como el real no prueba nada
+
+`rclone serve ftp --cert` hace TLS implicito y rechaza `PBSZ`: con el
+cliente en FTPS explicito se quedaba colgado. El hosting real (cPanel) usa
+Pure-FTPd con TLS explicito obligatorio; la prueba usa ese mismo servidor.

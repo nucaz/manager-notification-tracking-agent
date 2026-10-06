@@ -242,10 +242,16 @@ def backup_destinations_page(request: Request):
     return templates.TemplateResponse("backup_destinations.html", {"request": request})
 
 
+@router.get("/backups/sistemas", response_class=HTMLResponse)
+def backup_sources_page(request: Request):
+    return templates.TemplateResponse("backup_sources.html", {"request": request})
+
+
 @router.get("/backups/trabajos", response_class=HTMLResponse)
 def backup_jobs_page(request: Request, db: Session = Depends(get_db)):
     repos = db.query(models.Repo).order_by(models.Repo.name).all()
-    return templates.TemplateResponse("backup_jobs.html", {"request": request, "repos": repos})
+    sources = db.query(models.ExternalSource).order_by(models.ExternalSource.name).all()
+    return templates.TemplateResponse("backup_jobs.html", {"request": request, "repos": repos, "sources": sources})
 
 
 @router.get("/backups/trabajos/{job_id}", response_class=HTMLResponse)

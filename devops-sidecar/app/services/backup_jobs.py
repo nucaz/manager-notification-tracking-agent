@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..config import settings
 from ..database import SessionLocal
-from . import git_service, rclone_service, sso_service
+from . import external_sources, git_service, rclone_service, sso_service
 
 logger = logging.getLogger("backup_jobs")
 _locks: dict[int, threading.Lock] = {}
@@ -69,6 +69,13 @@ def job_repo_ids(job: models.BackupJob) -> list[int]:
 def job_destination_ids(job: models.BackupJob) -> list[int]:
     try:
         return [int(x) for x in json.loads(job.destination_ids_json or "[]")]
+    except (ValueError, TypeError):
+        return []
+
+
+def job_source_ids(job: models.BackupJob) -> list[int]:
+    try:
+        return [int(x) for x in json.loads(job.source_ids_json or "[]")]
     except (ValueError, TypeError):
         return []
 
@@ -400,6 +407,32 @@ def create_app_point(db: Session, job: models.BackupJob, run: models.BackupJobRu
     return point
 
 
+def create_source_point(db: Session, job: models.BackupJob, run: models.BackupJobRun,
+                        src: models.ExternalSource, log) -> models.BackupPoint:
+    """Respaldo de un sistema externo (base en Azure, sitio WordPress): un
+    completo por ejecucion; la retencion conserva las ultimas N."""
+    key = src.folder_key
+    stamp = unique_stamp(job, key)
+    folder = chain_dir(job, key, stamp)
+    folder.mkdir(parents=True, exist_ok=True)
+    log(f"  {src.name} ({external_sources.KINDS[src.kind]['label'].split(' (')[0]}):")
+    try:
+        entries = external_sources.backup(src, folder, stamp, log)
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    (folder / "manifest.json").write_text(json.dumps({"repo": key, "source": src.name, "kind": src.kind, "points": [
+        {"seq": 0, "kind": "full", "created_at": datetime.utcnow().isoformat(), "files": entries}]}, indent=2), encoding="utf-8")
+    total = sum(e["size"] for e in entries)
+    point = models.BackupPoint(job_id=job.id, run_id=run.id, repo_id=None, repo_name=key, kind="full", seq=0,
+                               chain_label=stamp, files_json=json.dumps(entries), total_bytes=total)
+    db.add(point)
+    db.flush()
+    point.chain_id = point.id
+    db.commit()
+    return point
+
+
 DEFAULT_APP_JOB = "Aplicación completa (nocturno)"
 
 
@@ -559,6 +592,20 @@ def run_job(job_id: int, trigger: str = "programado") -> int | None:
                 db.rollback()
                 errors += 1
                 log(f"  aplicacion completa: ERROR {e}")
+        src_ids = job_source_ids(job)
+        sources = db.query(models.ExternalSource).filter(models.ExternalSource.id.in_(src_ids)) \
+            .order_by(models.ExternalSource.name).all() if src_ids else []
+        for src in sources:
+            if not src.enabled:
+                log(f"  {src.name}: desactivado; se omite.")
+                warnings += 1
+                continue
+            try:
+                new_points.append(create_source_point(db, job, run, src, log))
+            except Exception as e:  # noqa: BLE001 - un sistema caido no frena a los demas
+                db.rollback()
+                errors += 1
+                log(f"    {src.name}: ERROR {e}")
         if job.include_sidecar_db:
             try:
                 new_points.append(create_db_point(db, job, run, log))

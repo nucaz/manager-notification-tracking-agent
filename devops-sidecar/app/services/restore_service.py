@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..config import settings
 from ..database import SessionLocal
-from . import backup_jobs, git_service, git_targets, rclone_service, sso_service
+from . import backup_jobs, external_sources, git_service, git_targets, rclone_service, sso_service
 
 logger = logging.getLogger("restore")
 RESTORE_KEEP_DAYS = 3
@@ -82,7 +82,7 @@ def explore_destination(db: Session, dest: models.BackupDestination) -> list[dic
         key, name, size = "/".join(parts[:3]), parts[3], int(item.get("Size") or 0)
         c = chains.setdefault(key, {"path": key, "job": parts[0], "repo": parts[1], "chain_label": parts[2],
                                     "has_manifest": False, "is_db": parts[1] == backup_jobs.DB_KEY,
-                                    "is_app": parts[1] == backup_jobs.APP_KEY, "points": {}})
+                                    "is_app": parts[1] == backup_jobs.APP_KEY, "is_ext": is_external(parts[1]), "points": {}})
         if name == "manifest.json":
             c["has_manifest"] = True
             continue
@@ -340,6 +340,45 @@ def _restore_app(rr: models.RestoreRun, src: Path, work: Path, log) -> list[dict
     return []
 
 
+def is_external(key: str) -> bool:
+    return key.startswith("_externo_")
+
+
+def _restore_external(rr: models.RestoreRun, src: Path, work: Path, log) -> list[dict]:
+    """Sistema externo (base en Azure, WordPress): verificar el SHA-256 y
+    que cada archivo se lea entero, o dejarlo para descargar. Nunca se
+    aplica sobre el sistema de origen: RESTAURAR.txt trae los comandos."""
+    mf = src / "manifest.json"
+    if not mf.exists():
+        raise RestoreError("La carpeta no tiene manifest.json: vea RESTAURAR.txt para restaurar a mano.")
+    manifest = json.loads(mf.read_text(encoding="utf-8"))
+    files = [f for p in manifest.get("points", []) for f in p["files"]]
+    if not files:
+        raise RestoreError("El manifest no lista archivos.")
+    log(f"Respaldo de '{manifest.get('source', rr.repo_name)}' ({manifest.get('kind', '?')}).")
+    for f in files:
+        path = src / f["name"]
+        if not path.exists():
+            raise RestoreError(f"Falta {f['name']}.")
+        if backup_jobs._sha256(path) != f["sha256"]:
+            raise RestoreError(f"{f['name']} esta DANADO: su SHA-256 no coincide con el del manifest.")
+        try:
+            log("  " + external_sources.verify_file(path))
+        except (external_sources.SourceError, OSError, EOFError, tarfile.TarError) as e:
+            raise RestoreError(f"{f['name']} no se puede leer: {e}") from e
+    log("Integridad: SHA-256 correcto y contenido legible.")
+    if rr.mode == "descargar":
+        outputs = []
+        for name in [f["name"] for f in files] + ["RESTAURAR.txt"]:
+            if (src / name).exists():
+                shutil.copy2(src / name, work / name)
+                outputs.append({"name": name, "size": (work / name).stat().st_size})
+        log("Listo para descargar. RESTAURAR.txt trae los comandos para levantarlo en otra base u otro hosting.")
+        return outputs
+    log("Prueba de restauracion correcta (no se aplico nada).")
+    return []
+
+
 def run_restore(restore_id: int, push: dict | None = None) -> None:
     if not _lock.acquire(blocking=False):
         db = SessionLocal()
@@ -388,6 +427,8 @@ def run_restore(restore_id: int, push: dict | None = None) -> None:
             outputs = _restore_db(rr, src, work, log)
         elif rr.repo_name == backup_jobs.APP_KEY:
             outputs = _restore_app(rr, src, work, log)
+        elif is_external(rr.repo_name):
+            outputs = _restore_external(rr, src, work, log)
         else:
             outputs = _restore_repo(rr, src, work, log, push)
         rr.status = "ok"

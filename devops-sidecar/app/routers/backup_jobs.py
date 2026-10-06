@@ -3,6 +3,7 @@ Los secretos de un destino (tokens, claves, contrasenas) entran por aqui
 pero nunca vuelven a salir: la lista solo informa que campos estan
 configurados. Al editar, un campo secreto vacio conserva el valor guardado."""
 import json
+import shutil
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 from .. import models, scheduler
 from ..auth import require_dashboard_auth
 from ..database import get_db
-from ..services import backup_jobs, rclone_service
+from ..services import backup_jobs, external_sources, rclone_service
 
 router = APIRouter(prefix="/api", tags=["respaldos-externos"], dependencies=[Depends(require_dashboard_auth)])
 
@@ -180,6 +181,117 @@ def test_destination(dest_id: int, db: Session = Depends(get_db)):
     return {"ok": ok, "message": message}
 
 
+# --------------------------- sistemas externos -----------------------------
+class SourcePayload(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: str
+    enabled: bool = True
+    config: dict = {}
+
+
+def _source_out(s: models.ExternalSource) -> dict:
+    try:
+        cfg = external_sources.load_config(s)
+    except external_sources.SourceError:
+        cfg = {}
+    secret = external_sources.secret_keys(s.kind) if s.kind in external_sources.KINDS else set()
+    return {
+        "id": s.id, "name": s.name, "kind": s.kind, "enabled": s.enabled, "folder_key": s.folder_key,
+        "kind_label": external_sources.KINDS.get(s.kind, {}).get("label", s.kind),
+        "summary": external_sources.describe(s.kind, cfg) if s.kind in external_sources.KINDS else "",
+        "config": {k: v for k, v in cfg.items() if k not in secret},
+        "secrets_set": sorted(k for k in cfg if k in secret and cfg[k]),
+        "last_test_at": s.last_test_at.isoformat() if s.last_test_at else None,
+        "last_test_ok": s.last_test_ok, "last_test_message": s.last_test_message,
+    }
+
+
+def _apply_source(src: models.ExternalSource, payload: SourcePayload) -> None:
+    if payload.kind not in external_sources.KINDS:
+        raise HTTPException(status_code=422, detail=f"Tipo de sistema desconocido: {payload.kind}")
+    if src.kind and src.kind != payload.kind:
+        raise HTTPException(status_code=422, detail="El tipo no se cambia: cree otro sistema.")
+    previous = external_sources.load_config(src) if src.config_enc else {}
+    incoming = {k: (v.strip() if isinstance(v, str) and k != "known_hosts" else v) for k, v in payload.config.items()}
+    incoming = {k: v for k, v in incoming.items() if v not in (None, "")}
+    secret = external_sources.secret_keys(payload.kind)
+    merged = {k: v for k, v in previous.items() if k in secret}  # un secreto vacio conserva el guardado
+    merged.update(incoming)
+    problems = external_sources.validate(payload.kind, merged)
+    if problems:
+        raise HTTPException(status_code=422, detail=" ".join(problems))
+    src.name = payload.name.strip()
+    src.kind = payload.kind
+    src.enabled = payload.enabled
+    external_sources.store_config(src, merged)
+
+
+@router.get("/external-sources/kinds")
+def source_kinds():
+    return {"kinds": external_sources.KINDS}
+
+
+@router.get("/external-sources")
+def list_sources(db: Session = Depends(get_db)):
+    return [_source_out(s) for s in db.query(models.ExternalSource).order_by(models.ExternalSource.name).all()]
+
+
+@router.post("/external-sources", status_code=201)
+def create_source(payload: SourcePayload, db: Session = Depends(get_db)):
+    src = models.ExternalSource(config_enc="", kind="")
+    _apply_source(src, payload)
+    src.folder_key = external_sources.folder_key(src.name, {k for (k,) in db.query(models.ExternalSource.folder_key).all()})
+    db.add(src)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f'Ya existe un sistema llamado "{payload.name}".')
+    db.refresh(src)
+    return _source_out(src)
+
+
+@router.put("/external-sources/{source_id}")
+def update_source(source_id: int, payload: SourcePayload, db: Session = Depends(get_db)):
+    src = db.get(models.ExternalSource, source_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="Sistema no encontrado.")
+    _apply_source(src, payload)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f'Ya existe un sistema llamado "{payload.name}".')
+    return _source_out(src)
+
+
+@router.delete("/external-sources/{source_id}")
+def delete_source(source_id: int, db: Session = Depends(get_db)):
+    src = db.get(models.ExternalSource, source_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="Sistema no encontrado.")
+    using = [j.name for j in db.query(models.BackupJob).all() if source_id in backup_jobs.job_source_ids(j)]
+    if using:
+        raise HTTPException(status_code=409, detail="Lo usan estos trabajos; quitelo de ellos primero: " + ", ".join(using))
+    shutil.rmtree(external_sources.mirror_dir(src).parent, ignore_errors=True)
+    db.delete(src)
+    db.commit()
+    return {"ok": True, "message": "Sistema eliminado. Sus respaldos ya generados (en el servidor y en los destinos) no se borraron."}
+
+
+@router.post("/external-sources/{source_id}/test")
+def test_source(source_id: int, db: Session = Depends(get_db)):
+    src = db.get(models.ExternalSource, source_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="Sistema no encontrado.")
+    ok, message = external_sources.test_source(src)
+    src.last_test_at = datetime.utcnow()
+    src.last_test_ok = ok
+    src.last_test_message = message
+    db.commit()
+    return {"ok": ok, "message": message}
+
+
 # ------------------------------- trabajos ---------------------------------
 class JobPayload(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -201,6 +313,7 @@ class JobPayload(BaseModel):
     keep_chains_local: int = Field(2, ge=1, le=100)
     keep_chains_remote: int = Field(4, ge=1, le=1000)
     destination_ids: list[int] = []
+    source_ids: list[int] = []
 
 
 def _job_out(db: Session, job: models.BackupJob) -> dict:
@@ -208,6 +321,8 @@ def _job_out(db: Session, job: models.BackupJob) -> dict:
     dest_ids = backup_jobs.job_destination_ids(job)
     repos = db.query(models.Repo).filter(models.Repo.id.in_(repo_ids)).all() if repo_ids else []
     dests = db.query(models.BackupDestination).filter(models.BackupDestination.id.in_(dest_ids)).all() if dest_ids else []
+    src_ids = backup_jobs.job_source_ids(job)
+    srcs = db.query(models.ExternalSource).filter(models.ExternalSource.id.in_(src_ids)).all() if src_ids else []
     nxt = scheduler.next_backup_run(job.id)
     return {
         "id": job.id, "name": job.name, "enabled": job.enabled,
@@ -222,6 +337,7 @@ def _job_out(db: Session, job: models.BackupJob) -> dict:
         "incrementals_per_full": job.incrementals_per_full,
         "keep_chains_local": job.keep_chains_local, "keep_chains_remote": job.keep_chains_remote,
         "destination_ids": dest_ids, "destination_names": [d.name for d in dests],
+        "source_ids": src_ids, "source_names": sorted(s.name for s in srcs),
         "last_run_at": job.last_run_at.isoformat() if job.last_run_at else None,
         "last_status": job.last_status, "running": backup_jobs.is_running(job.id),
     }
@@ -232,11 +348,16 @@ def _apply_job(db: Session, job: models.BackupJob, p: JobPayload) -> None:
         raise HTTPException(status_code=422, detail="Frecuencia no valida.")
     if p.day_of_week not in scheduler.DIAS:
         raise HTTPException(status_code=422, detail="Dia de la semana no valido.")
-    if not ((p.include_repos and (p.include_bundle or p.include_content or p.include_diff)) or p.include_sidecar_db or p.include_main_app):
+    if not ((p.include_repos and (p.include_bundle or p.include_content or p.include_diff)) or p.include_sidecar_db
+            or p.include_main_app or p.source_ids):
         raise HTTPException(status_code=422, detail="Elija al menos un contenido para respaldar.")
     known_dests = {d.id for d in db.query(models.BackupDestination).all()}
     if any(d not in known_dests for d in p.destination_ids):
         raise HTTPException(status_code=422, detail="Uno de los destinos elegidos ya no existe.")
+    known_srcs = {s.id for s in db.query(models.ExternalSource).all()}
+    if any(s not in known_srcs for s in p.source_ids):
+        raise HTTPException(status_code=422, detail="Uno de los sistemas externos elegidos ya no existe.")
+    job.source_ids_json = json.dumps(sorted(set(p.source_ids)))
     for field in ("name", "enabled", "include_bundle", "include_content", "include_diff", "include_sidecar_db", "include_repos", "include_main_app",
                   "frequency", "hour", "minute", "day_of_week", "day_of_month", "incrementals_per_full",
                   "keep_chains_local", "keep_chains_remote"):
@@ -325,7 +446,16 @@ def test_job(job_id: int, db: Session = Depends(get_db)):
     if job.include_main_app:
         ok, msg = backup_jobs.check_main_app()
         checks.append({"kind": "aplicacion", "name": "Aplicación principal", "ok": ok, "message": msg})
-    if not repos and not job.include_sidecar_db and not job.include_main_app:
+    src_ids = backup_jobs.job_source_ids(job)
+    for src in db.query(models.ExternalSource).filter(models.ExternalSource.id.in_(src_ids)).order_by(models.ExternalSource.name).all() if src_ids else []:
+        if not src.enabled:
+            checks.append({"kind": "sistema", "name": src.name, "ok": False, "message": "Desactivado: el trabajo lo omitira."})
+            continue
+        ok, msg = external_sources.test_source(src)
+        src.last_test_at, src.last_test_ok, src.last_test_message = datetime.utcnow(), ok, msg
+        db.commit()
+        checks.append({"kind": "sistema", "name": src.name, "ok": ok, "message": msg})
+    if not repos and not job.include_sidecar_db and not job.include_main_app and not src_ids:
         checks.append({"kind": "repo", "name": "Repositorios", "ok": False, "message": "El trabajo no tiene repositorios que respaldar."})
     for repo in repos:
         ok, msg = backup_jobs.check_repo_ready(repo)

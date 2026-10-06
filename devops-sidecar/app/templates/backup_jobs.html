@@ -52,6 +52,13 @@
         </div>
         <div class="form-check"><input class="form-check-input" type="checkbox" name="include_sidecar_db" id="cDb" checked>
           <label class="form-check-label" for="cDb">Base de configuración del sidecar (sidecar.db)</label></div>
+        <div class="mt-2 fw-semibold small">Sistemas externos (bases en Azure, sitios WordPress)</div>
+        {% for s in sources %}
+          <div class="form-check"><input class="form-check-input source-check" type="checkbox" value="{{ s.id }}" id="src{{ s.id }}">
+            <label class="form-check-label" for="src{{ s.id }}">{{ s.name }}{% if not s.enabled %} <span class="text-muted small">(desactivado)</span>{% endif %}</label></div>
+        {% else %}
+          <div class="text-muted small">Ninguno todavía: agréguelos en <a href="/backups/sistemas">Sistemas externos</a>.</div>
+        {% endfor %}
       </div>
 
       <div class="col-md-6">
@@ -138,7 +145,8 @@ function openForm(job) {
   document.getElementById('formTitle').textContent = job ? `Editar trabajo: ${job.name}` : 'Nuevo trabajo';
   const d = job || { name: '', enabled: true, repo_ids: [], include_bundle: true, include_diff: true, include_content: false,
     include_sidecar_db: true, include_repos: true, include_main_app: false, frequency: 'daily', hour: 2, minute: 0, day_of_week: 'sun', day_of_month: 1, cron_expr: '',
-    incrementals_per_full: 6, keep_chains_local: 2, keep_chains_remote: 4, destination_ids: [] };
+    incrementals_per_full: 6, keep_chains_local: 2, keep_chains_remote: 4, destination_ids: [], source_ids: [] };
+  document.querySelectorAll('.source-check').forEach((cb) => { cb.checked = (d.source_ids || []).includes(Number(cb.value)); });
   ['name', 'frequency', 'hour', 'minute', 'day_of_week', 'day_of_month', 'incrementals_per_full', 'keep_chains_local', 'keep_chains_remote']
     .forEach((k) => { F(k).value = d[k]; });
   F('cron_expr').value = d.cron_expr || '';
@@ -169,6 +177,7 @@ form.addEventListener('submit', async (e) => {
     keep_chains_remote: Number(F('keep_chains_remote').value),
     repo_ids: [...document.querySelectorAll('.repo-check:checked')].map((cb) => Number(cb.value)),
     destination_ids: [...document.querySelectorAll('.dest-check:checked')].map((cb) => Number(cb.value)),
+    source_ids: [...document.querySelectorAll('.source-check:checked')].map((cb) => Number(cb.value)),
   };
   if (editing && !confirm('¿Guardar los cambios en este trabajo? La nueva programación se aplica de inmediato.')) return;
   const res = await fetch(editing ? `/api/backup-jobs/${editing}` : '/api/backup-jobs', {
@@ -188,7 +197,7 @@ async function load() {
     const st = j.running ? STATUS.en_curso : (STATUS[j.last_status] || ['secondary', 'sin ejecutar']);
     return `<tr>
       <td><a href="/backups/trabajos/${j.id}"><strong>${esc(j.name)}</strong></a> ${j.enabled ? '' : '<span class="badge bg-secondary">pausado</span>'}
-        <div class="small text-muted">${j.include_main_app ? "<strong>Aplicación completa</strong> · " : ""}${j.include_repos ? esc(j.repo_names.join(", ")) : "Sin repositorios"}${j.include_sidecar_db ? " · base del sidecar" : ""}</div></td>
+        <div class="small text-muted">${j.include_main_app ? "<strong>Aplicación completa</strong> · " : ""}${j.include_repos ? esc(j.repo_names.join(", ")) : "Sin repositorios"}${j.include_sidecar_db ? " · base del sidecar" : ""}${(j.source_names || []).length ? " · <strong>Externos:</strong> " + esc(j.source_names.join(", ")) : ""}</div></td>
       <td class="small">${esc(j.schedule_text)}<div class="text-muted">${j.next_run ? 'Próxima: ' + esc(j.next_run) : ''}</div></td>
       <td class="small">1 completo + ${j.incrementals_per_full} incr.<div class="text-muted">conserva ${j.keep_chains_local} aquí / ${j.keep_chains_remote} fuera</div></td>
       <td class="small">${j.destination_names.length ? esc(j.destination_names.join(', ')) : '<span class="text-muted">solo servidor</span>'}</td>

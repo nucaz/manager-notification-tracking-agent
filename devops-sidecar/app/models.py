@@ -163,6 +163,26 @@ class BackupDestination(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class ExternalSource(Base):
+    """Sistema externo que se respalda (solo lectura): una base MySQL/
+    MariaDB, PostgreSQL o Azure SQL, o un sitio WordPress en un hosting.
+    Conexion y contrasenas en config_enc (JSON cifrado). folder_key es su
+    carpeta dentro de cada trabajo y no cambia al renombrarlo. Ver
+    services/external_sources.py."""
+    __tablename__ = "external_sources"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), unique=True, nullable=False)
+    kind = Column(String(20), nullable=False)  # mysql | postgres | mssql | wordpress
+    folder_key = Column(String(80), unique=True, nullable=False)
+    config_enc = Column(Text, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_test_at = Column(DateTime, nullable=True)
+    last_test_ok = Column(Boolean, nullable=True)
+    last_test_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class BackupJob(Base):
     """Trabajo de respaldo programado: que se respalda, cuando, adonde y
     con que politica de cadena/retencion. Cada (trabajo, repositorio)
@@ -198,6 +218,8 @@ class BackupJob(Base):
     keep_chains_remote = Column(Integer, nullable=False, default=4)
     # JSON: lista de ids de BackupDestination.
     destination_ids_json = Column(Text, nullable=False, default="[]")
+    # JSON: lista de ids de ExternalSource (bases en Azure, sitios WordPress).
+    source_ids_json = Column(Text, nullable=False, default="[]")
     last_run_at = Column(DateTime, nullable=True)
     last_status = Column(String(30), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

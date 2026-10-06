@@ -94,3 +94,27 @@ solo fixtures):
   vuelta y un tar con `../` armado a mano) y
   `devops-sidecar/tests/test_respaldo_aplicacion.py`.
 
+## Respaldar sistemas externos (bases en Azure, WordPress en un hosting)
+
+- **Solo leer del origen**: usuario de solo lectura (Probar avisa si puede
+  escribir) y ningun modo que escriba en el sistema de origen; esos
+  respaldos se verifican o se descargan, y su `RESTAURAR.txt` dice como
+  levantarlos en una base u hosting NUEVO.
+- **Contrasenas fuera de la linea de comandos** cuando la herramienta lo
+  permite: archivo de opciones 0600 para `mariadb-dump`, `PGPASSWORD` para
+  `pg_dump`. `sqlpackage` solo las acepta como argumento.
+- **`mariadb-dump` 11 escribe una primera linea "sandbox"** (la forma
+  antigua la rechazaba el cliente de MySQL): se quita cuando el origen es
+  MySQL, y el volcado se prueba con el cliente oficial de MySQL. Sin `--databases`
+  (sin `CREATE DATABASE`/`USE`) el volcado se restaura en cualquier base.
+  Las opciones como `connect-timeout` en `[client]` las acepta `mariadb`
+  pero no `mariadb-dump` (falla con "unknown variable").
+- **`pg_dump` no respalda un servidor mas nuevo que el**: el cliente sale
+  del repositorio oficial PGDG (18), no el de Debian.
+- **Verificar es leerlo entero**, no solo el SHA-256: pie `Dump completed`,
+  `pg_restore --list`, zip del `.bacpac`, tar sin rutas `..`.
+- **Probar contra servidores reales** y restaurar cada respaldo en una base
+  nueva comparando datos (`tests/test_sistemas_externos.py`). `rclone serve
+  ftp` con certificado hace TLS implicito y rechaza PBSZ: no sirve para
+  probar FTPS; se usa Pure-FTPd (el de cPanel) con `--tls=2`.
+

@@ -68,7 +68,7 @@ def point_sources(point_id: int, db: Session = Depends(get_db)):
             sources.append({"source": str(t.destination_id), "label": t.destination.name + (" (cifrado)" if t.destination.encrypt else "")})
     return {"point": {"id": p.id, "job": p.job.name, "repo": p.repo_name, "chain_label": p.chain_label, "seq": p.seq,
                       "kind": p.kind, "created_at": p.created_at.isoformat(), "is_db": p.repo_name == backup_jobs.DB_KEY,
-                      "is_app": p.repo_name == backup_jobs.APP_KEY},
+                      "is_app": p.repo_name == backup_jobs.APP_KEY, "is_ext": restore_service.is_external(p.repo_name)},
             "sources": sources}
 
 
@@ -113,7 +113,7 @@ def start_restore(payload: RestorePayload, background_tasks: BackgroundTasks, db
         if (payload.confirmacion or "").strip() != "RESTAURAR TODO":
             raise HTTPException(status_code=422, detail='Escriba exactamente "RESTAURAR TODO" para confirmar.')
     if payload.mode == "subir":
-        if repo_name in (backup_jobs.DB_KEY, backup_jobs.APP_KEY):
+        if repo_name in (backup_jobs.DB_KEY, backup_jobs.APP_KEY) or restore_service.is_external(repo_name):
             raise HTTPException(status_code=422, detail="Esta copia no se sube a Git: use Descargar.")
         url = (payload.push_url or "").strip()
         problem = git_targets.validate_url(url)
