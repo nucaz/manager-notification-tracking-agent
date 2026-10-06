@@ -94,7 +94,7 @@ async function main() {
     // --- Indices nuevos y su uso
     const has = (table, index) => tables.find((t) => t.name === table).indexes.some((i) => i.name === index);
     check('Índices nuevos presentes (IMEI, código, sede, número, ICCID, empleados, fechas de históricos)', [
-      ['mobile_devices', 'idx_mobile_device_imei'], ['mobile_devices', 'idx_mobile_device_asset_code'], ['mobile_devices', 'idx_mobile_device_sede'],
+      ['mobile_devices', 'idx_mobile_device_imei'], ['mobile_devices', 'idx_mobile_device_asset_code'], ['mobile_devices', 'idx_mobile_device_lugar'], // sede, area, codigo (0026; reemplazo a idx_mobile_device_sede)
       ['mobile_devices', 'idx_mobile_device_phone_number'], ['mobile_lines', 'idx_mobile_line_iccid'], ['mobile_line_assignments', 'idx_mobile_line_asg_active'],
       ['employees', 'idx_employee_name'], ['employees', 'idx_employee_area'], ['employees', 'idx_employee_sede'], ['agent_message_log', 'idx_agent_log_created'],
       ['trusted_devices', 'idx_trusted_device_expires'], ['audit_log', 'idx_audit_log_email'],
