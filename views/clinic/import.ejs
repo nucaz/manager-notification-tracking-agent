@@ -1,0 +1,87 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0"><%= title %></h2>
+  <a href="/clinic" class="btn btn-outline-secondary">Volver al listado</a>
+</div>
+
+<% if (results) { %>
+  <div class="card p-3 mb-4" id="resultado">
+    <h5 class="mb-1">Resultado de la importación<%= results.past ? ' #' + results.past.id : '' %></h5>
+    <% if (results.past) { %><div class="small text-muted mb-2"><%= results.past.file_name %> · <%= String(results.past.created_at).slice(0, 16) %> · <%= results.past.created_by_name || '' %></div><% } %>
+    <p class="mb-2">
+      <span class="badge bg-success">Importados: <%= (results.created || 0) + (results.updated || 0) + (results.unchanged || 0) %></span>
+      <span class="badge text-bg-primary">Nuevos: <%= results.created || 0 %></span>
+      <span class="badge text-bg-info">Con cambios: <%= results.updated || 0 %></span>
+      <span class="badge text-bg-light border">Sin cambios: <%= results.unchanged || 0 %></span>
+      <span class="badge bg-danger">Con errores: <%= results.errors.length %></span>
+      <% if (results.notes.length) { %><span class="badge bg-warning text-dark">Avisos: <%= results.notes.length %></span><% } %>
+    </p>
+    <% if (results.notes.length) { %>
+      <ul class="small mb-2" style="max-height: 320px; overflow-y: auto">
+        <% results.notes.forEach(function (n) { %><li><%= n %></li><% }); %>
+      </ul>
+    <% } %>
+    <% if (results.errors.length) { %>
+      <div class="table-responsive" style="max-height: 320px; overflow-y: auto">
+        <table class="table table-sm small mb-0">
+          <thead><tr><th style="width: 90px">Fila</th><th>Error</th></tr></thead>
+          <tbody><% results.errors.forEach(function (e) { %><tr><td><%= e.row %></td><td><%= e.message %></td></tr><% }); %></tbody>
+        </table>
+      </div>
+    <% } %>
+    <div class="small text-muted mt-2">Lo que cambió de cada usuario queda en su historial. Los cambios se aplican todos juntos: si algo falla, no se guarda nada.</div>
+  </div>
+<% } %>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <p class="mb-2">Suba el archivo que exporta Clinic <strong>tal cual</strong> (<span class="font-monospace">Usuarios_roles_sedes_permisos.xls</span>):</p>
+      <ul class="small">
+        <li>Las hojas <strong>SEDES</strong> y <strong>PERFILES</strong> alimentan el catálogo de Clinic (con su Id) y las sedes nuevas se agregan al catálogo general.</li>
+        <li>La hoja <strong>USUARIOS</strong> crea o actualiza cada usuario por su <strong>IdUsuario</strong>; lo que cambió queda en su historial.</li>
+        <li>Una baja registrada aquí no se revierte: si Clinic lo sigue mostrando ACTIVO, se avisa para desactivarlo allá.</li>
+        <li>Se avisa de usuarios sin nombre de usuario, usuarios o DNI repetidos y usuarios que ya no vienen en el archivo.</li>
+      </ul>
+      <form method="post" action="/clinic/importar" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="mb-3">
+          <label class="form-label" for="file">Archivo (.xls, .xlsx o .csv)</label>
+          <input type="file" id="file" name="file" class="form-control" accept=".xls,.xlsx,.csv" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Importar</button>
+        <a href="/clinic/importar/plantilla" class="btn btn-link">Descargar plantilla vacía</a>
+      </form>
+      <details class="mt-3 small">
+        <summary>Columnas que se reconocen</summary>
+        <table class="table table-sm mt-2 mb-0">
+          <thead><tr><th>Columna</th><th>Obligatoria</th></tr></thead>
+          <tbody><% columns.forEach(function (c) { %><tr><td><%= c.header %></td><td><%= c.required ? 'Sí' : 'No' %></td></tr><% }); %></tbody>
+        </table>
+        <div class="form-text">También sirve una sola hoja con columnas de texto: NOMBRE, USUARIO, ESTADO, PERFIL, SEDE, ÁREA, SUPERVISOR (usuario), APROBADO.</div>
+      </details>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-3">
+      <h6 class="text-uppercase small fw-bold text-muted">Importaciones anteriores</h6>
+      <% if (!imports.length) { %>
+        <p class="small text-muted mb-0">Aún no se ha importado ningún archivo.</p>
+      <% } else { %>
+        <table class="table table-sm small mb-0" style="font-variant-numeric: tabular-nums">
+          <thead><tr><th>Fecha</th><th class="text-end">Nuevos</th><th class="text-end">Cambios</th><th class="text-end">Errores</th></tr></thead>
+          <tbody>
+            <% imports.forEach(function (i) { %>
+              <tr><td><a href="/clinic/importaciones/<%= i.id %>#resultado"><%= String(i.created_at).slice(0, 16) %></a>
+                <div class="text-muted text-truncate" style="max-width: 220px" title="<%= i.file_name %>"><%= i.file_name %> · <%= i.created_by_name || '' %></div></td>
+                <td class="text-end"><%= i.created_count %></td><td class="text-end"><%= i.updated_count %></td><td class="text-end"><%= i.error_count %></td></tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

@@ -1,11 +1,16 @@
 <%- include('../partials/head', { title: title }) %>
+<% const fmt = function (d, n) { return d ? String(d instanceof Date ? d.toISOString().replace('T', ' ') : d).slice(0, n || 16) : ''; };
+   const hhmm = function (t) { return t ? String(t).slice(0, 5) : ''; };
+   const ap = APPROVAL[item.approved] || { label: String(item.approved), badge: 'text-bg-light border' };
+   const idle = item.status === 'activo' && (!item.last_login_at || (Date.now() - new Date(item.last_login_at).getTime()) > IDLE_DAYS * 86400000); %>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <div>
-    <h2 class="mb-0"><%= item.full_name || '(sin nombre en Clinic)' %></h2>
+    <h2 class="mb-0"><%= item.full_name %></h2>
     <span class="font-monospace"><%= item.username %></span>
+    <% if (item.clinic_id) { %><span class="text-muted small ms-1">Id Clinic <%= item.clinic_id %></span><% } %>
     <span class="badge <%= STATUS[item.status].badge %> ms-1"><%= STATUS[item.status].label %></span>
-    <% if (!item.approved) { %><span class="badge text-bg-light border">sin aprobar</span><% } %>
+    <span class="badge <%= ap.badge %>"><%= ap.label %></span>
   </div>
   <div class="d-flex gap-2">
     <a href="/clinic" class="btn btn-outline-secondary">Volver</a>
@@ -13,34 +18,67 @@
   </div>
 </div>
 
+<% if (idle) { %>
+  <div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i>
+    Activo y <%= item.last_login_at ? 'sin entrar a Clinic desde el ' + fmt(item.last_login_at, 10) : 'nunca entró a Clinic' %>: confirme con su jefe si sigue necesitando el acceso.</div>
+<% } %>
+<% if (sameDni.length) { %>
+  <div class="alert alert-info py-2 small"><i class="bi bi-people"></i> El DNI <%= item.dni %> también está en:
+    <% sameDni.forEach(function (o, i) { %><%= i ? ', ' : '' %><a href="/clinic/<%= o.id %>" class="font-monospace"><%= o.username %></a> (<%= STATUS[o.status].label.toLowerCase() %>)<% }); %>.
+    Si es la misma persona, conviene dejar un solo usuario activo.</div>
+<% } %>
+
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="card p-3 mb-3">
       <table class="table table-sm mb-0">
-        <tr><th style="width: 200px">Perfil</th><td><%= item.perfil || '—' %></td></tr>
-        <tr><th>Sede</th><td><%= item.sede || '—' %></td></tr>
-        <tr><th>Área</th><td><%= item.area || '—' %></td></tr>
-        <tr><th>Supervisor</th><td><%= item.supervisor_name || item.supervisor_username || '—' %></td></tr>
-        <tr><th>Empleado (directorio)</th><td><%= item.employee_dni ? 'DNI ' + item.employee_dni : 'Sin vincular' %></td></tr>
-        <tr><th>Registrado en Clinic por</th><td><%= item.clinic_registered_by || '—' %> <span class="text-muted small"><%= item.clinic_registered_at ? String(item.clinic_registered_at).slice(0, 16) : '' %></span></td></tr>
+        <tr><th style="width: 190px">Perfil</th><td><%= item.profile_name || '—' %><% if (item.profile_id) { %> <a class="small" href="/clinic?perfil=<%= item.profile_id %>">ver todos</a><% } %></td></tr>
+        <tr><th>Sede</th><td><%= item.sede_name || '—' %>
+          <div class="small text-muted"><%= [item.sede_address, item.sede_opens_at ? hhmm(item.sede_opens_at) + '–' + hhmm(item.sede_closes_at) : ''].filter(Boolean).join(' · ') %></div></td></tr>
+        <tr><th>Área</th><td><%= item.area_name || '—' %><% if (item.area_from_profile) { %> <span class="small text-muted">(la de su perfil)</span><% } %></td></tr>
+        <tr><th>Supervisor</th><td><% if (item.supervisor_ref) { %><a href="/clinic/<%= item.supervisor_ref %>"><%= item.supervisor_name %></a> <span class="font-monospace small">(<%= item.supervisor_username %>)</span><% } else { %>—<% } %></td></tr>
+        <tr><th>DNI</th><td><%= item.dni || '—' %>
+          <% if (item.employee_id) { %><span class="small text-muted">· en el directorio: <%= item.employee_first_name %> <%= item.employee_last_name %></span><% } %></td></tr>
+        <tr><th>Correo</th><td><%= item.email || '—' %></td></tr>
+        <tr><th>Celular</th><td><%= item.phone || '—' %></td></tr>
         <% if (item.status === 'baja') { %>
-          <tr><th>Baja</th><td><%= item.baja_date %>: <%= item.baja_reason %></td></tr>
+          <tr><th>Baja</th><td><%= fmt(item.baja_date, 10) %><%= item.baja_reason ? ': ' + item.baja_reason : '' %></td></tr>
         <% } %>
-        <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
+        <% if (item.notes) { %><tr><th>Notas</th><td style="white-space: pre-line"><%= item.notes %></td></tr><% } %>
       </table>
+    </div>
+
+    <div class="card p-3 mb-3">
+      <h5>Historial</h5>
+      <% if (!events.length) { %>
+        <p class="text-muted mb-0 small">Sin movimientos registrados.</p>
+      <% } else { %>
+        <ol class="list-unstyled mb-0 small">
+          <% events.forEach(function (ev) { %>
+            <li class="border-start border-2 ps-2 mb-2 <%= ev.event_type === 'baja' ? 'border-danger' : (ev.event_type === 'importacion' ? 'border-info' : 'border-primary') %>">
+              <strong><%= EVENTS[ev.event_type] || ev.event_type %></strong>
+              <span class="text-muted"><%= fmt(ev.event_date, 10) %> · <%= ev.created_by_name || 'sistema' %><%= ev.file_name ? ' · ' + ev.file_name : '' %></span>
+              <% if (ev.reason) { %><div>Motivo: <%= ev.reason %></div><% } %>
+              <% if (ev.detail) { %><div><%= ev.detail %></div><% } %>
+              <% if (ev.requested_by_name) { %><div class="text-muted">Solicitado por <%= ev.requested_by_name %><%= ev.request_ref ? ', ref. ' + ev.request_ref : '' %>
+                <% if (ev.request_id) { %>· <a href="/solicitudes/<%= ev.request_id %>">solicitud #<%= ev.request_id %></a><% } %></div><% } %>
+            </li>
+          <% }); %>
+        </ol>
+      <% } %>
     </div>
 
     <div class="card p-3 mb-3">
       <h5>Solicitudes (quién pidió qué)</h5>
       <% if (!requests.length) { %>
-        <p class="text-muted mb-0">Sin solicitudes registradas (por ejemplo, un usuario importado del listado de Clinic).</p>
+        <p class="text-muted mb-0 small">Sin solicitudes registradas (por ejemplo, un usuario que vino del listado de Clinic).</p>
       <% } else { %>
         <table class="table table-sm mb-0">
           <thead><tr><th>Fecha</th><th>Tipo</th><th>Solicitado por</th><th>Referencia</th><th>Estado</th></tr></thead>
           <tbody>
             <% requests.forEach(function (r) { %>
               <tr>
-                <td class="text-nowrap"><%= String(r.request_date).slice(0, 10) %></td>
+                <td class="text-nowrap"><a href="/solicitudes/<%= r.id %>"><%= String(r.request_date).slice(0, 10) %></a></td>
                 <td><%= r.request_type %></td>
                 <td><%= r.requested_by_name %><div class="small text-muted"><%= [r.requested_by_cargo, r.requested_by_area].filter(Boolean).join(', ') %></div></td>
                 <td class="small"><%= r.request_ref || '—' %></td>
@@ -51,16 +89,32 @@
         </table>
       <% } %>
     </div>
-
-    <% if (team.length) { %>
-      <div class="card p-3 mb-3">
-        <h5>Supervisa a</h5>
-        <ul class="mb-0"><% team.forEach(function (t) { %><li><a href="/clinic/<%= t.id %>"><%= t.full_name || t.username %></a> <span class="small text-muted">(<%= t.username %>, <%= STATUS[t.status].label %>)</span></li><% }); %></ul>
-      </div>
-    <% } %>
   </div>
 
   <div class="col-lg-5">
+    <div class="card p-3 mb-3">
+      <h6 class="text-uppercase small fw-bold text-muted">Según Clinic</h6>
+      <table class="table table-sm mb-0 small">
+        <tr><th style="width: 140px">Última conexión</th><td class="<%= idle ? 'text-warning-emphasis fw-semibold' : '' %>"><%= item.last_login_at ? fmt(item.last_login_at) : 'Nunca' %></td></tr>
+        <tr><th>Creado por</th><td><%= item.registered_by || '—' %> <span class="text-muted"><%= fmt(item.registered_at) %></span></td></tr>
+        <tr><th>Editado por</th><td><%= item.edited_by || '—' %> <span class="text-muted"><%= fmt(item.edited_at) %></span></td></tr>
+        <tr><th>Importado</th><td><%= item.imported_at ? fmt(item.imported_at) : 'Registrado aquí, aún no importado' %></td></tr>
+      </table>
+    </div>
+
+    <% if (team.length) { %>
+      <div class="card p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <h6 class="text-uppercase small fw-bold text-muted mb-2">Supervisa a <%= team.length %></h6>
+          <a class="small" href="/clinic?supervisor=<%= item.id %>">ver en el listado</a>
+        </div>
+        <ul class="list-unstyled mb-0 small" style="max-height: 260px; overflow-y: auto">
+          <% team.forEach(function (t) { %><li><a href="/clinic/<%= t.id %>"><%= t.full_name || t.username %></a>
+            <span class="text-muted">(<span class="font-monospace"><%= t.username %></span>, <%= STATUS[t.status].label.toLowerCase() %>)</span></li><% }); %>
+        </ul>
+      </div>
+    <% } %>
+
     <% if (currentUser.role !== 'lector') { %>
       <% if (item.status !== 'baja') { %>
         <form method="post" action="/clinic/<%= item.id %>/baja" class="card p-3 border-danger"

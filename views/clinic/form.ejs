@@ -9,65 +9,72 @@
   <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach(function (e) { %><li><%= e %></li><% }); %></ul></div>
 <% } %>
 
-<form method="post" action="<%= isNew ? '/clinic/nuevo' : '/clinic/' + item.id + '/editar' %>" class="card p-4" style="max-width: 860px" autocomplete="off">
+<form method="post" action="<%= isNew ? '/clinic/nuevo' : '/clinic/' + item.id + '/editar' %>" class="card p-4" style="max-width: 900px" autocomplete="off">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-  <p class="small text-muted">Los campos marcados con * son obligatorios. La contraseña de Clinic no se registra aquí: se crea y se entrega en Clinic.</p>
+  <p class="small text-muted">Los campos marcados con * son obligatorios. La contraseña de Clinic no se registra aquí: se crea y se entrega en Clinic.
+    <% if (!isNew && item.clinic_id) { %>Este usuario viene de Clinic (Id <%= item.clinic_id %>): la próxima importación vuelve a poner lo que diga Clinic.<% } %></p>
 
-  <h6 class="text-uppercase small fw-bold text-primary border-start border-3 border-primary ps-2">Datos de acceso</h6>
+  <h6 class="text-uppercase small fw-bold text-primary border-start border-3 border-primary ps-2">Persona y acceso</h6>
   <div class="row g-3 mb-3">
-    <div class="col-md-6"><label class="form-label" for="full_name">Nombre *</label>
-      <input class="form-control" id="full_name" name="full_name" maxlength="150" required placeholder="Nombre completo" value="<%= item.full_name || '' %>"></div>
-    <div class="col-md-6"><label class="form-label" for="username">Usuario *</label>
-      <input class="form-control font-monospace" id="username" name="username" maxlength="60" required pattern="[A-Za-z0-9._@\-]{2,60}" placeholder="Usuario de acceso" value="<%= item.username || '' %>"></div>
-    <div class="col-md-6"><label class="form-label" for="dni">DNI en el directorio de empleados (opcional)</label>
+    <div class="col-md-6"><label class="form-label" for="full_name">Nombre completo *</label>
+      <input class="form-control text-uppercase" id="full_name" name="full_name" maxlength="150" required value="<%= item.full_name || '' %>"></div>
+    <div class="col-md-6"><label class="form-label" for="username">Usuario de Clinic *</label>
+      <input class="form-control font-monospace" id="username" name="username" maxlength="60" required placeholder="Ej. JPEREZ" value="<%= item.username || '' %>"></div>
+    <div class="col-md-4"><label class="form-label" for="dni">DNI</label>
       <input class="form-control" id="dni" name="dni" maxlength="8" inputmode="numeric" pattern="\d{8}" value="<%= item.dni || '' %>">
-      <div class="form-text">Vincula el usuario con la persona (ver sus celulares, cuentas y demás).</div></div>
+      <div class="form-text">Si está en el directorio de empleados, se vinculan.</div></div>
+    <div class="col-md-4"><label class="form-label" for="email">Correo</label>
+      <input class="form-control" type="email" id="email" name="email" maxlength="150" value="<%= item.email || '' %>"></div>
+    <div class="col-md-4"><label class="form-label" for="phone">Celular</label>
+      <input class="form-control" id="phone" name="phone" maxlength="30" inputmode="tel" value="<%= item.phone || '' %>"></div>
   </div>
 
   <h6 class="text-uppercase small fw-bold text-primary border-start border-3 border-primary ps-2">Perfil y ubicación</h6>
   <div class="row g-3 mb-3">
-    <div class="col-md-6"><label class="form-label" for="perfil">Perfil *</label>
-      <select class="form-select" id="perfil" name="perfil" required>
+    <div class="col-md-4"><label class="form-label" for="profile_id">Perfil *</label>
+      <select class="form-select" id="profile_id" name="profile_id" required>
         <option value="">— Seleccionar —</option>
-        <% perfiles.forEach(function (p) { %><option <%= item.perfil === p ? 'selected' : '' %>><%= p %></option><% }); %>
-        <% if (item.perfil && !perfiles.includes(item.perfil)) { %><option selected><%= item.perfil %></option><% } %>
+        <% profiles.forEach(function (p) { if (!p.active && Number(item.profile_id) !== p.id) return; %>
+          <option value="<%= p.id %>" data-area="<%= p.area_name || '' %>" <%= Number(item.profile_id) === p.id ? 'selected' : '' %>><%= p.name %></option>
+        <% }); %>
       </select>
-      <% if (!perfiles.length) { %><div class="form-text text-danger">No hay perfiles en el catálogo: agréguelos en Configuración &gt; Catálogos &gt; Perfiles de Clinic, o importe el listado de Clinic.</div><% } %></div>
-    <div class="col-md-6"><label class="form-label" for="sede">Sede *</label>
-      <select class="form-select" id="sede" name="sede" required>
+      <% if (!profiles.length) { %><div class="form-text text-danger">No hay perfiles: importe el listado de Clinic o agréguelos en <a href="/clinic/catalogo">Perfiles y sedes</a>.</div><% } %></div>
+    <div class="col-md-4"><label class="form-label" for="sede_id">Sede *</label>
+      <select class="form-select" id="sede_id" name="sede_id" required>
         <option value="">— Seleccionar —</option>
-        <% sedes.forEach(function (s) { %><option <%= item.sede === s ? 'selected' : '' %>><%= s %></option><% }); %>
-        <% if (item.sede && !sedes.includes(item.sede)) { %><option selected><%= item.sede %></option><% } %>
+        <% sedes.forEach(function (s) { if (!s.active && Number(item.sede_id) !== s.id) return; %>
+          <option value="<%= s.id %>" <%= Number(item.sede_id) === s.id ? 'selected' : '' %>><%= s.name %></option>
+        <% }); %>
       </select></div>
-    <div class="col-md-6"><label class="form-label" for="area">Área</label>
-      <select class="form-select" id="area" name="area">
-        <option value="">— Sin área —</option>
-        <% areas.forEach(function (a) { %><option <%= item.area === a ? 'selected' : '' %>><%= a %></option><% }); %>
-        <% if (item.area && !areas.includes(item.area)) { %><option selected><%= item.area %></option><% } %>
+    <div class="col-md-4"><label class="form-label" for="area_item_id">Área</label>
+      <select class="form-select" id="area_item_id" name="area_item_id">
+        <option value="">La del perfil</option>
+        <% areas.forEach(function (a) { if (!a.active && Number(item.area_item_id) !== a.id) return; %>
+          <option value="<%= a.id %>" <%= Number(item.area_item_id) === a.id ? 'selected' : '' %>><%= a.value %></option>
+        <% }); %>
+      </select>
+      <div class="form-text" id="area_hint">Elija un área solo si es distinta de la del perfil.</div></div>
+  </div>
+
+  <h6 class="text-uppercase small fw-bold text-primary border-start border-3 border-primary ps-2">Supervisión y estado</h6>
+  <div class="row g-3 mb-3">
+    <div class="col-md-6"><label class="form-label" for="supervisor">Supervisor</label>
+      <input class="form-control" id="supervisor" name="supervisor" list="dir_supervisores" maxlength="220" placeholder="Escriba el usuario o el nombre"
+        value="<%= item.supervisor || '' %>">
+      <datalist id="dir_supervisores"><% supervisors.forEach(function (s) { %><option value="<%= s.label %>"></option><% }); %></datalist></div>
+    <div class="col-md-3"><label class="form-label" for="approved">Aprobación en Clinic</label>
+      <select class="form-select" id="approved" name="approved">
+        <% Object.keys(APPROVAL).forEach(function (k) { %><option value="<%= k %>" <%= Number(item.approved) === Number(k) ? 'selected' : '' %>><%= APPROVAL[k].label %></option><% }); %>
       </select></div>
-    <div class="col-md-6"><label class="form-label" for="status">Estado</label>
+    <div class="col-md-3"><label class="form-label" for="status">Estado</label>
       <% if (item.status === 'baja') { %>
         <input class="form-control" id="status" value="De baja (use Reactivar en la ficha)" disabled>
       <% } else { %>
         <select class="form-select" id="status" name="status">
-          <option value="activo" <%= item.status !== 'inactivo' ? 'selected' : '' %>>ACTIVO</option>
-          <option value="inactivo" <%= item.status === 'inactivo' ? 'selected' : '' %>>INACTIVO</option>
+          <option value="activo" <%= item.status !== 'inactivo' ? 'selected' : '' %>>Activo</option>
+          <option value="inactivo" <%= item.status === 'inactivo' ? 'selected' : '' %>>Inactivo</option>
         </select>
       <% } %></div>
-  </div>
-
-  <h6 class="text-uppercase small fw-bold text-primary border-start border-3 border-primary ps-2">Supervisión y aprobación</h6>
-  <div class="row g-3 mb-3 align-items-end">
-    <div class="col-md-6"><label class="form-label" for="supervisor_id">Supervisor</label>
-      <select class="form-select" id="supervisor_id" name="supervisor_id">
-        <option value="">Sin supervisor asignado</option>
-        <% supervisors.forEach(function (s) { %><option value="<%= s.id %>" <%= Number(item.supervisor_id) === s.id ? 'selected' : '' %>><%= s.full_name || s.username %> (<%= s.username %>)</option><% }); %>
-      </select></div>
-    <div class="col-md-6">
-      <div class="form-check border rounded-pill px-4 py-2 d-inline-block">
-        <input class="form-check-input" type="checkbox" id="approved" name="approved" value="1" <%= Number(item.approved) ? 'checked' : '' %>>
-        <label class="form-check-label" for="approved">Usuario aprobado</label>
-      </div></div>
   </div>
 
   <% if (isNew) { %>
@@ -79,5 +86,21 @@
 
   <div><button class="btn btn-primary" type="submit"><%= isNew ? 'Registrar usuario' : 'Guardar cambios' %></button></div>
 </form>
+
+<script>
+(function () {
+  const perfil = document.getElementById('profile_id');
+  const area = document.getElementById('area_item_id');
+  const hint = document.getElementById('area_hint');
+  function show() {
+    const opt = perfil.options[perfil.selectedIndex];
+    const a = opt && opt.dataset.area;
+    area.options[0].textContent = a ? 'La del perfil (' + a + ')' : 'La del perfil (sin definir)';
+    hint.textContent = a ? 'Elija un área solo si es distinta de ' + a + '.' : 'El perfil no tiene área: elíjala aquí o defínala en Perfiles y sedes.';
+  }
+  perfil.addEventListener('change', show);
+  show();
+})();
+</script>
 
 <%- include('../partials/foot') %>

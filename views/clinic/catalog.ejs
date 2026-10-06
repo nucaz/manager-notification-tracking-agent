@@ -1,0 +1,116 @@
+<%- include('../partials/head', { title: title }) %>
+<% const canEdit = currentUser.role !== 'lector';
+   const hhmm = function (t) { return t ? String(t).slice(0, 5) : ''; }; %>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h2 class="mb-0"><%= title %></h2>
+    <div class="small text-muted">Se llenan solos al importar el listado de Clinic (hojas PERFILES y SEDES). Aquí se completa lo que Clinic no trae:
+      el <strong>área de cada perfil</strong> y la <strong>sede del catálogo general</strong> que corresponde a cada sede de Clinic.</div>
+  </div>
+  <a href="/clinic" class="btn btn-outline-secondary">Volver al listado</a>
+</div>
+
+<div class="card p-3 mb-4" id="perfiles">
+  <h5>Perfiles <span class="text-muted small">(<%= profiles.length %>)</span></h5>
+  <p class="small text-muted mb-2">El área del perfil se usa para todos sus usuarios que no tengan un área propia. Un perfil en uso no se borra: se desactiva.</p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle small" style="font-variant-numeric: tabular-nums">
+      <thead><tr><th style="width: 90px">Id Clinic</th><th>Perfil</th><th style="width: 220px">Área de sus usuarios</th><th>Descripción</th>
+        <th class="text-end">Activos</th><th class="text-end">Total</th><th style="width: 110px">Estado</th><% if (canEdit) { %><th></th><% } %></tr></thead>
+      <tbody>
+        <% profiles.forEach(function (p) { const f = 'fp_' + p.id; %>
+          <tr class="<%= p.active ? '' : 'text-muted' %>">
+            <% if (canEdit) { %>
+              <td><input form="<%= f %>" class="form-control form-control-sm" name="clinic_id" inputmode="numeric" value="<%= p.clinic_id === null ? '' : p.clinic_id %>" aria-label="Id en Clinic"></td>
+              <td><input form="<%= f %>" class="form-control form-control-sm" name="name" required maxlength="100" value="<%= p.name %>" aria-label="Nombre del perfil"></td>
+              <td><select form="<%= f %>" class="form-select form-select-sm" name="area_item_id" aria-label="Área">
+                <option value="">— Sin área —</option>
+                <% areas.forEach(function (a) { if (!a.active && a.id !== p.area_item_id) return; %><option value="<%= a.id %>" <%= a.id === p.area_item_id ? 'selected' : '' %>><%= a.value %></option><% }); %>
+              </select></td>
+              <td><input form="<%= f %>" class="form-control form-control-sm" name="description" maxlength="255" value="<%= p.description || '' %>" aria-label="Descripción"></td>
+            <% } else { %>
+              <td><%= p.clinic_id === null ? '—' : p.clinic_id %></td><td><%= p.name %></td><td><%= p.area_name || '—' %></td><td><%= p.description || '' %></td>
+            <% } %>
+            <td class="text-end"><a href="/clinic?perfil=<%= p.id %>&estado=activo"><%= p.users_active %></a></td>
+            <td class="text-end"><%= p.users_total %></td>
+            <td><% if (canEdit) { %><select form="<%= f %>" class="form-select form-select-sm" name="active" aria-label="Estado">
+                <option value="1" <%= p.active ? 'selected' : '' %>>Activo</option><option value="0" <%= p.active ? '' : 'selected' %>>Inactivo</option></select>
+              <% } else { %><%= p.active ? 'Activo' : 'Inactivo' %><% } %></td>
+            <% if (canEdit) { %><td><form id="<%= f %>" method="post" action="/clinic/catalogo/perfiles/<%= p.id %>">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-sm btn-outline-primary">Guardar</button></form></td><% } %>
+          </tr>
+        <% }); %>
+        <% if (!profiles.length) { %><tr><td colspan="8" class="text-center text-muted py-3">Sin perfiles: importe el listado de Clinic.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+  <% if (canEdit) { %>
+    <form method="post" action="/clinic/catalogo/perfiles" class="row g-2 align-items-end border-top pt-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="col-md-2"><label class="form-label small mb-0" for="np_clinic_id">Id en Clinic</label>
+        <input class="form-control form-control-sm" id="np_clinic_id" name="clinic_id" inputmode="numeric"></div>
+      <div class="col-md-4"><label class="form-label small mb-0" for="np_name">Nuevo perfil</label>
+        <input class="form-control form-control-sm" id="np_name" name="name" required maxlength="100"></div>
+      <div class="col-md-4"><label class="form-label small mb-0" for="np_area">Área de sus usuarios</label>
+        <select class="form-select form-select-sm" id="np_area" name="area_item_id"><option value="">— Sin área —</option>
+          <% areas.forEach(function (a) { if (a.active) { %><option value="<%= a.id %>"><%= a.value %></option><% } }); %></select></div>
+      <div class="col-md-2"><button class="btn btn-sm btn-primary w-100">Agregar perfil</button></div>
+    </form>
+  <% } %>
+</div>
+
+<div class="card p-3" id="sedes">
+  <h5>Sedes <span class="text-muted small">(<%= sedes.length %>)</span></h5>
+  <p class="small text-muted mb-2">Cada sede de Clinic apunta a una sede del catálogo general (la misma que usan Celulares y Empleados), así los reportes cruzan módulos.</p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle small" style="font-variant-numeric: tabular-nums">
+      <thead><tr><th style="width: 90px">Id Clinic</th><th>Sede</th><th style="width: 190px">Sede del catálogo general</th><th>Dirección</th>
+        <th style="width: 110px">Abre</th><th style="width: 110px">Cierra</th><th class="text-end">Activos</th><th style="width: 110px">Estado</th><% if (canEdit) { %><th></th><% } %></tr></thead>
+      <tbody>
+        <% sedes.forEach(function (s) { const f = 'fs_' + s.id; %>
+          <tr class="<%= s.active ? '' : 'text-muted' %>">
+            <% if (canEdit) { %>
+              <td><input form="<%= f %>" class="form-control form-control-sm" name="clinic_id" inputmode="numeric" value="<%= s.clinic_id === null ? '' : s.clinic_id %>" aria-label="Id en Clinic"></td>
+              <td><input form="<%= f %>" class="form-control form-control-sm" name="name" required maxlength="100" value="<%= s.name %>" aria-label="Nombre de la sede"></td>
+              <td><select form="<%= f %>" class="form-select form-select-sm" name="sede_item_id" aria-label="Sede del catálogo general">
+                <option value="">— Sin enlazar —</option>
+                <% generalSedes.forEach(function (g) { if (!g.active && g.id !== s.sede_item_id) return; %><option value="<%= g.id %>" <%= g.id === s.sede_item_id ? 'selected' : '' %>><%= g.value %></option><% }); %>
+              </select></td>
+              <td><input form="<%= f %>" class="form-control form-control-sm" name="address" maxlength="255" value="<%= s.address || '' %>" aria-label="Dirección"></td>
+              <td><input form="<%= f %>" type="time" class="form-control form-control-sm" name="opens_at" value="<%= hhmm(s.opens_at) %>" aria-label="Hora de apertura"></td>
+              <td><input form="<%= f %>" type="time" class="form-control form-control-sm" name="closes_at" value="<%= hhmm(s.closes_at) %>" aria-label="Hora de cierre"></td>
+            <% } else { %>
+              <td><%= s.clinic_id === null ? '—' : s.clinic_id %></td><td><%= s.name %></td><td><%= s.general_name || '—' %></td><td><%= s.address || '' %></td>
+              <td><%= hhmm(s.opens_at) %></td><td><%= hhmm(s.closes_at) %></td>
+            <% } %>
+            <td class="text-end"><a href="/clinic?sede=<%= s.id %>&estado=activo"><%= s.users_active %></a></td>
+            <td><% if (canEdit) { %><select form="<%= f %>" class="form-select form-select-sm" name="active" aria-label="Estado">
+                <option value="1" <%= s.active ? 'selected' : '' %>>Activa</option><option value="0" <%= s.active ? '' : 'selected' %>>Inactiva</option></select>
+              <% } else { %><%= s.active ? 'Activa' : 'Inactiva' %><% } %></td>
+            <% if (canEdit) { %><td><form id="<%= f %>" method="post" action="/clinic/catalogo/sedes/<%= s.id %>">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-sm btn-outline-primary">Guardar</button></form></td><% } %>
+          </tr>
+        <% }); %>
+        <% if (!sedes.length) { %><tr><td colspan="9" class="text-center text-muted py-3">Sin sedes: importe el listado de Clinic.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+  <% if (canEdit) { %>
+    <form method="post" action="/clinic/catalogo/sedes" class="row g-2 align-items-end border-top pt-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="col-md-2"><label class="form-label small mb-0" for="ns_clinic_id">Id en Clinic</label>
+        <input class="form-control form-control-sm" id="ns_clinic_id" name="clinic_id" inputmode="numeric"></div>
+      <div class="col-md-3"><label class="form-label small mb-0" for="ns_name">Nueva sede</label>
+        <input class="form-control form-control-sm" id="ns_name" name="name" required maxlength="100"></div>
+      <div class="col-md-3"><label class="form-label small mb-0" for="ns_item">Sede del catálogo general</label>
+        <select class="form-select form-select-sm" id="ns_item" name="sede_item_id"><option value="">— Sin enlazar —</option>
+          <% generalSedes.forEach(function (g) { if (g.active) { %><option value="<%= g.id %>"><%= g.value %></option><% } }); %></select></div>
+      <div class="col-md-2"><label class="form-label small mb-0" for="ns_address">Dirección</label>
+        <input class="form-control form-control-sm" id="ns_address" name="address" maxlength="255"></div>
+      <div class="col-md-2"><button class="btn btn-sm btn-primary w-100">Agregar sede</button></div>
+    </form>
+  <% } %>
+</div>
+
+<%- include('../partials/foot') %>

@@ -15,7 +15,6 @@ const TYPES = [
   { value: 'marca', label: 'Marcas' },
   { value: 'modelo', label: 'Modelos (por marca)' },
   { value: 'operadora', label: 'Operadoras' },
-  { value: 'perfil_clinic', label: 'Perfiles de Clinic' },
   { value: 'licencia_m365', label: 'Licencias de Microsoft 365' },
 ];
 
@@ -140,6 +139,11 @@ router.post('/:id/eliminar', async (req, res, next) => {
     req.flash('success', 'Valor eliminado del catálogo.');
     res.redirect(`/configuracion/catalogos?tipo=${req.body.tipo || ''}`);
   } catch (err) {
+    // Sedes y areas que usan los usuarios de Clinic van por clave foranea.
+    if (err.code === 'ER_ROW_IS_REFERENCED_2') {
+      req.flash('error', 'Ese valor está en uso (usuarios, perfiles o sedes de Clinic): desactívelo o use Unificar valores.');
+      return res.redirect(`/configuracion/catalogos?tipo=${req.body.tipo || ''}`);
+    }
     next(err);
   }
 });

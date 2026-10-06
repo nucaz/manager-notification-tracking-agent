@@ -1,17 +1,32 @@
 <%- include('../partials/head', { title: title }) %>
-<% const qs = Object.entries(filters).filter(function (kv) { return kv[1]; }).map(function (kv) { return (kv[0] === 'status' ? 'estado' : kv[0]) + '=' + encodeURIComponent(kv[1]); }).join('&'); %>
+<% const P = { q: filters.q, estado: filters.status, perfil: filters.profile, sede: filters.sede, area: filters.area, supervisor: filters.supervisor,
+     alerta: filters.alert, orden: filters.sort === 'nombre' ? '' : filters.sort };
+   const qs = function (over) {
+     const o = Object.assign({}, P, over || {});
+     return Object.keys(o).filter(function (k) { return o[k] !== '' && o[k] !== null && o[k] !== undefined; })
+       .map(function (k) { return k + '=' + encodeURIComponent(o[k]); }).join('&');
+   };
+   const grand = (counts.activo || 0) + (counts.inactivo || 0) + (counts.baja || 0);
+   const idleMs = IDLE_DAYS * 86400000;
+   const fmt = function (d) { return d ? String(d instanceof Date ? d.toISOString() : d).slice(0, 10) : ''; };
+   const sortLink = function (key, label) {
+     return '<a class="link-body-emphasis text-decoration-none" href="/clinic?' + qs({ orden: key === 'nombre' ? '' : key, pagina: '' }) + '">' + label
+       + (filters.sort === key ? ' <i class="bi bi-caret-down-fill small"></i>' : '') + '</a>';
+   }; %>
 
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
-    <h2 class="mb-0">Usuarios de Clinic</h2>
-    <div class="small text-muted">
-      <span class="badge text-bg-success"><%= counts.activo || 0 %> activos</span>
-      <span class="badge text-bg-secondary"><%= counts.inactivo || 0 %> inactivos</span>
-      <span class="badge text-bg-danger"><%= counts.baja || 0 %> de baja</span>
+    <h2 class="mb-1">Usuarios de Clinic</h2>
+    <div class="d-flex flex-wrap gap-1">
+      <a class="badge text-bg-success text-decoration-none" href="/clinic?estado=activo"><%= counts.activo || 0 %> activos</a>
+      <a class="badge text-bg-secondary text-decoration-none" href="/clinic?estado=inactivo"><%= counts.inactivo || 0 %> inactivos</a>
+      <a class="badge text-bg-danger text-decoration-none" href="/clinic?estado=baja"><%= counts.baja || 0 %> de baja</a>
+      <span class="badge text-bg-light border"><%= grand %> en total</span>
     </div>
   </div>
   <div class="d-flex flex-wrap gap-2">
-    <a href="/clinic/exportar.xlsx<%= qs ? '?' + qs : '' %>" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-excel"></i> Exportar</a>
+    <a href="/clinic/catalogo" class="btn btn-outline-secondary"><i class="bi bi-diagram-2"></i> Perfiles y sedes</a>
+    <a href="/clinic/exportar.xlsx<%= qs() ? '?' + qs() : '' %>" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-excel"></i> Exportar</a>
     <% if (currentUser.role !== 'lector') { %>
       <a href="/clinic/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar listado de Clinic</a>
       <a href="/clinic/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo usuario</a>
@@ -19,57 +34,124 @@
   </div>
 </div>
 
-<form class="row g-2 mb-3" method="get">
-  <div class="col-md-3"><label class="visually-hidden" for="f_q">Buscar</label>
-    <input type="text" name="q" id="f_q" value="<%= filters.q %>" class="form-control" placeholder="Nombre, usuario o registrado por..."></div>
-  <div class="col-md-2"><label class="visually-hidden" for="f_estado">Estado</label>
+<% if (grand) { %>
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <div class="card p-3 h-100">
+      <h6 class="text-uppercase small fw-bold text-muted mb-2">Para revisar</h6>
+      <div class="d-flex flex-wrap gap-2">
+        <% Object.keys(ALERTS).forEach(function (k) { const n = counts.alerts[k] || 0; if (k === 'nunca') return; %>
+          <a href="/clinic?<%= qs({ alerta: filters.alert === k ? '' : k, pagina: '' }) %>"
+             class="btn btn-sm <%= filters.alert === k ? 'btn-warning' : (n ? 'btn-outline-warning text-body' : 'btn-outline-secondary disabled') %>">
+            <%= ALERTS[k] %> <span class="badge text-bg-light border ms-1"><%= n %></span>
+          </a>
+        <% }); %>
+      </div>
+      <div class="form-text mt-2">Un usuario activo que no entra a Clinic hace más de <%= IDLE_DAYS %> días es candidato a desactivarse.
+        Un mismo DNI en varios usuarios suele ser una persona que volvió a ingresar: conviene dejar uno solo activo.</div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-3 h-100">
+      <h6 class="text-uppercase small fw-bold text-muted mb-2">Por sede</h6>
+      <table class="table table-sm mb-0 small" style="font-variant-numeric: tabular-nums">
+        <thead><tr><th>Sede</th><th class="text-end">Activos</th><th class="text-end">Inactivos</th><th class="text-end">De baja</th></tr></thead>
+        <tbody>
+          <% bySede.forEach(function (s) { %>
+            <tr><td><% if (s.id) { %><a href="/clinic?<%= qs({ sede: s.id, pagina: '' }) %>"><%= s.name %></a><% } else { %><span class="text-muted"><%= s.name %></span><% } %></td>
+              <td class="text-end"><%= s.activos %></td><td class="text-end text-muted"><%= s.inactivos %></td><td class="text-end text-muted"><%= s.bajas %></td></tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<form class="row g-2 mb-3 align-items-end" method="get">
+  <div class="col-md-3"><label class="form-label small mb-0" for="f_q">Buscar</label>
+    <input type="search" name="q" id="f_q" value="<%= filters.q %>" class="form-control" placeholder="Nombre, usuario, DNI, correo o creado por"></div>
+  <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_estado">Estado</label>
     <select name="estado" id="f_estado" class="form-select">
-      <option value="">Todos los estados</option>
+      <option value="">Todos</option>
       <% Object.keys(STATUS).forEach(function (k) { %><option value="<%= k %>" <%= filters.status === k ? 'selected' : '' %>><%= STATUS[k].label %></option><% }); %>
     </select></div>
-  <div class="col-md-2"><label class="visually-hidden" for="f_perfil">Perfil</label>
+  <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_perfil">Perfil</label>
     <select name="perfil" id="f_perfil" class="form-select">
-      <option value="">Todos los perfiles</option>
-      <% perfiles.forEach(function (p) { %><option <%= filters.perfil === p ? 'selected' : '' %>><%= p %></option><% }); %>
+      <option value="">Todos</option>
+      <% profiles.forEach(function (p) { %><option value="<%= p.id %>" <%= filters.profile === p.id ? 'selected' : '' %>><%= p.name %><%= p.active ? '' : ' (inactivo)' %></option><% }); %>
     </select></div>
-  <div class="col-md-2"><label class="visually-hidden" for="f_sede">Sede</label>
+  <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_sede">Sede</label>
     <select name="sede" id="f_sede" class="form-select">
-      <option value="">Todas las sedes</option>
-      <% sedes.forEach(function (s) { %><option <%= filters.sede === s ? 'selected' : '' %>><%= s %></option><% }); %>
+      <option value="">Todas</option>
+      <% sedes.forEach(function (s) { %><option value="<%= s.id %>" <%= filters.sede === s.id ? 'selected' : '' %>><%= s.name %></option><% }); %>
     </select></div>
-  <div class="col-md-2"><label class="visually-hidden" for="f_area">Área</label>
+  <div class="col-md-2 col-6"><label class="form-label small mb-0" for="f_area">Área</label>
     <select name="area" id="f_area" class="form-select">
-      <option value="">Todas las áreas</option>
-      <% areas.forEach(function (a) { %><option <%= filters.area === a ? 'selected' : '' %>><%= a %></option><% }); %>
+      <option value="">Todas</option>
+      <% areas.forEach(function (a) { %><option value="<%= a.id %>" <%= filters.area === a.id ? 'selected' : '' %>><%= a.value %></option><% }); %>
     </select></div>
-  <div class="col-md-1"><button class="btn btn-outline-secondary w-100" type="submit">Filtrar</button></div>
+  <div class="col-md-1 col-12 d-flex gap-1">
+    <% if (filters.alert) { %><input type="hidden" name="alerta" value="<%= filters.alert %>"><% } %>
+    <% if (filters.supervisor) { %><input type="hidden" name="supervisor" value="<%= filters.supervisor %>"><% } %>
+    <% if (filters.sort !== 'nombre') { %><input type="hidden" name="orden" value="<%= filters.sort %>"><% } %>
+    <button class="btn btn-outline-primary w-100" type="submit">Filtrar</button>
+  </div>
 </form>
 
+<% if (supervisor || filters.alert || qs({ orden: '' })) { %>
+  <div class="d-flex flex-wrap gap-2 align-items-center mb-2 small">
+    <% if (supervisor) { %><span class="badge text-bg-primary">Equipo de <%= supervisor.username %> · <%= supervisor.full_name %></span><% } %>
+    <% if (filters.alert) { %><span class="badge text-bg-warning"><%= ALERTS[filters.alert] %></span><% } %>
+    <a href="/clinic" class="link-secondary">Quitar filtros</a>
+  </div>
+<% } %>
+
 <div class="card p-3">
+  <div class="d-flex justify-content-between align-items-center mb-2 small text-muted">
+    <span><%= grand === 0 ? '' : (items.length ? ((page - 1) * 50 + 1) + '–' + ((page - 1) * 50 + items.length) + ' de ' + total : '0 resultados') %></span>
+    <span>Ordenar: <%- sortLink('nombre', 'nombre') %> · <%- sortLink('usuario', 'usuario') %> · <%- sortLink('conexion', 'última conexión') %> · <%- sortLink('registro', 'más recientes') %></span>
+  </div>
   <div class="table-responsive">
-    <table class="table table-hover align-middle">
-      <thead><tr><th>Nombre</th><th>Usuario</th><th>Estado</th><th>Perfil</th><th>Sede</th><th>Área</th><th>Supervisor</th><th>Solicitado por</th><th>Registro en Clinic</th></tr></thead>
+    <table class="table table-hover align-middle small">
+      <thead><tr><th>Usuario</th><th>Nombre</th><th>Perfil</th><th>Sede</th><th>Área</th><th>Supervisor</th><th>Última conexión</th><th>Estado</th></tr></thead>
       <tbody>
-        <% items.forEach(function (c) { %>
+        <% items.forEach(function (c) {
+             const last = c.last_login_at ? new Date(c.last_login_at) : null;
+             const idle = c.status === 'activo' && (!last || (Date.now() - last.getTime()) > idleMs); %>
           <tr>
-            <td><a href="/clinic/<%= c.id %>"><%= c.full_name || '(sin nombre en Clinic)' %></a><%= c.approved ? '' : '' %>
-              <% if (!c.approved) { %><span class="badge text-bg-light border ms-1">sin aprobar</span><% } %></td>
-            <td class="font-monospace small"><%= c.username %></td>
-            <td><span class="badge <%= STATUS[c.status].badge %>"><%= STATUS[c.status].label %></span></td>
-            <td class="small"><%= c.perfil || '—' %></td>
-            <td class="small"><%= c.sede || '—' %></td>
-            <td class="small"><%= c.area || '—' %></td>
-            <td class="small"><%= c.supervisor_name || c.supervisor_username || '—' %></td>
-            <td class="small"><%= c.requested_by_name || '—' %></td>
-            <td class="small text-nowrap"><%= c.clinic_registered_by || '' %><div class="text-muted"><%= c.clinic_registered_at ? String(c.clinic_registered_at).slice(0, 16) : '' %></div></td>
+            <td class="font-monospace text-nowrap"><a href="/clinic/<%= c.id %>"><%= c.username %></a>
+              <% if (c.clinic_id) { %><div class="text-muted" style="font-size: .75rem">Id <%= c.clinic_id %></div><% } %></td>
+            <td><%= c.full_name %>
+              <div class="text-muted"><%= c.dni ? 'DNI ' + c.dni : '' %><% if (c.approved !== 1) { %> <span class="badge <%= (APPROVAL[c.approved] || {}).badge %>"><%= (APPROVAL[c.approved] || {}).label || c.approved %></span><% } %></div></td>
+            <td><%= c.profile_name || '—' %></td>
+            <td><%= c.sede_name || '—' %></td>
+            <td><%= c.area_name || '—' %><% if (c.area_from_profile) { %> <span class="text-muted" title="Sin área propia: se toma la del perfil">(del perfil)</span><% } %></td>
+            <td><% if (c.supervisor_ref) { %><a href="/clinic/<%= c.supervisor_ref %>" class="font-monospace"><%= c.supervisor_username %></a><% } else { %>—<% } %></td>
+            <td class="text-nowrap <%= idle ? 'text-warning-emphasis fw-semibold' : '' %>"><%= last ? fmt(c.last_login_at) : 'Nunca' %></td>
+            <td><span class="badge <%= STATUS[c.status].badge %>"><%= STATUS[c.status].label %></span>
+              <% if (c.status === 'baja' && c.baja_date) { %><div class="text-muted"><%= fmt(c.baja_date) %></div><% } %></td>
           </tr>
         <% }); %>
         <% if (items.length === 0) { %>
-          <tr><td colspan="9" class="text-center text-muted py-4">No hay usuarios con esos filtros. Puede importar el listado que exporta Clinic.</td></tr>
+          <tr><td colspan="8" class="text-center text-muted py-4">
+            <% if (grand === 0) { %>Aún no hay usuarios. Importe el listado que exporta Clinic (Usuarios_roles_sedes_permisos.xls) desde <a href="/clinic/importar">Importar listado de Clinic</a>.
+            <% } else { %>No hay usuarios con esos filtros.<% } %></td></tr>
         <% } %>
       </tbody>
     </table>
   </div>
+  <% if (pages > 1) { %>
+    <nav aria-label="Páginas">
+      <ul class="pagination pagination-sm justify-content-center mb-0 flex-wrap">
+        <li class="page-item <%= page === 1 ? 'disabled' : '' %>"><a class="page-link" href="/clinic?<%= qs({ pagina: page - 1 }) %>">Anterior</a></li>
+        <% for (let n = 1; n <= pages; n += 1) { if (n === 1 || n === pages || Math.abs(n - page) <= 2) { %>
+          <li class="page-item <%= n === page ? 'active' : '' %>"><a class="page-link" href="/clinic?<%= qs({ pagina: n }) %>"><%= n %></a></li>
+        <% } else if (Math.abs(n - page) === 3) { %><li class="page-item disabled"><span class="page-link">…</span></li><% } } %>
+        <li class="page-item <%= page === pages ? 'disabled' : '' %>"><a class="page-link" href="/clinic?<%= qs({ pagina: page + 1 }) %>">Siguiente</a></li>
+      </ul>
+    </nav>
+  <% } %>
 </div>
 
 <%- include('../partials/foot') %>

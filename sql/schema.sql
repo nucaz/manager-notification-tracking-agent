@@ -959,25 +959,76 @@ PREPARE st FROM @sql;
 EXECUTE st;
 DEALLOCATE PREPARE st;
 
--- Inventario de usuarios de la aplicacion Clinic (registro propio, con
--- importacion del listado de Clinic). Perfil, sede y area salen de los
--- catalogos (catalog_items: perfil_clinic, sede, area).
+-- Usuarios de la aplicacion Clinic. Perfiles y sedes de Clinic tienen tabla
+-- propia (con su Id de Clinic, para importar el listado tal cual); la sede
+-- de Clinic apunta a la sede del catalogo general y el perfil sugiere el
+-- area de sus usuarios. Todo por clave foranea: un perfil, una sede o un
+-- area en uso no se puede borrar (se desactiva).
+CREATE TABLE IF NOT EXISTS clinic_sedes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  clinic_id INT NULL,                           -- IdSede en Clinic
+  name VARCHAR(100) NOT NULL,
+  address VARCHAR(255) NULL,
+  opens_at TIME NULL,
+  closes_at TIME NULL,
+  sede_item_id INT NULL,                        -- la misma sede en el catalogo general (catalog_items 'sede')
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_clinic_sede_item FOREIGN KEY (sede_item_id) REFERENCES catalog_items(id),
+  UNIQUE KEY uniq_clinic_sede_clinic_id (clinic_id),
+  UNIQUE KEY uniq_clinic_sede_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS clinic_profiles (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  clinic_id INT NULL,                           -- IdPerfil en Clinic
+  name VARCHAR(100) NOT NULL,
+  area_item_id INT NULL,                        -- area que se asume para sus usuarios (catalog_items 'area')
+  description VARCHAR(255) NULL,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_clinic_profile_area FOREIGN KEY (area_item_id) REFERENCES catalog_items(id),
+  UNIQUE KEY uniq_clinic_profile_clinic_id (clinic_id),
+  UNIQUE KEY uniq_clinic_profile_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cada importacion del listado de Clinic: archivo, conteos, errores y avisos.
+CREATE TABLE IF NOT EXISTS clinic_imports (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  file_name VARCHAR(255) NOT NULL,
+  rows_total INT NOT NULL DEFAULT 0,
+  created_count INT NOT NULL DEFAULT 0,
+  updated_count INT NOT NULL DEFAULT 0,
+  unchanged_count INT NOT NULL DEFAULT 0,
+  error_count INT NOT NULL DEFAULT 0,
+  summary_json MEDIUMTEXT NULL,                 -- errores y avisos de la importacion
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_clinic_import_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_clinic_import_date (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- El usuario de acceso NO es unico: Clinic tiene dos usuarios iguales (uno con un
+-- espacio invisible). La clave de Clinic es su IdUsuario (clinic_id). El
+-- area propia es opcional: si falta, vale la del perfil.
 CREATE TABLE IF NOT EXISTS clinic_users (
   id INT AUTO_INCREMENT PRIMARY KEY,
+  clinic_id INT NULL,                           -- IdUsuario en Clinic (vacio si se registro aqui antes de importar)
   full_name VARCHAR(150) NOT NULL,
   username VARCHAR(60) NOT NULL,
   status VARCHAR(10) NOT NULL DEFAULT 'activo', -- activo | inactivo | baja
-  perfil VARCHAR(100) NULL,
-  sede VARCHAR(100) NULL,
-  area VARCHAR(100) NULL,
+  profile_id INT NULL,
+  sede_id INT NULL,
+  area_item_id INT NULL,
   supervisor_id INT NULL,                       -- otro usuario de Clinic
-  approved TINYINT(1) NOT NULL DEFAULT 0,
-  clinic_registered_by VARCHAR(150) NULL,       -- "Registrado por" en Clinic (texto del listado)
-  clinic_registered_at DATETIME NULL,
+  approved TINYINT NOT NULL DEFAULT 0,          -- "Aprobado" de Clinic: 0, 1 o 3
+  dni VARCHAR(12) NULL,
+  email VARCHAR(150) NULL,
+  phone VARCHAR(30) NULL,
   employee_id INT NULL,
   request_id INT NULL,                          -- solicitud de alta
-  baja_date DATE NULL,
-  baja_reason VARCHAR(255) NULL,
   notes TEXT NULL,
   created_by INT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -986,9 +1037,55 @@ CREATE TABLE IF NOT EXISTS clinic_users (
   CONSTRAINT fk_clinic_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
   CONSTRAINT fk_clinic_request FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE SET NULL,
   CONSTRAINT fk_clinic_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-  UNIQUE KEY uniq_clinic_username (username),
-  INDEX idx_clinic_status (status, sede),
+  CONSTRAINT fk_clinic_user_profile FOREIGN KEY (profile_id) REFERENCES clinic_profiles(id),
+  CONSTRAINT fk_clinic_user_sede FOREIGN KEY (sede_id) REFERENCES clinic_sedes(id),
+  CONSTRAINT fk_clinic_user_area FOREIGN KEY (area_item_id) REFERENCES catalog_items(id),
+  UNIQUE KEY uniq_clinic_user_clinic_id (clinic_id),
+  INDEX idx_clinic_username (username),
+  INDEX idx_clinic_status (status),
+  INDEX idx_clinic_profile (profile_id, status),
+  INDEX idx_clinic_sede (sede_id, status),
+  INDEX idx_clinic_area (area_item_id),
+  INDEX idx_clinic_dni (dni),
   INDEX idx_clinic_name (full_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Lo que dice Clinic de cada usuario (1:1): ultima conexion, quien lo creo
+-- y lo edito alla, y de que importacion vino.
+CREATE TABLE IF NOT EXISTS clinic_user_origin (
+  clinic_user_id INT PRIMARY KEY,
+  last_login_at DATETIME NULL,
+  registered_by VARCHAR(150) NULL,
+  registered_at DATETIME NULL,
+  edited_by VARCHAR(150) NULL,
+  edited_at DATETIME NULL,
+  import_id INT NULL,
+  imported_at DATETIME NULL,
+  CONSTRAINT fk_clinic_origin_user FOREIGN KEY (clinic_user_id) REFERENCES clinic_users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_clinic_origin_import FOREIGN KEY (import_id) REFERENCES clinic_imports(id) ON DELETE SET NULL,
+  INDEX idx_clinic_origin_login (last_login_at),
+  INDEX idx_clinic_origin_registered (registered_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Historial de cada usuario: alta, edicion, baja (fecha y motivo),
+-- reactivacion y lo que cambio en cada importacion. No se edita.
+CREATE TABLE IF NOT EXISTS clinic_user_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  clinic_user_id INT NOT NULL,
+  event_type VARCHAR(20) NOT NULL,              -- alta | edicion | baja | reactivacion | importacion
+  event_date DATE NOT NULL,
+  detail VARCHAR(1000) NULL,
+  reason VARCHAR(255) NULL,
+  request_id INT NULL,
+  import_id INT NULL,
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_clinic_event_user FOREIGN KEY (clinic_user_id) REFERENCES clinic_users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_clinic_event_request FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE SET NULL,
+  CONSTRAINT fk_clinic_event_import FOREIGN KEY (import_id) REFERENCES clinic_imports(id) ON DELETE SET NULL,
+  CONSTRAINT fk_clinic_event_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_clinic_event_lookup (clinic_user_id, event_type, event_date),
+  INDEX idx_clinic_event_date (event_type, event_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Cuentas de Microsoft 365. Lo que dice el tenant (via Microsoft Graph,

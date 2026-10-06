@@ -473,12 +473,27 @@ se escribe si no está; se guarda como foto con la fecha y una referencia
 - **Celulares**: asignar o reasignar pide "Solicitado por"; aparece en la
   asignación actual, en el historial y en Auditoría ("Corregir datos del
   usuario" también lo corrige).
-- **Usuarios de Clinic** (menú *Usuarios de Clinic*): inventario con perfil,
-  sede y área (catálogos; *Perfiles de Clinic* es un catálogo nuevo),
-  supervisor, aprobación, alta y baja con quién las pidió. **Importar
-  listado de Clinic** actualiza por usuario, agrega al catálogo los perfiles
-  nuevos y avisa si un usuario dado de baja aquí sigue ACTIVO en Clinic. La
-  contraseña de Clinic no se guarda aquí.
+- **Usuarios de Clinic** (menú *Usuarios de Clinic*): inventario con DNI,
+  correo, celular, perfil, sede, área, supervisor, aprobación, última
+  conexión, quién lo creó en Clinic, historial de cambios, y alta, baja y
+  reactivación con quién las pidió. Perfiles y sedes de Clinic tienen tabla
+  propia con su Id de Clinic (*Perfiles y sedes*): ahí se define el **área
+  de cada perfil** (la toman sus usuarios sin área propia) y la sede del
+  catálogo general que corresponde a cada sede de Clinic. Todo va por clave
+  foránea: un perfil, una sede o un área en uso no se borra (se desactiva o
+  se unifica).
+  **Importar listado de Clinic** recibe el archivo que exporta Clinic tal
+  cual (`Usuarios_roles_sedes_permisos.xls`, hojas USUARIOS, SEDES y
+  PERFILES; también .xlsx o .csv): alimenta perfiles y sedes, crea o
+  actualiza cada usuario por su **IdUsuario** (no por el usuario: Clinic
+  tiene usuarios repetidos salvo un espacio invisible), deja en el
+  historial lo que cambió y avisa de usuarios sin nombre de usuario,
+  usuarios o DNI repetidos, usuarios que ya no vienen en el archivo y bajas
+  registradas aquí que Clinic sigue mostrando ACTIVAS. Todo en una
+  transacción; cada importación queda registrada. El listado marca para
+  revisar los **activos sin entrar en 90 días**, los activos sin aprobar o
+  sin DNI y los DNI o usuarios repetidos. La contraseña de Clinic no se
+  guarda aquí.
 - **Microsoft 365** (menú *Microsoft 365*): inventario de cuentas y
   solicitudes con flujo: *pendiente → aprobada → en proceso → completada*.
   Cada tipo genera sus pasos (alta, licencias, bloqueo, desbloqueo,

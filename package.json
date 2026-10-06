@@ -34,7 +34,8 @@
     "otplib": "^13.5.0",
     "pdfjs-dist": "^4.10.38",
     "pdfkit": "^0.20.2",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "overrides": {
     "qs": "^6.16.0"

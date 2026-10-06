@@ -14,7 +14,6 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const flash = require('connect-flash');
-const ExcelJS = require('exceljs');
 
 if (process.env.E2E_PERMITIR !== '1') {
   console.error('Esta prueba escribe (y luego borra) datos marcados en la base configurada. Ejecútela con E2E_PERMITIR=1.');
@@ -72,6 +71,8 @@ async function main() {
     await pool.query("DELETE FROM m365_skus WHERE sku_id IN ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222')");
     await pool.query("UPDATE clinic_users SET supervisor_id = NULL WHERE username LIKE 'prueba.e2e%'");
     await pool.query("DELETE FROM clinic_users WHERE username LIKE 'prueba.e2e%'");
+    await pool.query("DELETE FROM clinic_profiles WHERE name LIKE 'PRUEBA-E2E%'");
+    await pool.query("DELETE FROM clinic_sedes WHERE name LIKE 'PRUEBA-E2E%'");
     await pool.query('DELETE FROM mobile_devices WHERE imei = ?', [IMEI]);
     await pool.query("DELETE FROM employees WHERE dni IN ('99000001', '99000002', '99000003')");
     await pool.query("DELETE FROM catalog_items WHERE value LIKE 'PRUEBA-E2E%'");
@@ -83,7 +84,9 @@ async function main() {
     ('99000001', 'Gerente', 'PRUEBA', 'PRUEBA-E2E Ventas', 'PUEBLO LIBRE', 'Gerente de Ventas'),
     ('99000002', 'Receptor', 'PRUEBA', 'PRUEBA-E2E Ventas', 'SURCO', 'Asistente'),
     ('99000003', 'Usuaria', 'PRUEBA', 'PRUEBA-E2E Ventas', 'SURCO', 'Vendedora')`);
-  await pool.query("INSERT INTO catalog_items (catalog_type, value) VALUES ('area', 'PRUEBA-E2E Ventas'), ('perfil_clinic', 'PRUEBA-E2E Especialista')");
+  await pool.query("INSERT INTO catalog_items (catalog_type, value) VALUES ('area', 'PRUEBA-E2E Ventas')");
+  const [{ insertId: perfilId }] = await pool.query("INSERT INTO clinic_profiles (name) VALUES ('PRUEBA-E2E ESPECIALISTA')");
+  const [{ insertId: sedeId }] = await pool.query("INSERT INTO clinic_sedes (name) VALUES ('PRUEBA-E2E SURCO')");
   await pool.query("INSERT INTO mobile_devices (imei, brand, model, area, status) VALUES (?, 'ZTE', 'A76', 'PRUEBA-E2E Ventas', 'en_stock')", [IMEI]);
   const [[device]] = await pool.query('SELECT id FROM mobile_devices WHERE imei = ?', [IMEI]);
 
@@ -143,55 +146,19 @@ async function main() {
     check('Celular: reasignar con un solicitante que no está en el directorio; el historial muestra el anterior', page.text.includes('Jefa externa sin DNI')
       && /Historial de asignaciones[\s\S]*Gerente PRUEBA/.test(page.text));
 
-    // ================= Clinic =================
-    r = await form('/clinic/nuevo', { full_name: 'PRUEBA Especialista Uno', username: 'prueba.e2e1', perfil: 'PRUEBA-E2E Especialista', sede: 'SURCO', status: 'activo' });
+    // ================= Clinic (detalle en tests/clinic.e2e.js) =================
+    const clinicBase = { full_name: 'PRUEBA Especialista Uno', username: 'prueba.e2e1', profile_id: String(perfilId), sede_id: String(sedeId), status: 'activo' };
+    r = await form('/clinic/nuevo', clinicBase);
     check('Clinic: sin solicitante no se registra', r.status === 422 && r.text.includes('Indique quién solicitó'));
-    r = await form('/clinic/nuevo', { full_name: 'PRUEBA Especialista Uno', username: 'prueba.e2e1', perfil: 'PRUEBA-E2E Especialista', sede: 'SURCO',
-      area: 'PRUEBA-E2E Ventas', status: 'activo', approved: '1', dni: '99000003', req_name: GERENTE, req_ref: 'MEMO-9' });
-    const [[cu]] = await pool.query("SELECT c.*, sr.entity_id, sr.requested_by_name FROM clinic_users c JOIN service_requests sr ON sr.id = c.request_id WHERE c.username = 'prueba.e2e1'");
-    check('Clinic: alta con perfil, sede, área, empleado y solicitud vinculada', r.status === 302 && cu && cu.entity_id === cu.id && cu.approved === 1
-      && cu.requested_by_name === 'Gerente PRUEBA' && cu.employee_id);
-    r = await form('/clinic/nuevo', { full_name: 'Otro', username: 'prueba.e2e1', perfil: 'PRUEBA-E2E Especialista', sede: 'SURCO', req_name: GERENTE });
-    check('Clinic: usuario repetido rechazado', r.status === 422 && r.text.includes('Ya existe el usuario prueba.e2e1'));
-
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Usuarios');
-    ws.addRow(['NOMBRE', 'USUARIO', 'ESTADO', 'PERFIL', 'SEDE', 'REGISTRADO POR', 'FECHA REGISTRO', 'SUPERVISOR']);
-    ws.addRow(['', 'prueba.e2e2', 'INACTIVO', 'PRUEBA-E2E Operador(a) de ventas', 'surco', 'JUAN ERIQUE', '16-10-2025 18:35:08', 'prueba.e2e1']);
-    ws.addRow(['PRUEBA Especialista Uno', 'prueba.e2e1', 'ACTIVO', 'PRUEBA-E2E Especialista', 'SURCO', 'JAMES DIAZ LOPEZ', '05-09-2025 12:18:58', '']);
-    ws.addRow(['PRUEBA Sede rara', 'prueba.e2e3', 'ACTIVO', 'PRUEBA-E2E Especialista', 'PRUEBA-E2E SEDE NUEVA', 'X', '', '']);
-    ws.addRow(['Mal', 'con espacio', 'ACTIVO', '', '', '', '', '']);
-    const buf = await wb.xlsx.writeBuffer();
-    const fd = new FormData();
-    fd.append('_csrf', CSRF);
-    fd.append('file', new Blob([buf]), 'usuarios_clinic_prueba.xlsx');
-    const imp = keep(await fetch(`${base}/clinic/importar`, { method: 'POST', headers: { cookie }, body: fd }));
-    const impText = await imp.text();
-    const [[u2]] = await pool.query("SELECT c.*, s.username AS sup FROM clinic_users c LEFT JOIN clinic_users s ON s.id = c.supervisor_id WHERE c.username = 'prueba.e2e2'");
-    const [[perfilNuevo]] = await pool.query("SELECT id FROM catalog_items WHERE catalog_type = 'perfil_clinic' AND value = 'PRUEBA-E2E Operador(a) de ventas'");
-    check('Clinic: importar el listado de Clinic crea, actualiza y avisa', imp.status === 200 && impText.includes('Importados: 3') && impText.includes('Con errores: 1')
-      && impText.includes('Perfiles nuevos agregados al catálogo') && impText.includes('no trae nombre') && impText.includes('PRUEBA-E2E SEDE NUEVA'));
-    check('Clinic: estado, sede del catálogo, fecha de Clinic, supervisor y perfil nuevo en el catálogo', u2 && u2.status === 'inactivo' && u2.sede === 'SURCO'
-      && u2.clinic_registered_at === '2025-10-16 18:35:08' && u2.clinic_registered_by === 'JUAN ERIQUE' && u2.sup === 'prueba.e2e1' && perfilNuevo);
-
-    r = await form(`/clinic/${cu.id}/baja`, { baja_reason: 'Renuncia', baja_date: '2026-10-05' });
-    check('Clinic: la baja exige solicitante', r.status === 302 && (await pool.query('SELECT status FROM clinic_users WHERE id = ?', [cu.id]))[0][0].status === 'activo');
+    r = await form('/clinic/nuevo', { ...clinicBase, approved: '1', dni: '99000003', req_name: GERENTE, req_ref: 'MEMO-9' });
+    const [[cu]] = await pool.query("SELECT c.*, sr.entity_id, sr.requested_by_name, sr.details_json FROM clinic_users c JOIN service_requests sr ON sr.id = c.request_id WHERE c.username = 'prueba.e2e1'");
+    check('Clinic: alta con perfil, sede, empleado y solicitud vinculada', r.status === 302 && cu && cu.entity_id === cu.id && cu.approved === 1
+      && cu.requested_by_name === 'Gerente PRUEBA' && cu.employee_id && cu.details_json.includes('PRUEBA-E2E ESPECIALISTA'));
     r = await form(`/clinic/${cu.id}/baja`, { baja_reason: 'Renuncia', baja_date: '2026-10-05', req_name: GERENTE });
-    const [[cb]] = await pool.query('SELECT status, baja_date, baja_reason FROM clinic_users WHERE id = ?', [cu.id]);
-    check('Clinic: baja con fecha, motivo y solicitud', cb.status === 'baja' && cb.baja_date === '2026-10-05' && cb.baja_reason === 'Renuncia');
-    const fd2 = new FormData();
-    fd2.append('_csrf', CSRF);
-    const ws2wb = new ExcelJS.Workbook();
-    ws2wb.addWorksheet('U').addRows([['USUARIO', 'ESTADO'], ['prueba.e2e1', 'ACTIVO']]);
-    fd2.append('file', new Blob([await ws2wb.xlsx.writeBuffer()]), 'usuarios_clinic_prueba.xlsx');
-    const imp2 = await (await fetch(`${base}/clinic/importar`, { method: 'POST', headers: { cookie }, body: fd2 })).text();
-    check('Clinic: si Clinic lo sigue mostrando ACTIVO tras la baja, se avisa y no se revierte',
-      imp2.includes('está DE BAJA aquí pero Clinic lo muestra ACTIVO') && (await pool.query('SELECT status FROM clinic_users WHERE id = ?', [cu.id]))[0][0].status === 'baja');
-    page = await get('/clinic?perfil=PRUEBA-E2E%20Especialista&estado=baja');
-    check('Clinic: listado filtrado por perfil y estado', page.status === 200 && page.text.includes('prueba.e2e1') && !page.text.includes('prueba.e2e3'));
+    check('Clinic: baja con solicitud', (await pool.query('SELECT status FROM clinic_users WHERE id = ?', [cu.id]))[0][0].status === 'baja');
     page = await get(`/clinic/${cu.id}`);
     check('Clinic: la ficha muestra las solicitudes (alta y baja) con quién las pidió', (page.text.match(/Gerente PRUEBA/g) || []).length >= 2 && page.text.includes('MEMO-9'));
-    check('Clinic: exportar a Excel', (await get('/clinic/exportar.xlsx')).r.headers.get('content-type').includes('spreadsheetml'));
+
 
     // ================= Microsoft 365: lectura del tenant =================
     r = await form('/m365/configuracion', { m365_tenant_id: 'prueba.onmicrosoft.com', m365_client_id: 'no-es-guid' });

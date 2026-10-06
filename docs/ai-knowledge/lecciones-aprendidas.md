@@ -465,3 +465,30 @@ celular solo suma `request_id`.
 El paso "Quitar las licencias" decia "vacio = ninguna" pero exigia
 evidencia: no se podia marcar. Lo explicito es escribir "ninguna"; asi un
 campo olvidado no se confunde con "sin licencias".
+
+## 44. El identificador de un sistema externo es su Id, no el nombre que se ve
+
+El listado real de Clinic trae dos usuarios con el mismo nombre de usuario (uno con un espacio
+de no separacion al final), usuarios con Ñ y espacios y uno sin usuario.
+Con `username` unico, la importacion habria juntado dos personas en una
+fila. La clave es `IdUsuario` (`clinic_id`, unico); el usuario se limpia
+de espacios invisibles y se indexa sin ser unico, y los repetidos se
+avisan.
+
+## 45. Pasar un catalogo de texto a clave foranea obliga a revisar "Unificar"
+
+Con perfil, sede y area por id (`catalog_items`, `clinic_profiles`,
+`clinic_sedes`), borrar un valor en uso ya no deja texto huerfano: falla.
+"Unificar valores" borraba los valores origen del catalogo; ahora primero
+apunta las claves foraneas al valor que queda (`fk: true` en
+`catalogMergeService.PLACES`) y el borrado desde Catalogos avisa en vez de
+dar error 500.
+
+## 46. Un .xls de Excel 97 no lo lee ExcelJS
+
+Clinic exporta en BIFF8 (.xls). ExcelJS solo lee .xlsx; para ese archivo se
+usa SheetJS 0.20.3 desde su CDN oficial (la version de npm, 0.18.5, tiene
+vulnerabilidades conocidas). Las fechas llegan como numero de serie y las
+horas como fraccion del dia (0.375 = 09:00): se convierten con
+`XLSX.SSF.parse_date_code`, sin pasar por `Date` (evita corrimientos de
+zona horaria).

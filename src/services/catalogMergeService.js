@@ -6,6 +6,9 @@
 // ESE campo: unificar areas nunca cambia la sede, aunque el texto coincida
 // (un area "SURCO" pasa a "CLINICA" y la sede SURCO sigue siendo SURCO).
 // Los registros historicos de auditoria y de chat no se modifican.
+//
+// Los lugares con fk: true guardan el id del catalogo (clave foranea), no el
+// texto: se pasan al id del valor que queda antes de borrar los demas.
 const pool = require('../db/pool');
 
 const PLACES = {
@@ -14,11 +17,14 @@ const PLACES = {
     { table: 'employees', column: 'area', label: 'Empleados' },
     { table: 'mobile_device_assignments', column: 'area', label: 'Historial de asignaciones' },
     { table: 'mobile_device_area_audits', column: 'area', label: 'Checklist por área', key: true },
+    { table: 'clinic_users', column: 'area_item_id', label: 'Usuarios de Clinic', fk: true },
+    { table: 'clinic_profiles', column: 'area_item_id', label: 'Perfiles de Clinic', fk: true },
   ],
   sede: [
     { table: 'mobile_devices', column: 'sede', label: 'Celulares' },
     { table: 'employees', column: 'sede', label: 'Empleados' },
     { table: 'mobile_device_assignments', column: 'sede', label: 'Historial de asignaciones' },
+    { table: 'clinic_sedes', column: 'sede_item_id', label: 'Sedes de Clinic', fk: true },
   ],
   marca: [
     { table: 'mobile_devices', column: 'brand', label: 'Celulares' },
@@ -46,7 +52,9 @@ async function values(type) {
     map.set(k, e);
   };
   for (const p of places) {
-    const [rows] = await pool.query('SELECT ?? AS v, COUNT(*) AS n FROM ?? GROUP BY ??', [p.column, p.table, p.column]);
+    const [rows] = p.fk
+      ? await pool.query('SELECT ci.value AS v, COUNT(*) AS n FROM ?? t JOIN catalog_items ci ON ci.id = t.?? GROUP BY ci.value', [p.table, p.column])
+      : await pool.query('SELECT ?? AS v, COUNT(*) AS n FROM ?? GROUP BY ??', [p.column, p.table, p.column]);
     rows.forEach((r) => add(r.v, Number(r.n), p.label));
   }
   const [cat] = await pool.query('SELECT value FROM catalog_items WHERE catalog_type = ?', [type]);
@@ -69,7 +77,10 @@ async function preview(type, sources, target) {
   const v = validate(type, sources, target);
   const counts = [];
   for (const p of PLACES[type]) {
-    const [[r]] = await pool.query('SELECT COUNT(*) AS n FROM ?? WHERE ?? IN (?)', [p.table, p.column, v.sources]);
+    const [[r]] = p.fk
+      ? await pool.query('SELECT COUNT(*) AS n FROM ?? t JOIN catalog_items ci ON ci.id = t.?? WHERE ci.catalog_type = ? AND ci.value IN (?)',
+        [p.table, p.column, type, v.sources])
+      : await pool.query('SELECT COUNT(*) AS n FROM ?? WHERE ?? IN (?)', [p.table, p.column, v.sources]);
     counts.push({ label: p.label, n: Number(r.n) });
   }
   const [[c]] = await pool.query('SELECT COUNT(*) AS n FROM catalog_items WHERE catalog_type = ? AND value IN (?)', [type, v.sources]);
@@ -83,9 +94,23 @@ async function apply(type, sources, target, userId) {
   const changed = [];
   try {
     await conn.beginTransaction();
+    // El valor que queda va primero: los lugares con clave foranea apuntan a su id.
+    const [[t]] = await conn.query('SELECT id FROM catalog_items WHERE catalog_type = ? AND value = ?', [type, v.target]);
+    let targetId = t && t.id;
+    if (t) await conn.query('UPDATE catalog_items SET active = 1 WHERE id = ?', [t.id]);
+    else {
+      const [ins] = await conn.query('INSERT INTO catalog_items (catalog_type, value, active, created_by) VALUES (?, ?, 1, ?)', [type, v.target, userId || null]);
+      targetId = ins.insertId;
+    }
     for (const p of PLACES[type]) {
       let n = 0;
-      if (p.key) {
+      if (p.fk) {
+        const [upd] = await conn.query(
+          'UPDATE ?? t JOIN catalog_items ci ON ci.id = t.?? SET t.?? = ? WHERE ci.catalog_type = ? AND ci.value IN (?)',
+          [p.table, p.column, p.column, targetId, type, v.sources]
+        );
+        n += upd.affectedRows;
+      } else if (p.key) {
         // Tabla con el valor como clave (checklist por area): si el destino
         // ya tiene fila, la del origen sobra; si no, se renombra una.
         const [[has]] = await conn.query('SELECT COUNT(*) AS n FROM ?? WHERE ?? = ?', [p.table, p.column, v.target]);
@@ -109,9 +134,6 @@ async function apply(type, sources, target, userId) {
       }
       changed.push({ label: p.label, n });
     }
-    const [[t]] = await conn.query('SELECT id FROM catalog_items WHERE catalog_type = ? AND value = ?', [type, v.target]);
-    if (t) await conn.query('UPDATE catalog_items SET active = 1 WHERE id = ?', [t.id]);
-    else await conn.query('INSERT INTO catalog_items (catalog_type, value, active, created_by) VALUES (?, ?, 1, ?)', [type, v.target, userId || null]);
     const [cat] = await conn.query('DELETE FROM catalog_items WHERE catalog_type = ? AND value IN (?)', [type, v.sources]);
     await conn.commit();
     return { ...v, changed, catalogRemoved: cat.affectedRows, catalogAddedTarget: !t };

@@ -66,6 +66,21 @@ const importUploader = multer({
   limits: { fileSize: env.uploadMaxMb * 1024 * 1024 },
 });
 
+// Listado de usuarios de Clinic: Clinic lo exporta en .xls (Excel 97), que
+// se lee con SheetJS (ver clinicImportService). Tambien .xlsx y .csv.
+const CLINIC_IMPORT_EXT = new Set(['.csv', '.xlsx', '.xls']);
+const clinicImportUploader = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!CLINIC_IMPORT_EXT.has(ext)) {
+      return cb(new Error(`Tipo de archivo no permitido para importar: ${ext}`));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: env.uploadMaxMb * 1024 * 1024 },
+});
+
 // Recibos de operadoras (modulo Celulares): PDF o Excel, en memoria. Se
 // leen primero y solo si el formato se reconoce se guarda el original en
 // uploads/recibos (lo hace mobileBillService).
@@ -100,4 +115,4 @@ const sqlRestoreUploader = multer({
   limits: { fileSize: 500 * 1024 * 1024 },
 });
 
-module.exports = { uploader, importUploader, billUploader, sqlRestoreUploader, DIRS, UPLOAD_ROOT };
+module.exports = { uploader, importUploader, clinicImportUploader, billUploader, sqlRestoreUploader, DIRS, UPLOAD_ROOT };
