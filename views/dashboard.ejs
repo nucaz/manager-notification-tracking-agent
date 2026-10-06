@@ -126,6 +126,126 @@
   <% } %>
 </div>
 
+<%
+  // Una linea "etiqueta ... cifra" del resumen; con enlace si hay a donde ir.
+  const linea = function (label, n, href, tono) {
+    const num = '<strong class="' + (tono && n ? 'text-' + tono : '') + '">' + n + '</strong>';
+    return '<li class="d-flex justify-content-between gap-2"><span>' + (href ? '<a href="' + href + '">' + label + '</a>' : label) + '</span>' + num + '</li>';
+  };
+  const fallo = function (b) { return b && b.error ? '<div class="small text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> No se pudo cargar: ' + b.error.replace(/</g, '&lt;') + '</div>' : ''; };
+%>
+<% if (resumen.clinic || resumen.m365 || resumen.solicitudes) { %>
+<h6 class="text-muted text-uppercase small mb-2">Personas y accesos</h6>
+<div class="row g-3 mb-4" id="panel_accesos" style="font-variant-numeric: tabular-nums">
+  <% if (resumen.clinic) { const c = resumen.clinic.data; %>
+  <div class="col-md-4">
+    <div class="card p-3 h-100 d-flex flex-column">
+      <div class="d-flex justify-content-between align-items-start">
+        <a href="/clinic" class="text-decoration-none"><i class="bi bi-hospital"></i> Usuarios de Clinic</a>
+        <% if (c) { %><span class="badge bg-primary rounded-pill" title="Activos"><%= c.activos %></span><% } %>
+      </div>
+      <%- fallo(resumen.clinic) %>
+      <% if (c) { %>
+        <ul class="list-unstyled small mb-2 mt-2">
+          <%- linea('Entraron en los últimos 30 días', c.recientes, '/clinic/conexiones', 'success') %>
+          <%- linea('Candidatos a depurar', c.depurar, '/clinic?alerta=depurar', 'danger') %>
+          <%- linea('De baja aquí, activos en Clinic', c.bajaActiva, '/clinic?alerta=baja_activa', 'danger') %>
+          <%- linea('Activos sin empleado en planilla', c.sinEmpleado, '/clinic?alerta=sin_empleado', 'warning') %>
+          <%- linea('Inactivos / de baja', c.inactivos + ' / ' + c.bajas) %>
+        </ul>
+        <div class="small text-muted mt-auto"><%= c.ultimaImportacion ? 'Último listado importado: ' + c.ultimaImportacion : 'Aún no se importa el listado de Clinic.' %></div>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
+  <% if (resumen.m365) { const m = resumen.m365.data; %>
+  <div class="col-md-4">
+    <div class="card p-3 h-100 d-flex flex-column">
+      <div class="d-flex justify-content-between align-items-start">
+        <a href="/m365" class="text-decoration-none"><i class="bi bi-microsoft"></i> Cuentas de correo (Microsoft 365)</a>
+        <% if (m) { %><span class="badge bg-primary rounded-pill" title="Cuentas de usuario activas"><%= m.usuarios %></span><% } %>
+      </div>
+      <%- fallo(resumen.m365) %>
+      <% if (m) { %>
+        <ul class="list-unstyled small mb-2 mt-2">
+          <%- linea('Buzones compartidos', m.compartidos, '/m365') %>
+          <%- linea('Bloqueadas o desactivadas', m.suspendidas, '/m365?estado=bloqueada', 'warning') %>
+          <%- linea('Activas sin licencia registrada', m.sinLicencia, '/m365?estado=activa', 'warning') %>
+          <% if (m.compradas) { %><%- linea('Licencias libres (de ' + m.compradas + ')', m.libres, '/reportes?modulo=m365_licencias', m.libres < 0 ? 'danger' : '') %><% } %>
+          <%- linea('Diferencias con el tenant', m.diferencias, '/m365?diferencias=1', 'danger') %>
+          <%- linea('Solicitudes abiertas', m.solicitudesAbiertas, '/solicitudes?modulo=m365&estado=abiertas', 'primary') %>
+        </ul>
+        <div class="small text-muted mt-auto"><%= m.ultimaLectura ? 'Última lectura del tenant: ' + m.ultimaLectura : 'El tenant aún no se ha leído (Microsoft 365 > Conexión).' %></div>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
+  <% if (resumen.solicitudes) { const s = resumen.solicitudes.data; const MOD = { celular: 'Celulares', m365: 'Microsoft 365', clinic: 'Clinic' }; %>
+  <div class="col-md-4">
+    <div class="card p-3 h-100 d-flex flex-column">
+      <div class="d-flex justify-content-between align-items-start">
+        <a href="/solicitudes" class="text-decoration-none"><i class="bi bi-clipboard-check"></i> Solicitudes</a>
+        <% if (s) { %><span class="badge <%= s.abiertas ? 'bg-warning text-dark' : 'bg-secondary' %> rounded-pill" title="Abiertas"><%= s.abiertas %></span><% } %>
+      </div>
+      <%- fallo(resumen.solicitudes) %>
+      <% if (s) { %>
+        <ul class="list-unstyled small mb-2 mt-2">
+          <%- linea('Abiertas (pendientes o en proceso)', s.abiertas, '/solicitudes?estado=abiertas', 'warning') %>
+          <%- linea('Completadas este mes', s.completadasMes, '/solicitudes?estado=completada', 'success') %>
+          <% Object.keys(MOD).forEach(function (k) { const x = s.porModulo[k]; if (!x) return; %>
+            <%- linea(MOD[k] + ': abiertas', x.abiertas, '/solicitudes?modulo=' + k + '&estado=abiertas') %>
+          <% }); %>
+        </ul>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
+</div>
+<% } %>
+
+<% if (resumen.devops) { const d = resumen.devops.data; %>
+<h6 class="text-muted text-uppercase small mb-2">DevOps: repositorios y respaldos</h6>
+<div class="row g-3 mb-4" id="panel_devops" style="font-variant-numeric: tabular-nums">
+  <% if (!d) { %>
+    <div class="col-12"><div class="card p-3"><%- fallo(resumen.devops) %></div></div>
+  <% } else { %>
+  <div class="col-md-6">
+    <div class="card p-3 h-100 d-flex flex-column">
+      <div class="d-flex justify-content-between align-items-start">
+        <a href="/devops" target="_blank" rel="noopener" class="text-decoration-none"><i class="bi bi-git"></i> Repositorios</a>
+        <span class="badge bg-primary rounded-pill" title="Repositorios"><%= d.repos %></span>
+      </div>
+      <ul class="list-unstyled small mb-2 mt-2">
+        <%- linea('Sincronizándose (activos)', d.reposActivos) %>
+        <%- linea('Con error en la última sincronización', d.syncErrors.length, null, 'danger') %>
+      </ul>
+      <% if (d.syncErrors.length) { %><div class="small text-danger mb-1"><%= d.syncErrors.join(', ') %></div><% } %>
+      <div class="small text-muted mt-auto"><%= d.ultimaSync ? 'Última sincronización: ' + d.ultimaSync : 'Aún no se sincroniza ninguno.' %></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card p-3 h-100 d-flex flex-column <%= d.errores.length ? 'border-danger' : '' %>">
+      <div class="d-flex justify-content-between align-items-start">
+        <a href="/configuracion/respaldos" class="text-decoration-none"><i class="bi bi-cloud-arrow-up"></i> Respaldos</a>
+        <span class="badge <%= d.errores.length ? 'bg-danger' : 'bg-success' %> rounded-pill" title="Trabajos activos"><%= d.trabajosActivos %></span>
+      </div>
+      <ul class="list-unstyled small mb-2 mt-2">
+        <%- linea('Última ejecución correcta', d.ok, null, 'success') %>
+        <%- linea('Correcta con avisos', d.avisos, null, 'warning') %>
+        <%- linea('Con error en la última ejecución', d.errores.length, null, 'danger') %>
+        <% if (d.sinEjecutar) { %><%- linea('Aún sin ejecutarse', d.sinEjecutar) %><% } %>
+        <% if (d.enCurso) { %><%- linea('En curso ahora', d.enCurso, null, 'primary') %><% } %>
+      </ul>
+      <% if (d.errores.length) { %><div class="small text-danger mb-1">Revisar: <%= d.errores.join(', ') %></div><% } %>
+      <div class="small text-muted mt-auto">
+        <%= d.ultimoRespaldo ? 'Último respaldo: ' + d.ultimoRespaldo : 'Aún no se ejecuta ningún respaldo.' %><%= d.proximo ? ' · Próximo: ' + d.proximo : '' %>
+      </div>
+    </div>
+  </div>
+  <% } %>
+</div>
+<% } %>
+
 <% if (glpiCounts) { %>
 <h6 class="text-muted text-uppercase small mb-2">Inventario GLPI</h6>
 <div class="row g-3 mb-4" id="panel_glpi">

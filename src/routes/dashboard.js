@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const { daysUntil, statusFromDays } = require('../services/expirationService');
 const exchangeRateService = require('../services/exchangeRateService');
 const glpiClient = require('../services/glpiClient');
+const panelService = require('../services/panelService');
 
 const router = express.Router();
 
@@ -64,7 +65,10 @@ router.get('/', requireAuth, async (req, res, next) => {
       .slice(0, 15);
 
     const [diagramCountRows] = await pool.query('SELECT COUNT(*) AS c FROM network_diagrams');
-    const exchangeRate = await exchangeRateService.getUsdPenRate();
+    const [exchangeRate, resumen] = await Promise.all([
+      exchangeRateService.getUsdPenRate(),
+      panelService.summary(req.session.user, res.locals.enabledModules || {}),
+    ]);
 
     res.render('dashboard', {
       title: 'Panel principal',
@@ -74,6 +78,7 @@ router.get('/', requireAuth, async (req, res, next) => {
       glpiCounts,
       glpiTypes: glpiClient.ASSET_TYPES,
       exchangeRate,
+      resumen,
     });
   } catch (err) {
     next(err);

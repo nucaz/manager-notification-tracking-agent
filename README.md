@@ -148,7 +148,16 @@ Aplicación web para el seguimiento de:
   contraseñas y sesión viajen cifradas (ver 2.1)
 - **Panel principal**: además de los vencimientos, cuántos celulares y
   chips hay y cuántas computadoras, monitores e impresoras tiene GLPI
-  (el conteo de GLPI se renueva cada 10 minutos)
+  (el conteo de GLPI se renueva cada 10 minutos), y un resumen de
+  **Usuarios de Clinic** (activos, los que entraron en 30 días, candidatos
+  a depurar, bajas aún activas en Clinic, sin empleado en planilla),
+  **cuentas de correo de Microsoft 365** (activas, buzones compartidos,
+  bloqueadas, sin licencia, licencias libres, diferencias con el tenant),
+  **Solicitudes** abiertas y completadas en el mes, y de DevOps Sidecar los
+  **repositorios** (activos, con error de sincronización) y los
+  **respaldos** (resultado de la última ejecución de cada trabajo, el que
+  falló, el último y el próximo). Cada cifra lleva al listado filtrado; si
+  el sidecar no responde, el panel carga igual y lo avisa en ese bloque
 - **Tablas ajustables** (en todas las pantallas): **ordenar con clic en
   el encabezado** (ascendente, descendente, original; números, montos y
   fechas se ordenan como tales y los vacíos van al final), **filtro en cada

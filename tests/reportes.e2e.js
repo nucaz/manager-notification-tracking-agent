@@ -86,6 +86,11 @@ function fakeSidecar() {
     { id: 2, name: 'biometrico', github_url: 'https://github.com/ejemplo/biometrico', local_path: '/data/repos/b', sync_interval_minutes: 60,
       active: false, last_synced_at: null, last_sync_status: null },
   ]));
+  s.get('/api/backup-jobs', (req, res) => res.json([
+    { id: 1, name: 'Nocturno completo', enabled: true, last_status: 'error', last_run_at: '2026-10-05T02:00:10', next_run: '2026-10-06 02:00', running: false },
+    { id: 2, name: 'Repos cada hora', enabled: true, last_status: 'ok', last_run_at: '2026-10-05T09:00:03', next_run: '2026-10-05 10:00', running: false },
+    { id: 3, name: 'Pausado', enabled: false, last_status: null, last_run_at: null, next_run: null, running: false },
+  ]));
   s.get('/api/repos/:id/reports/latest', (req, res) => res.json(req.params.id === '1'
     ? { repo: 'gestor-licencias', found: true, report_date: '2026-09-30', ai_provider_used: 'gemini', report_markdown: '# x' }
     : { repo: 'biometrico', found: false }));
@@ -174,6 +179,24 @@ async function main() {
     p = await get('/');
     check('Panel sin GLPI configurado: no aparece la sección de GLPI', p.status === 200 && !p.text.includes('id="panel_glpi"'));
     cfg = { ...cfg, glpi_base_url: glpiUrl };
+
+    // --- Panel: resumen de Clinic, Microsoft 365, Solicitudes, repositorios y respaldos
+    p = await get('/');
+    const acc = p.text.slice(p.text.indexOf('id="panel_accesos"'), p.text.indexOf('id="panel_devops"'));
+    check('Panel: resumen de Clinic, cuentas de correo (Microsoft 365) y Solicitudes', p.text.includes('id="panel_accesos"')
+      && acc.includes('Usuarios de Clinic') && acc.includes('Candidatos a depurar') && acc.includes('Cuentas de correo (Microsoft 365)')
+      && acc.includes('Diferencias con el tenant') && acc.includes('Solicitudes') && acc.includes('Completadas este mes'));
+    const devPanel = p.text.slice(p.text.indexOf('id="panel_devops"'), p.text.indexOf('id="panel_glpi"'));
+    check('Panel: repositorios (2, 1 activo) y respaldos con el trabajo que falló y el próximo', devPanel.includes('Repositorios')
+      && /title="Repositorios">2</.test(devPanel) && /Sincronizándose \(activos\)<\/span><strong[^>]*>1</.test(devPanel)
+      && /Con error en la última ejecución<\/span><strong class="text-danger">1</.test(devPanel) && devPanel.includes('Revisar: Nocturno completo')
+      && devPanel.includes('Último respaldo: 2026-10-05 09:00') && devPanel.includes('Próximo: 2026-10-05 10:00') && /title="Trabajos activos">2</.test(devPanel));
+    const sidecarCfg = cfg.devops_sidecar_url;
+    cfg = { ...cfg, devops_sidecar_url: 'http://127.0.0.1:9' };
+    p = await get('/');
+    check('Panel con DevOps Sidecar caído: carga igual y lo avisa en ese bloque', p.status === 200 && p.text.includes('id="panel_devops"')
+      && p.text.includes('No se pudo cargar') && p.text.includes('id="panel_accesos"'));
+    cfg = { ...cfg, devops_sidecar_url: sidecarCfg };
 
     // --- Reportes: pantalla
     p = await get('/reportes?modulo=server');
