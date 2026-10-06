@@ -113,6 +113,12 @@ READMEs.
   Excepción: los usuarios de Clinic apuntan a `catalog_items` (sede, área)
   por clave foránea; por eso "Unificar valores" mueve también esas FK
   (`fk: true` en `catalogMergeService.PLACES`).
+- **Crédito del desarrollador (no tocar)**: "Juan Carlos Aguirre Alvarado
+  - Develop Infraestructura TI Ciberseguridad" va fijo al pie de todas las
+  páginas (`views/partials/credito.ejs`, incluido por `partials/foot.ejs` y
+  las pantallas sueltas), en DevOps Sidecar (`templates/base.html`) y en
+  los PDF de Reportes. Nunca se vuelve configurable ni se quita; toda
+  pantalla nueva con `</body>` lo incluye. Lo vigila `tests/credito.test.js`.
 - **Tablas de listado (estándar en toda la app)**: toda tabla con
   `<thead>` dentro de `.table-responsive` recibe sola, de
   `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por

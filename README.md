@@ -104,7 +104,12 @@ Aplicación web para el seguimiento de:
   (por ahora, en Celulares) para estandarizar la carga de datos
 - **Reportes y consultas**: vencimientos (licencias, dominios, ISP,
   servidores, certificados), inventario (celulares, chips y computadoras,
-  monitores e impresoras de GLPI) y repositorios del módulo DevOps. Cada
+  monitores e impresoras de GLPI), usuarios de Clinic (con antigüedad de
+  conexión y vínculo con Empleados), cuentas y licencias de Microsoft 365,
+  solicitudes (quién pidió qué), **accesos por persona** (celular, Clinic y
+  Microsoft 365 de cada empleado, más los accesos activos sin empleado, con
+  lo que no cuadra: retirado con acceso vigente, baja aquí pero activo en
+  Clinic, varios usuarios activos) y repositorios del módulo DevOps. Cada
   reporte muestra la cantidad total y por grupo (estado, sede, operadora,
   entidad…), se filtra y se exporta a Excel, CSV o **PDF para imprimir**.
   En los de inventario el PDF lleva, por fila, un código de barras
@@ -496,11 +501,16 @@ se escribe si no está; se guarda como foto con la fecha y una referencia
   registradas aquí que Clinic sigue mostrando ACTIVAS. Antes de guardar
   muestra una **revisión** (nuevos, qué cambia, empleados, avisos y
   errores): la importación corre completa y se deshace; nada se guarda
-  hasta *Confirmar*. Con **Empleados** se elige: *solo vincular por DNI*
+  hasta *Confirmar*. **Mes a mes** se sube el mismo formato: no se
+  duplica nada, lo que no cambió queda "sin cambios" y la revisión dice qué
+  se remedió desde la importación anterior (activos que Clinic ya
+  desactivó, cuántos eran candidatos a depurar, bajas de aquí que Clinic ya
+  muestra inactivas y las que siguen activas allá). Con **Empleados** se elige: *solo vincular por DNI*
   (recomendado), *vincular y crear* a los activos que falten (quedan
   marcados "desde Clinic" para no mezclarlos con la planilla) o no tocar
   Empleados. Todo en una transacción; cada importación queda registrada.
-  El listado marca para revisar los activos sin entrar en 90 días, los
+  El listado marca para revisar los activos sin entrar en 90 días, las
+  bajas de aquí que Clinic sigue mostrando ACTIVAS, los
   candidatos a depurar, los activos sin empleado en planilla, sin área, no
   aprobados o pendientes de aprobación (Aprobado: 0 no aprobado, 1
   aprobado, 3 pendiente), sin DNI y los DNI o usuarios repetidos.
@@ -697,7 +707,9 @@ cuenta ni al 2FA, que siguen igual.
   adjuntos y diagramas de red — con un puente hacia GLPI vía su API REST
   documentada en https://github.com/glpi-project/glpi/blob/main/apirest.md
 - **Inventario GLPI** (menú "Inventario GLPI", los 3 roles pueden verlo,
-  es de solo lectura): busca/lista las computadoras registradas en GLPI y,
+  es de solo lectura): busca/lista las computadoras registradas en GLPI
+  (clic en un encabezado: GLPI ordena todo el inventario, no solo la
+  página, y el Excel sale en el mismo orden) y,
   al entrar al detalle de una, muestra su software instalado (nombre,
   versión y cantidad total). No modifica nada en GLPI ni en esta app —
   solo consulta. Si un equipo tiene muchísimo software instalado, se

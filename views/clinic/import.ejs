@@ -33,6 +33,31 @@
     <% } %>
   </div>
 
+  <% const rem = plan.remediation || { desactivados: [], bajasConfirmadas: [], bajasPendientes: [], reactivados: [] };
+     if (plan.previousImport || results.desactivados !== undefined && (results.desactivados || results.bajasConfirmadas || results.bajasPendientes || results.reactivados)) { %>
+    <div class="card p-3 mb-3 border-success" id="remediacion">
+      <h5 class="mb-1">Desde la importación anterior</h5>
+      <% if (plan.previousImport) { %><div class="small text-muted mb-2"><%= plan.previousImport.file_name %> · <%= String(plan.previousImport.created_at).slice(0, 16) %>.
+        Lo que ya estaba registrado no se duplica: solo cuenta lo que cambió en Clinic.</div><% } %>
+      <div class="row g-2 small mb-2" style="font-variant-numeric: tabular-nums">
+        <div class="col-md-3 col-6"><div class="border rounded p-2 h-100"><div class="fs-5 fw-semibold text-success"><%= results.desactivados || 0 %></div>
+          activos desactivados en Clinic<% if (results.candidatosDesactivados) { %> (<%= results.candidatosDesactivados %> eran candidatos a depurar)<% } %></div></div>
+        <div class="col-md-3 col-6"><div class="border rounded p-2 h-100"><div class="fs-5 fw-semibold text-success"><%= results.bajasConfirmadas || 0 %></div>
+          bajas de aquí ya desactivadas en Clinic (remediadas)</div></div>
+        <div class="col-md-3 col-6"><div class="border rounded p-2 h-100 <%= results.bajasPendientes ? 'border-danger' : '' %>"><div class="fs-5 fw-semibold text-danger"><%= results.bajasPendientes || 0 %></div>
+          bajas de aquí que Clinic sigue mostrando ACTIVAS</div></div>
+        <div class="col-md-3 col-6"><div class="border rounded p-2 h-100"><div class="fs-5 fw-semibold text-warning-emphasis"><%= results.reactivados || 0 %></div>
+          inactivos que Clinic volvió a activar</div></div>
+      </div>
+      <% [['bajasPendientes', 'Bajas pendientes en Clinic'], ['bajasConfirmadas', 'Bajas remediadas'], ['desactivados', 'Desactivados en Clinic'], ['reactivados', 'Reactivados en Clinic']].forEach(function (g) {
+           if (!rem[g[0]] || !rem[g[0]].length) return; %>
+        <details class="small"><summary><%= g[1] %> (<%= rem[g[0]].length %>)</summary>
+          <div class="d-flex flex-wrap gap-1 mt-1"><% rem[g[0]].slice(0, MAX).forEach(function (u) { %><a class="badge text-bg-light border font-monospace text-decoration-none" href="/clinic/<%= u.id %>"><%= u.username %></a><% }); %></div>
+        </details>
+      <% }); %>
+    </div>
+  <% } %>
+
   <% if (isPreview) { %>
     <div class="card p-3 mb-3 border-primary">
       <h5>Empleados (DNI)</h5>

@@ -9,6 +9,13 @@
 // Lo que dice Clinic manda (nombre, estado, perfil, sede, contacto), salvo
 // una baja registrada aqui: si Clinic lo sigue mostrando ACTIVO se avisa.
 //
+// Mes a mes: el mismo formato se vuelve a importar sin duplicar (la clave
+// es IdUsuario); lo que no cambio queda "sin cambios" y no deja historial.
+// Se guarda el estado que muestra Clinic (clinic_user_origin.clinic_status)
+// para decir que se remedio desde la importacion anterior: activos que
+// Clinic ya desactivo (y cuantos eran candidatos a depurar), bajas de aqui
+// que Clinic ya muestra INACTIVAS y las que siguen ACTIVAS alla.
+//
 // Revision previa: dryRun corre la importacion completa dentro de la
 // transaccion y al final la deshace (ROLLBACK). Lo que se muestra antes de
 // confirmar es exactamente lo que va a pasar.
@@ -165,10 +172,15 @@ async function importWorkbook(book, fileName, user, { dryRun = false, employees 
   const stats = { created: 0, updated: 0, unchanged: 0, sedesNew: 0, sedesUpd: 0, profilesNew: 0, profilesUpd: 0,
     employeesLinked: 0, employeesCreated: 0, employeesMissing: 0 };
   // Detalle para la revision previa.
-  const plan = { created: [], changed: [], employeesCreated: [], employeesMissing: [] };
+  const plan = { created: [], changed: [], employeesCreated: [], employeesMissing: [], previousImport: null,
+    remediation: { desactivados: [], bajasConfirmadas: [], bajasPendientes: [], reactivados: [] } };
+  const remed = plan.remediation;
+  const PURGE_MS = clinic.PURGE_DAYS * 86400000;
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    const [[prevImp]] = await conn.query('SELECT id, file_name, created_at FROM clinic_imports ORDER BY id DESC LIMIT 1');
+    plan.previousImport = prevImp || null;
     const [imp] = await conn.query('INSERT INTO clinic_imports (file_name, rows_total, created_by) VALUES (?, ?, ?)',
       [String(fileName || 'archivo').slice(0, 255), book.users.length, user.id]);
     const importId = imp.insertId;
@@ -270,7 +282,7 @@ async function importWorkbook(book, fileName, user, { dryRun = false, employees 
 
     // ---- usuarios actuales y empleados
     const [current] = await conn.query(
-      `SELECT c.*, o.last_login_at, o.registered_by, o.registered_at, o.edited_by, o.edited_at
+      `SELECT c.*, o.clinic_status, o.last_login_at, o.registered_by, o.registered_at, o.edited_by, o.edited_at
        FROM clinic_users c LEFT JOIN clinic_user_origin o ON o.clinic_user_id = c.id`
     );
     const byClinicId = new Map(current.filter((c) => c.clinic_id !== null).map((c) => [c.clinic_id, c]));
@@ -350,6 +362,15 @@ async function importWorkbook(book, fileName, user, { dryRun = false, employees 
       let userId;
       if (existing) {
         userId = existing.id;
+        // Que cambio en Clinic desde la importacion anterior.
+        const who = { username, full_name: existing.full_name, id: existing.id };
+        if (existing.status === 'baja') {
+          if (status === 'activo') remed.bajasPendientes.push(who);
+          else if (existing.clinic_status !== 'inactivo') remed.bajasConfirmadas.push(who);
+        } else if (existing.status === 'activo' && status === 'inactivo') {
+          const last = existing.last_login_at ? new Date(String(existing.last_login_at).replace(' ', 'T')).getTime() : null;
+          remed.desactivados.push({ ...who, candidato: !last || Date.now() - last > PURGE_MS });
+        } else if (existing.status === 'inactivo' && status === 'activo') remed.reactivados.push(who);
         if (existing.status === 'baja') {
           if (status === 'activo') notes.push(`Fila ${line}: ${username} está DE BAJA aquí pero Clinic lo muestra ACTIVO: desactívelo en Clinic.`);
           delete next.status;
@@ -383,7 +404,7 @@ async function importWorkbook(book, fileName, user, { dryRun = false, employees 
       }
       rowsDone.push({ userId, username, name: name || username.toUpperCase(), dni, profileId, sedeId, areaId,
         status: existing && existing.status === 'baja' ? 'baja' : status });
-      origins.push([userId, toDateTime(p(row, 'last_login')), clean(p(row, 'registered_by'), 150) || null, toDateTime(p(row, 'registered_at')),
+      origins.push([userId, status, toDateTime(p(row, 'last_login')), clean(p(row, 'registered_by'), 150) || null, toDateTime(p(row, 'registered_at')),
         clean(p(row, 'edited_by'), 150) || null, toDateTime(p(row, 'edited_at')), importId]);
       const sup = p(row, 'supervisor');
       if (clean(sup)) supervisorsTodo.push({ userId, sup, line, username });
@@ -392,8 +413,8 @@ async function importWorkbook(book, fileName, user, { dryRun = false, employees 
     // Lo que dice Clinic (ultima conexion, quien lo creo/edito), en bloques.
     for (let i = 0; i < origins.length; i += 500) {
       await conn.query(
-        `INSERT INTO clinic_user_origin (clinic_user_id, last_login_at, registered_by, registered_at, edited_by, edited_at, import_id) VALUES ?
-         ON DUPLICATE KEY UPDATE last_login_at = COALESCE(VALUES(last_login_at), last_login_at),
+        `INSERT INTO clinic_user_origin (clinic_user_id, clinic_status, last_login_at, registered_by, registered_at, edited_by, edited_at, import_id) VALUES ?
+         ON DUPLICATE KEY UPDATE clinic_status = VALUES(clinic_status), last_login_at = COALESCE(VALUES(last_login_at), last_login_at),
            registered_by = COALESCE(VALUES(registered_by), registered_by), registered_at = COALESCE(VALUES(registered_at), registered_at),
            edited_by = COALESCE(VALUES(edited_by), edited_by), edited_at = COALESCE(VALUES(edited_at), edited_at),
            import_id = VALUES(import_id), imported_at = NOW()`,
@@ -472,6 +493,17 @@ async function importWorkbook(book, fileName, user, { dryRun = false, employees 
         notes.push(`${missing.length} usuario(s) del inventario no vienen en este archivo (¿eliminados en Clinic?): `
           + `${missing.slice(0, 15).map((m) => m.username).join(', ')}${missing.length > 15 ? '…' : ''}.`);
       }
+    }
+    stats.desactivados = remed.desactivados.length;
+    stats.candidatosDesactivados = remed.desactivados.filter((d) => d.candidato).length;
+    stats.bajasConfirmadas = remed.bajasConfirmadas.length;
+    stats.bajasPendientes = remed.bajasPendientes.length;
+    stats.reactivados = remed.reactivados.length;
+    if (plan.previousImport && (stats.desactivados || stats.bajasConfirmadas || stats.reactivados || stats.bajasPendientes)) {
+      notes.unshift(`Desde la importación anterior: ${stats.desactivados} activo(s) desactivado(s) en Clinic`
+        + `${stats.candidatosDesactivados ? ` (${stats.candidatosDesactivados} eran candidatos a depurar)` : ''}, `
+        + `${stats.bajasConfirmadas} baja(s) ya desactivada(s) en Clinic, ${stats.bajasPendientes} baja(s) que Clinic sigue mostrando ACTIVA(S)`
+        + `${stats.reactivados ? `, ${stats.reactivados} reactivado(s) en Clinic` : ''}.`);
     }
     const cat = [];
     if (stats.sedesNew || stats.sedesUpd) cat.push(`sedes: ${stats.sedesNew} nueva(s), ${stats.sedesUpd} actualizada(s)`);

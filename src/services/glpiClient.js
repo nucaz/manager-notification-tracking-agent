@@ -415,7 +415,8 @@ function decodeHtml(value) {
 
 // Query string explicito (criteria[0][field]=1...), sin depender de como un
 // cliente HTTP serializa arreglos de objetos.
-function searchQuery({ query, start, limit, display }) {
+// sort: numero de opcion de busqueda de GLPI (1 = nombre, 2 = ID); order: ASC | DESC.
+function searchQuery({ query, start, limit, display, sort = 1, order = 'ASC' }) {
   const p = new URLSearchParams();
   if (query) {
     p.append('criteria[0][field]', '1');
@@ -431,9 +432,16 @@ function searchQuery({ query, start, limit, display }) {
   }
   display.forEach((id, i) => p.append(`forcedisplay[${i}]`, String(id)));
   p.append('range', `${start}-${start + limit - 1}`);
-  p.append('sort', '1');
-  p.append('order', 'ASC');
+  p.append('sort', String(sort || 1));
+  p.append('order', order === 'DESC' ? 'DESC' : 'ASC');
   return p.toString();
+}
+
+// Orden pedido por la pantalla (clave de columna o "id") -> opcion de busqueda
+// de ESTE GLPI (las columnas ya resueltas). Desconocida: por nombre.
+function sortOption(columns, key, dir) {
+  const col = key === 'id' ? { id: 2 } : columns.find((c) => c.key === key);
+  return { sort: col ? col.id : 1, order: String(dir).toLowerCase() === 'desc' ? 'DESC' : 'ASC' };
 }
 
 function mapRow(columns, raw) {
@@ -479,14 +487,14 @@ async function resolveColumns(type, http, headers, cfg) {
   return columns;
 }
 
-async function listItems(typeKey, { query, start = 0, limit = 20 } = {}) {
+async function listItems(typeKey, { query, start = 0, limit = 20, sort = null, dir = 'asc' } = {}) {
   const type = ASSET_TYPES[typeKey];
   if (!type) throw new Error('Tipo de inventario no válido.');
   return withSession(async (http, cfg, sessionToken) => {
     const headers = { 'App-Token': cfg.appToken, 'Session-Token': sessionToken };
     const columns = await resolveColumns(type, http, headers, cfg);
     const display = [2, ...columns.map((c) => c.id)];
-    const res = await http.get(`/search/${type.itemtype}?${searchQuery({ query, start, limit, display })}`, { headers });
+    const res = await http.get(`/search/${type.itemtype}?${searchQuery({ query, start, limit, display, ...sortOption(columns, sort, dir) })}`, { headers });
     if (res.status !== 200 && res.status !== 206) {
       throw new Error(`Error listando ${type.label.toLowerCase()} en GLPI: ${explainGlpiError(res.status, res.data)}`);
     }
@@ -500,7 +508,7 @@ async function listItems(typeKey, { query, start = 0, limit = 20 } = {}) {
 }
 
 // Todo el inventario de un tipo (para exportar), en paginas de 200.
-async function listAllItems(typeKey, { query, max = 20000 } = {}) {
+async function listAllItems(typeKey, { query, max = 20000, sort = null, dir = 'asc' } = {}) {
   const type = ASSET_TYPES[typeKey];
   if (!type) throw new Error('Tipo de inventario no válido.');
   return withSession(async (http, cfg, sessionToken) => {
@@ -510,7 +518,7 @@ async function listAllItems(typeKey, { query, max = 20000 } = {}) {
     const all = [];
     let total = Infinity;
     for (let start = 0; start < Math.min(total, max); start += 200) {
-      const res = await http.get(`/search/${type.itemtype}?${searchQuery({ query, start, limit: 200, display })}`, { headers });
+      const res = await http.get(`/search/${type.itemtype}?${searchQuery({ query, start, limit: 200, display, ...sortOption(columns, sort, dir) })}`, { headers });
       if (res.status !== 200 && res.status !== 206) {
         throw new Error(`Error exportando ${type.label.toLowerCase()}: ${explainGlpiError(res.status, res.data)}`);
       }

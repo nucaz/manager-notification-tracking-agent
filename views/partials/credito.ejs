@@ -1,0 +1,9 @@
+<%#
+  Crédito del desarrollador. Texto FIJO en el código, a propósito: no sale de
+  la configuración, de variables de entorno ni de la base de datos, así que
+  ninguna pantalla ni ajuste lo puede cambiar u ocultar. Lo incluyen todas las
+  páginas (partials/foot.ejs y las pantallas sueltas: login, 2FA, entrada a
+  DevOps) y DevOps Sidecar lleva el mismo texto en templates/base.html.
+  tests/credito.test.js falla si se quita o se altera.
+%>
+<footer class="app-credito<%= typeof fija !== 'undefined' && fija ? ' app-credito-fija' : '' %>" data-credito="desarrollador">Juan Carlos Aguirre Alvarado - Develop Infraestructura TI Ciberseguridad</footer>

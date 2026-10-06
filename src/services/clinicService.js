@@ -47,6 +47,7 @@ const PURGE_SQL = `(c.status = 'activo' AND (o.last_login_at < NOW() - INTERVAL 
 const NO_PAYROLL_SQL = "(c.employee_id IS NULL OR c.employee_id IN (SELECT x.id FROM employees x WHERE x.source = 'clinic'))";
 const ALERTS = {
   depurar: `Candidatos a depurar (+${PURGE_DAYS} días o nunca)`,
+  baja_activa: 'De baja aquí, ACTIVOS en Clinic',
   sin_conexion: `Activos sin entrar en ${IDLE_DAYS} días`,
   nunca: 'Nunca entraron',
   sin_empleado: 'Activos sin empleado en planilla',
@@ -221,6 +222,7 @@ function where(f) {
       w.push(`c.status = 'activo' AND (o.last_login_at IS NULL OR o.last_login_at < NOW() - INTERVAL ${IDLE_DAYS} DAY)`); break;
     case 'nunca': w.push('o.last_login_at IS NULL'); break;
     case 'depurar': w.push(PURGE_SQL); break;
+    case 'baja_activa': w.push("c.status = 'baja' AND o.clinic_status = 'activo'"); break;
     case 'sin_empleado': w.push(`c.status = 'activo' AND ${NO_PAYROLL_SQL}`); break;
     case 'sin_area': w.push("c.status = 'activo' AND c.area_item_id IS NULL AND p.area_item_id IS NULL"); break;
     case 'sin_aprobar': w.push("c.status = 'activo' AND c.approved = 0"); break;
@@ -265,6 +267,7 @@ async function counts() {
        SUM(c.status = 'activo' AND c.approved = 3) AS pendiente,
        SUM(c.status = 'activo' AND (c.dni IS NULL OR c.dni = '')) AS sin_dni,
        SUM(${PURGE_SQL}) AS depurar,
+       SUM(c.status = 'baja' AND o.clinic_status = 'activo') AS baja_activa,
        SUM(c.status = 'activo' AND ${NO_PAYROLL_SQL}) AS sin_empleado,
        SUM(c.status = 'activo' AND c.area_item_id IS NULL AND p.area_item_id IS NULL) AS sin_area
      FROM clinic_users c LEFT JOIN clinic_user_origin o ON o.clinic_user_id = c.id
@@ -276,7 +279,7 @@ async function counts() {
   const [[u]] = await pool.query('SELECT COUNT(*) AS n FROM (SELECT username FROM clinic_users GROUP BY username HAVING COUNT(*) > 1) t');
   out.alerts = {
     sin_conexion: Number(a.sin_conexion || 0), sin_aprobar: Number(a.sin_aprobar || 0), sin_dni: Number(a.sin_dni || 0),
-    pendiente: Number(a.pendiente || 0), depurar: Number(a.depurar || 0), sin_empleado: Number(a.sin_empleado || 0),
+    pendiente: Number(a.pendiente || 0), depurar: Number(a.depurar || 0), baja_activa: Number(a.baja_activa || 0), sin_empleado: Number(a.sin_empleado || 0),
     sin_area: Number(a.sin_area || 0),
     dni_repetido: Number(d.n), usuario_repetido: Number(u.n),
   };

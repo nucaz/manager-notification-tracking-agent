@@ -1,7 +1,7 @@
 <%- include('../partials/head', { title: title }) %>
 <%
   function url(params) {
-    const p = new URLSearchParams(Object.assign({ tipo: tipo, q: q, por: por === 20 ? '' : String(por) }, params));
+    const p = new URLSearchParams(Object.assign({ tipo: tipo, q: q, por: por === 20 ? '' : String(por), orden: orden, dir: orden ? dir : '' }, params));
     Array.from(p.keys()).forEach(function (k) { if (!p.get(k)) p.delete(k); });
     return '/glpi/inventario?' + p.toString();
   }
@@ -14,7 +14,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h2 class="mb-0">Inventario GLPI</h2>
   <% if (!connectionError) { %>
-    <a href="/glpi/inventario/exportar.xlsx?<%= new URLSearchParams(q ? { tipo: tipo, q: q } : { tipo: tipo }).toString() %>" class="btn btn-outline-success">
+    <a href="/glpi/inventario/exportar.xlsx?<%= url({ page: '', por: '' }).split('?')[1] %>" class="btn btn-outline-success">
       <i class="bi bi-file-earmark-excel"></i> Exportar <%= type.label.toLowerCase() %> a Excel
     </a>
   <% } %>
@@ -23,7 +23,7 @@
 <ul class="nav nav-tabs mb-3">
   <% Object.keys(tipos).forEach(function(k) { %>
     <li class="nav-item">
-      <a class="nav-link <%= k === tipo ? 'active' : '' %>" href="<%= url({ tipo: k, page: '' }) %>"><i class="bi <%= tipos[k].icon %>"></i> <%= tipos[k].label %></a>
+      <a class="nav-link <%= k === tipo ? 'active' : '' %>" href="<%= url({ tipo: k, page: '', orden: '', dir: '' }) %>"><i class="bi <%= tipos[k].icon %>"></i> <%= tipos[k].label %></a>
     </li>
   <% }); %>
 </ul>
@@ -36,6 +36,7 @@
 <% } else { %>
   <form class="row g-2 mb-3" method="get">
     <input type="hidden" name="tipo" value="<%= tipo %>">
+    <% if (orden) { %><input type="hidden" name="orden" value="<%= orden %>"><input type="hidden" name="dir" value="<%= dir %>"><% } %>
     <div class="col-12 col-md-5">
       <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar <%= type.label.toLowerCase() %> por nombre, serie o N.º de inventario..." aria-label="Buscar">
     </div>
@@ -64,10 +65,10 @@
   <div class="card p-3">
     <p class="text-muted small mb-2"><%= type.label %> en GLPI<%= q ? ' que coinciden con "' + q + '"' : '' %>: <strong><%= total %></strong></p>
     <div class="table-responsive">
-      <table class="table table-hover table-sm align-middle mb-0 <%= columnas.length > 10 ? 'small' : '' %>" data-tabla="servidor">
+      <table class="table table-hover table-sm align-middle mb-0 <%= columnas.length > 10 ? 'small' : '' %>" data-tabla="servidor" data-param-pagina="page">
         <thead>
           <tr>
-            <% columnas.forEach(function(c) { %><th class="text-nowrap"><%= c.label %></th><% }); %>
+            <% columnas.forEach(function(c) { %><th class="text-nowrap" data-orden="<%= c.key %>"><%= c.label %></th><% }); %>
             <th></th>
           </tr>
         </thead>

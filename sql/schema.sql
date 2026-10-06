@@ -1056,6 +1056,7 @@ CREATE TABLE IF NOT EXISTS clinic_users (
 -- y lo edito alla, y de que importacion vino.
 CREATE TABLE IF NOT EXISTS clinic_user_origin (
   clinic_user_id INT PRIMARY KEY,
+  clinic_status VARCHAR(10) NULL,               -- lo que muestra Clinic (activo | inactivo); una baja aqui puede seguir activa alla
   last_login_at DATETIME NULL,
   registered_by VARCHAR(150) NULL,
   registered_at DATETIME NULL,
@@ -1065,6 +1066,7 @@ CREATE TABLE IF NOT EXISTS clinic_user_origin (
   imported_at DATETIME NULL,
   CONSTRAINT fk_clinic_origin_user FOREIGN KEY (clinic_user_id) REFERENCES clinic_users(id) ON DELETE CASCADE,
   CONSTRAINT fk_clinic_origin_import FOREIGN KEY (import_id) REFERENCES clinic_imports(id) ON DELETE SET NULL,
+  INDEX idx_clinic_origin_status (clinic_status),
   INDEX idx_clinic_origin_login (last_login_at),
   INDEX idx_clinic_origin_registered (registered_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

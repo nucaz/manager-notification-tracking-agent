@@ -109,6 +109,7 @@ async function main() {
   app.use('/clinic', require(path.join(ROOT, 'src/routes/clinic')));
   app.use('/m365', require(path.join(ROOT, 'src/routes/m365')));
   app.use('/solicitudes', require(path.join(ROOT, 'src/routes/requests')));
+  app.use('/reportes', require(path.join(ROOT, 'src/routes/reports')));
   app.use((err, req, res, next) => { console.error(err); res.status(500).send(`ERROR ${err.message}`); }); // eslint-disable-line no-unused-vars
   const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -274,6 +275,14 @@ async function main() {
     page = await get(`/solicitudes/${bajaId}`);
     check('Solicitudes: detalle con pasos, quién los hizo y su evidencia', page.text.includes('gerente_2026-10-31.pst') && page.text.includes(admin.full_name || ''));
     check('Solicitudes: exportar a Excel', (await get('/solicitudes/exportar.xlsx?modulo=m365')).r.headers.get('content-type').includes('spreadsheetml'));
+    page = await get('/reportes?modulo=solicitudes&q=Gerente%20PRUEBA');
+    check('Reporte de Solicitudes: módulo, tipo, solicitante y pasos', page.status === 200 && page.text.includes('Asignación de celular')
+      && page.text.includes('Microsoft 365') && page.text.includes('Gerente PRUEBA'));
+    page = await get(`/reportes?modulo=m365_cuentas&q=${encodeURIComponent('prueba-e2e.local')}`);
+    check('Reporte de cuentas de Microsoft 365 con estado y diferencias con el tenant', page.status === 200 && page.text.includes('nuevo.jefe')
+      && page.text.includes('No aparece en el tenant'));
+    page = await get('/reportes?modulo=m365_licencias');
+    check('Reporte de licencias del tenant: compradas, asignadas y libres', page.status === 200 && page.text.includes('PRUEBA_SKU_RARO') && page.text.includes('Agotada'));
     r = await form(`/solicitudes/${bajaId}/aprobar`, { decision: 'rechazar' });
     check('Solicitudes: una completada no se vuelve a decidir', (await pool.query('SELECT status FROM service_requests WHERE id = ?', [bajaId]))[0][0].status === 'completada');
   } finally {

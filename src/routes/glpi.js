@@ -53,19 +53,25 @@ const tipoOf = (value) => (TIPOS[value] ? value : 'computadoras');
 // Registros por pagina (?por=): uno de estos, o "todos".
 const POR_PAGINA = [10, 20, 30, 40, 50, 100];
 const porOf = (value) => (value === 'todos' ? 'todos' : (POR_PAGINA.includes(Number(value)) ? Number(value) : 20));
+// Orden por columna (clic en el encabezado, ver public/js/tablas.js): lo hace GLPI.
+const ordenOf = (tipo, value) => (value === 'id' || TIPOS[tipo].columns.some((c) => c.key === value) ? value : '');
+const dirOf = (value) => (value === 'desc' ? 'desc' : 'asc');
 
 router.get('/inventario', moduleRequired('glpi_inventario'), async (req, res) => {
   const tipo = tipoOf(req.query.tipo);
   const q = (req.query.q || '').trim();
   const por = porOf(req.query.por);
   const page = por === 'todos' ? 1 : Math.max(parseInt(req.query.page, 10) || 1, 1);
-  const base = { title: 'Inventario GLPI', tipo, tipos: TIPOS, type: TIPOS[tipo], q, page, por, porPagina: POR_PAGINA };
+  const orden = ordenOf(tipo, req.query.orden);
+  const dir = dirOf(req.query.dir);
+  const sortOpts = orden ? { sort: orden, dir } : {};
+  const base = { title: 'Inventario GLPI', tipo, tipos: TIPOS, type: TIPOS[tipo], q, page, por, porPagina: POR_PAGINA, orden, dir };
   try {
     if (por === 'todos') {
-      const items = await glpiClient.listAllItems(tipo, { query: q });
+      const items = await glpiClient.listAllItems(tipo, { query: q, ...sortOpts });
       return res.render('glpi/inventario', { ...base, items, total: items.length, totalPages: 1, connectionError: null, extras: items.extras || null });
     }
-    const { items, total, extras } = await glpiClient.listItems(tipo, { query: q, start: (page - 1) * por, limit: por });
+    const { items, total, extras } = await glpiClient.listItems(tipo, { query: q, start: (page - 1) * por, limit: por, ...sortOpts });
     res.render('glpi/inventario', {
       ...base, items, total, totalPages: Math.max(Math.ceil(total / por), 1), connectionError: null, extras: extras || null,
     });
@@ -78,7 +84,8 @@ router.get('/inventario/exportar.xlsx', moduleRequired('glpi_inventario'), async
   const tipo = tipoOf(req.query.tipo);
   const type = TIPOS[tipo];
   try {
-    const rows = await glpiClient.listAllItems(tipo, { query: (req.query.q || '').trim() });
+    const orden = ordenOf(tipo, req.query.orden);
+    const rows = await glpiClient.listAllItems(tipo, { query: (req.query.q || '').trim(), ...(orden ? { sort: orden, dir: dirOf(req.query.dir) } : {}) });
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet(type.label);
     sheet.addRow(['ID GLPI', ...type.columns.map((c) => c.label)]);

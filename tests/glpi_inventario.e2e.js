@@ -69,6 +69,14 @@ function fakeGlpi() {
       const v = crit[0].value.toLowerCase();
       list = rows.filter((r) => [r.name, r.serial, r.otherserial].some((x) => String(x).toLowerCase().includes(v)));
     }
+    // Orden como GLPI: sort = opcion de busqueda, order = ASC | DESC.
+    seen.sort = req.query.sort;
+    seen.order = req.query.order;
+    const field = OPT[String(req.query.sort || '1')];
+    if (field) {
+      const sign = req.query.order === 'DESC' ? -1 : 1;
+      list = [...list].sort((x, y) => sign * String(x[field] ?? '').localeCompare(String(y[field] ?? ''), 'es', { numeric: true }));
+    }
     const [a, b] = String(req.query.range || '0-19').split('-').map(Number);
     const page = list.slice(a, b + 1);
     const display = Object.values(req.query.forcedisplay || {}).map(String);
@@ -165,6 +173,18 @@ async function main() {
       && !p.text.includes('Página 1 de') && p.text.includes('<option value="todos" selected>'));
     p = await get('/glpi/inventario?por=999');
     check('Un valor no admitido vuelve al predeterminado (20)', p.text.includes('Página 1 de 2') && p.text.includes('1–20 de 30'));
+    p = await get('/glpi/inventario?orden=name&dir=desc');
+    check('Orden por columna lo hace GLPI: nombre descendente en la primera página (sort=1, order=DESC)', seen.sort === '1' && seen.order === 'DESC'
+      && p.text.indexOf('PC-030') > -1 && p.text.indexOf('PC-030') < p.text.indexOf('PC-029') && !p.text.includes('PC-001<'));
+    check('Encabezados con orden en el servidor y enlaces que conservan el orden', p.text.includes('data-orden="serial"') && p.text.includes('data-param-pagina="page"')
+      && p.text.includes('orden=name&amp;dir=desc&amp;page=2'));
+    p = await get('/glpi/inventario?orden=id&dir=asc&por=todos');
+    check('Orden por ID (opción 2) también con "Todos"', seen.sort === '2' && seen.order === 'ASC');
+    p = await get('/glpi/inventario?orden=nada&dir=desc');
+    check('Una columna que no existe vuelve al orden por nombre ascendente', seen.sort === '1' && seen.order === 'ASC');
+    const xs = await fetch(`${base}/glpi/inventario/exportar.xlsx?tipo=computadoras&orden=name&dir=desc`);
+    await xs.arrayBuffer();
+    check('El Excel sale en el mismo orden que la pantalla', seen.sort === '1' && seen.order === 'DESC');
     p = await get('/glpi/inventario?tipo=monitores');
     check('Pestaña Monitores', p.text.includes('MON-001') && p.text.includes('24MK430'));
     p = await get('/glpi/inventario?tipo=impresoras');

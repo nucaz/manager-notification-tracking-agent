@@ -117,6 +117,11 @@ table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: elli
 .tabla-info { font-variant-numeric: tabular-nums; }
 .tabla-restablecer { margin-left: auto; }
 
+/* Credito del desarrollador (views/partials/credito.ejs): al pie de cada pagina. */
+.app-credito { text-align: center; font-size: .75rem; color: #8a93a6; padding: 1.5rem 1rem .75rem; letter-spacing: .01em; }
+.app-credito-fija { position: fixed; left: 0; right: 0; bottom: 0; padding: .5rem 1rem; background: transparent; pointer-events: none; }
+@media print { .app-credito { color: #555; } .app-credito-fija { position: static; } }
+
 /* Asistente "Preguntar a la IA" (public/js/asistente.js). */
 .ia-abrir { position: fixed; right: 18px; bottom: 18px; z-index: 1030; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.22); }
 .main-content { padding-bottom: 72px; } /* que el boton no tape el pie de las tablas */

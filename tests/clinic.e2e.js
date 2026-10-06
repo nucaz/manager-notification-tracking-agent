@@ -91,6 +91,7 @@ async function main() {
   app.use('/clinic', require(path.join(ROOT, 'src/routes/clinic')));
   app.use('/configuracion/catalogos', require(path.join(ROOT, 'src/routes/catalogs')));
   app.use('/empleados', require(path.join(ROOT, 'src/routes/employees')));
+  app.use('/reportes', require(path.join(ROOT, 'src/routes/reports')));
   app.use((err, req, res, next) => { console.error(err); res.status(500).send(`ERROR ${err.message}`); }); // eslint-disable-line no-unused-vars
   const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -295,6 +296,33 @@ async function main() {
     page = await get('/clinic?conexion=d30&q=PRUEBA');
     check('Listado por tramo de conexión ("Hasta 30 días")', page.text.includes(`href="/clinic/${u1.id}">PRUEBA.E2E1<`) && !page.text.includes('PRUEBA.E2E5'));
 
+    // ================= Mes a mes: no duplica y reconoce lo remediado =================
+    const u5 = await user(990005);
+    r = await form(`/clinic/${u5.id}/baja`, { baja_reason: 'Cese', baja_date: '2026-10-06', req_name: GERENTE });
+    const mes1 = XLSX.write(clinicBook([U1, U5, U6]), { type: 'buffer', bookType: 'biff8' });
+    imp = await upload(mes1, 'prueba_e2e_mes1.xls');
+    check('Mes 1: la baja de aquí que Clinic sigue mostrando ACTIVA queda marcada', imp.text.includes('bajas de aquí que Clinic sigue mostrando ACTIVAS')
+      && (await get('/clinic?alerta=baja_activa&q=PRUEBA')).text.includes('PRUEBA.E2E5'));
+    const U5b = [...U5]; U5b[3] = 2;
+    const U6b = [...U6]; U6b[3] = 2;
+    const mes2 = XLSX.write(clinicBook([U1, U5b, U6b]), { type: 'buffer', bookType: 'biff8' });
+    const pre2 = await review(mes2, 'prueba_e2e_mes2.xls');
+    check('Mes 2 (revisión): muestra lo remediado desde la importación anterior', pre2.text.includes('Desde la importación anterior')
+      && pre2.text.includes('prueba_e2e_mes1.xls') && /fw-semibold text-success">1<\/div>\s*activos desactivados en Clinic \(1 eran candidatos a depurar\)/.test(pre2.text)
+      && /fw-semibold text-success">1<\/div>\s*bajas de aquí ya desactivadas en Clinic/.test(pre2.text));
+    imp = await confirmImport(pre2.token);
+    const [[st5]] = await pool.query('SELECT c.status, o.clinic_status FROM clinic_users c JOIN clinic_user_origin o ON o.clinic_user_id = c.id WHERE c.clinic_id = 990005');
+    check('Mes 2: la baja sigue siendo baja aquí y Clinic ya la muestra inactiva (sale de la alerta)', st5.status === 'baja' && st5.clinic_status === 'inactivo'
+      && !(await get('/clinic?alerta=baja_activa&q=PRUEBA')).text.includes('PRUEBA.E2E5'));
+    const [[evMes1]] = await pool.query('SELECT COUNT(*) AS n FROM clinic_user_events e JOIN clinic_users c ON c.id = e.clinic_user_id WHERE c.clinic_id BETWEEN 990000 AND 990999');
+    const [[nUsers1]] = await pool.query('SELECT COUNT(*) AS n FROM clinic_users WHERE clinic_id BETWEEN 990000 AND 990999');
+    imp = await upload(mes2, 'prueba_e2e_mes2b.xls');
+    const [[evMes2]] = await pool.query('SELECT COUNT(*) AS n FROM clinic_user_events e JOIN clinic_users c ON c.id = e.clinic_user_id WHERE c.clinic_id BETWEEN 990000 AND 990999');
+    const [[nUsers2]] = await pool.query('SELECT COUNT(*) AS n FROM clinic_users WHERE clinic_id BETWEEN 990000 AND 990999');
+    check('Reimportar el mismo archivo: nada nuevo, nada cambia, no se duplica historial ni se vuelve a contar lo remediado',
+      imp.text.includes('Nuevos: 0') && imp.text.includes('Con cambios: 0') && Number(evMes2.n) === Number(evMes1.n) && Number(nUsers2.n) === Number(nUsers1.n)
+      && !imp.text.includes('activos desactivados en Clinic (1'));
+
     // ================= Orden y filtros por columna (en el servidor) =================
     const order = (html) => [...html.matchAll(/href="\/clinic\/\d+">(PRUEBA\.E2E\d|prueba\.e2e\d)</g)].map((m) => m[1]);
     page = await get('/clinic?q=PRUEBA&orden=usuario&dir=asc');
@@ -322,6 +350,19 @@ async function main() {
     const xwb = new ExcelJS.Workbook();
     await xwb.xlsx.load(Buffer.from(await xls.arrayBuffer()));
     check('Exportar respeta los filtros por columna', xwb.worksheets[0].rowCount === 2);
+
+    // ================= Reportes =================
+    page = await get('/reportes?modulo=clinic_usuarios&q=PRUEBA');
+    check('Reporte "Usuarios de Clinic": antigüedad de conexión, estado en Clinic y vínculo con Empleados', page.status === 200 && page.text.includes('PRUEBA.E2E1')
+      && page.text.includes('Antigüedad de conexión') && page.text.includes('Creado desde Clinic') && page.text.includes('Hasta 30 días'));
+    page = await get(`/reportes?modulo=clinic_usuarios&q=PRUEBA&f_tramo=${encodeURIComponent('Nunca entró')}`);
+    check('Reporte de Clinic filtrado por antigüedad de conexión', page.text.includes('PRUEBA.E2E5') && !page.text.includes('>prueba.e2e9<'));
+    const rx = await fetch(`${base}/reportes/exportar.xlsx?modulo=clinic_usuarios&q=PRUEBA`, { headers: { cookie } });
+    const rpdf = await fetch(`${base}/reportes/exportar.pdf?modulo=clinic_usuarios&q=PRUEBA`, { headers: { cookie } });
+    check('Reporte de Clinic en Excel y PDF', rx.headers.get('content-type').includes('spreadsheetml') && rpdf.headers.get('content-type').includes('pdf'));
+    page = await get('/reportes?modulo=personas&q=PRUEBA');
+    check('Reporte "Accesos por persona": une celular, Clinic y Microsoft 365 y marca lo que no cuadra', page.status === 200
+      && page.text.includes('Supervisora') && page.text.includes('PRUEBA.E2E1 (activo)') && page.text.includes('Más de un usuario de Clinic activo'));
 
     // ================= Pantallas =================
     const [[lastImp]] = await pool.query("SELECT id FROM clinic_imports WHERE file_name LIKE 'prueba_e2e%' ORDER BY id DESC LIMIT 1");

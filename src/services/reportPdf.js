@@ -141,6 +141,9 @@ function buildPdf(report) {
       doc.font('Helvetica').fontSize(7.5).fillColor('#555');
       doc.text(plain(`${report.title} · ${report.generatedAt}`), MARGIN, doc.page.height - MARGIN - 8, { width: width / 2, lineBreak: false });
       doc.text(`Página ${i + 1} de ${range.count}`, MARGIN + width / 2, doc.page.height - MARGIN - 8, { width: width / 2, align: 'right', lineBreak: false });
+      // Credito del desarrollador: texto fijo (ver views/partials/credito.ejs).
+      doc.fontSize(6.5).fillColor('#8a93a6')
+        .text(plain('Juan Carlos Aguirre Alvarado - Develop Infraestructura TI Ciberseguridad'), MARGIN, doc.page.height - MARGIN + 2, { width, align: 'center', lineBreak: false });
     }
     doc.end();
   });
