@@ -35,6 +35,15 @@
     <% if (enabledModules.empleados) { %>
     <li><a class="nav-link <%= currentPath.startsWith('/empleados') ? 'active' : '' %>" href="/empleados"><i class="bi bi-people"></i> <span>Empleados</span></a></li>
     <% } %>
+    <% if (enabledModules.m365) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/m365') ? 'active' : '' %>" href="/m365"><i class="bi bi-microsoft"></i> <span>Microsoft 365</span></a></li>
+    <% } %>
+    <% if (enabledModules.clinic) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/clinic') ? 'active' : '' %>" href="/clinic"><i class="bi bi-hospital"></i> <span>Usuarios de Clinic</span></a></li>
+    <% } %>
+    <% if (enabledModules.solicitudes) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/solicitudes') ? 'active' : '' %>" href="/solicitudes"><i class="bi bi-clipboard-check"></i> <span>Solicitudes</span></a></li>
+    <% } %>
     <% if (enabledModules.red) { %>
     <li><a class="nav-link <%= currentPath.startsWith('/red') ? 'active' : '' %>" href="/red"><i class="bi bi-diagram-3"></i> <span>Red</span></a></li>
     <% } %>

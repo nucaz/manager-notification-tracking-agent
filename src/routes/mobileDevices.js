@@ -20,6 +20,7 @@ const assignmentHistory = require('../services/assignmentHistoryService');
 const { DECOMISO_MOTIVO } = require('../config/mobileLabels');
 
 const auditService = require('../services/auditService');
+const requestService = require('../services/requestService');
 
 const { validateDeviceData, imeiTaken, touchDevice, describeDeviceChanges } = mobileDeviceService;
 
@@ -451,12 +452,18 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
       req.session.user.id
     );
     const holderName = `${first_name} ${last_name}`;
+    // Quien pidio el equipo (jefe, gerente): queda como solicitud cumplida.
+    const requester = await requestService.parseRequester(req.body);
+    const requestId = requester ? await requestService.create({
+      module: 'celular', type: 'asignacion', status: 'completada', entityId: Number(req.params.id), requester,
+      beneficiary: holderName, details: { imei: deviceBefore.imei, area, sede: sede || null, cargo: cargo || null },
+    }, req.session.user) : null;
 
     await assignmentHistory.close(req.params.id, 'reasignado', `Reasignado a ${holderName}`);
     await pool.query(
       `INSERT INTO mobile_device_assignments
-        (device_id, employee_id, holder_name, cargo, turno, area, sede, assigned_date, observacion, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (device_id, employee_id, holder_name, cargo, turno, area, sede, assigned_date, observacion, request_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.params.id,
         employeeId,
@@ -467,6 +474,7 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
         sede || null,
         assigned_date || null,
         observacion || null,
+        requestId,
         req.session.user.id,
       ]
     );
@@ -479,7 +487,8 @@ router.post('/:id/asignar', canWrite, verifyCsrfToken, async (req, res, next) =>
       user: req.session.user,
       action: 'celular_asignado',
       target: `Celular ${deviceBefore.imei}`,
-      detail: `Asignado a ${holderName} (DNI ${dni}), ${cargo || 'sin cargo'}, área ${area}${sede ? `, sede ${sede}` : ''}`,
+      detail: `Asignado a ${holderName} (DNI ${dni}), ${cargo || 'sin cargo'}, área ${area}${sede ? `, sede ${sede}` : ''}`
+        + (requester ? `. Solicitado por ${requestService.describe(requester)}` : '. Sin solicitante registrado'),
     });
     req.flash('success', 'Celular asignado correctamente.');
     res.redirect(`/celulares/${req.params.id}`);
@@ -590,6 +599,26 @@ router.post('/:id/usuario', canWrite, verifyCsrfToken, async (req, res, next) =>
     cmp('Fecha de entrega', before.fecha, fecha);
     cmp('Observación', before.obs, obs);
     if (linked) parts.push(linked);
+    const requester = await requestService.parseRequester(req.body);
+    if (requester) {
+      const prev = current.request_id ? await requestService.get(current.request_id) : null;
+      const prevText = prev ? requestService.describe({ name: prev.requested_by_name, cargo: prev.requested_by_cargo, area: prev.requested_by_area,
+        ref: prev.request_ref, date: String(prev.request_date).slice(0, 10) }) : '';
+      const nextText = requestService.describe(requester);
+      if (prevText !== nextText) {
+        if (prev) {
+          await pool.query(
+            `UPDATE service_requests SET requested_by_employee_id = ?, requested_by_name = ?, requested_by_cargo = ?, requested_by_area = ?,
+               request_date = ?, request_ref = ? WHERE id = ?`,
+            [requester.employee_id, requester.name, requester.cargo, requester.area, requester.date, requester.ref, prev.id]);
+        } else {
+          const rid = await requestService.create({ module: 'celular', type: 'asignacion', status: 'completada', entityId: device.id, requester,
+            beneficiary: holderName, details: { imei: device.imei } }, req.session.user);
+          await pool.query('UPDATE mobile_device_assignments SET request_id = ? WHERE id = ?', [rid, current.id]);
+        }
+        parts.push(`Solicitante: "${prevText || '—'}" → "${nextText}"`);
+      }
+    }
 
     if (parts.length > 0) {
       await touchDevice(device.id);
@@ -1181,9 +1210,12 @@ router.get('/:id', async (req, res, next) => {
       return res.redirect('/celulares');
     }
     const [assignments] = await pool.query(
-      `SELECT a.*, e.dni, e.first_name AS emp_first_name, e.last_name AS emp_last_name
+      `SELECT a.*, e.dni, e.first_name AS emp_first_name, e.last_name AS emp_last_name,
+              sr.requested_by_name, sr.requested_by_cargo, sr.requested_by_area, sr.request_ref,
+              DATE_FORMAT(sr.request_date, '%Y-%m-%d') AS request_date
        FROM mobile_device_assignments a
        LEFT JOIN employees e ON e.id = a.employee_id
+       LEFT JOIN service_requests sr ON sr.id = a.request_id
        WHERE a.device_id = ? ORDER BY a.created_at DESC`,
       [req.params.id]
     );
@@ -1228,6 +1260,7 @@ router.get('/:id', async (req, res, next) => {
       sedes: catalogs.sedes,
       dniQuery,
       foundEmployee,
+      requesterOptions: await requestService.pickerOptions(),
     });
   } catch (err) {
     next(err);

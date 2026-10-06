@@ -1,0 +1,56 @@
+<%- include('../partials/head', { title: title }) %>
+<% const isEdit = !!item.id; const lic = String(item.licenses || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0"><%= title %></h2>
+  <a href="<%= isEdit ? '/m365/cuentas/' + item.id : '/m365' %>" class="btn btn-outline-secondary">Volver</a>
+</div>
+<% if (errors.length) { %><div class="alert alert-danger"><ul class="mb-0"><% errors.forEach(function (e) { %><li><%= e %></li><% }); %></ul></div><% } %>
+
+<form method="post" action="<%= isEdit ? '/m365/cuentas/' + item.id + '/editar' : '/m365/cuentas/nueva' %>" class="card p-4" style="max-width: 820px" autocomplete="off">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <% if (!isEdit) { %>
+    <p class="small text-muted">Para una cuenta que <strong>ya existe</strong> en el tenant. Para crear una nueva use una solicitud de alta (queda quién la pidió y cada paso).
+      Si configura la lectura del tenant, las cuentas existentes se traen solas.</p>
+  <% } else { %>
+    <p class="small text-muted">El correo, el estado y las licencias se cambian con una solicitud, para que quede la constancia.</p>
+  <% } %>
+  <div class="row g-3">
+    <div class="col-md-6"><label class="form-label" for="upn">Correo *</label>
+      <input class="form-control font-monospace" id="upn" name="upn" value="<%= item.upn || '' %>" <%= isEdit ? 'disabled' : 'required' %>></div>
+    <div class="col-md-6"><label class="form-label" for="display_name">Nombre *</label>
+      <input class="form-control" id="display_name" name="display_name" maxlength="150" required value="<%= item.display_name || '' %>"></div>
+    <div class="col-md-6"><label class="form-label" for="cargo">Cargo</label>
+      <input class="form-control" id="cargo" name="cargo" maxlength="150" value="<%= item.cargo || '' %>"></div>
+    <div class="col-md-6"><label class="form-label" for="dni">DNI en el directorio (opcional)</label>
+      <input class="form-control" id="dni" name="dni" maxlength="8" inputmode="numeric" pattern="\d{8}" value="<%= item.dni || '' %>"></div>
+    <div class="col-md-6"><label class="form-label" for="area">Área</label>
+      <select class="form-select" id="area" name="area"><option value="">—</option>
+        <% areas.forEach(function (a) { %><option <%= item.area === a ? 'selected' : '' %>><%= a %></option><% }); %>
+        <% if (item.area && !areas.includes(item.area)) { %><option selected><%= item.area %></option><% } %></select></div>
+    <div class="col-md-6"><label class="form-label" for="sede">Sede</label>
+      <select class="form-select" id="sede" name="sede"><option value="">—</option>
+        <% sedes.forEach(function (s) { %><option <%= item.sede === s ? 'selected' : '' %>><%= s %></option><% }); %>
+        <% if (item.sede && !sedes.includes(item.sede)) { %><option selected><%= item.sede %></option><% } %></select></div>
+    <div class="col-md-6"><label class="form-label" for="account_type">Tipo de cuenta</label>
+      <select class="form-select" id="account_type" name="account_type">
+        <% Object.keys(ACCOUNT_TYPES).forEach(function (k) { %><option value="<%= k %>" <%= item.account_type === k ? 'selected' : '' %>><%= ACCOUNT_TYPES[k] %></option><% }); %></select></div>
+    <% if (!isEdit) { %>
+      <div class="col-md-6"><label class="form-label" for="status">Estado actual</label>
+        <select class="form-select" id="status" name="status">
+          <% ['activa', 'bloqueada', 'desactivada'].forEach(function (k) { %><option value="<%= k %>" <%= item.status === k ? 'selected' : '' %>><%= STATUS[k].label %></option><% }); %></select></div>
+      <div class="col-12"><label class="form-label" for="licenses">Licencias actuales</label>
+        <select class="form-select" id="licenses" name="licenses" multiple size="<%= Math.min(Math.max(licenseOptions.length, 3), 8) %>">
+          <% licenseOptions.forEach(function (l) { %><option <%= lic.includes(l) ? 'selected' : '' %>><%= l %></option><% }); %></select>
+        <div class="form-text">Ctrl+clic para varias. Sin lectura del tenant, agregue nombres en Configuración &gt; Catálogos &gt; Licencias de Microsoft 365.</div></div>
+    <% } %>
+    <div class="col-12"><div class="form-check">
+      <input class="form-check-input" type="checkbox" id="is_manager" name="is_manager" value="1" <%= Number(item.is_manager) ? 'checked' : '' %>>
+      <label class="form-check-label" for="is_manager">Cargo de jefatura (gerente, jefe): al retirarse se respalda el buzón en PST y se convierte en compartido</label></div></div>
+    <div class="col-12"><label class="form-label" for="notes">Notas</label>
+      <textarea class="form-control" id="notes" name="notes" rows="2"><%= item.notes || '' %></textarea></div>
+  </div>
+  <div class="mt-3"><button class="btn btn-primary" type="submit">Guardar</button></div>
+</form>
+
+<%- include('../partials/foot') %>

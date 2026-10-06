@@ -450,3 +450,18 @@ Con `BackgroundTasks`, `TestClient` termina la tarea antes de devolver la
 respuesta: una prueba que consulta el avance "mientras corre" solo ve el
 100 %. El avance intermedio se prueba sobre la clase que lo calcula
 (`restore_service.Progress`), con el intervalo de guardado en 0.
+
+## 42. Un "solicitante" para varios modulos va en una sola tabla
+
+Celulares, Clinic y Microsoft 365 necesitaban "quien lo pidio". Columnas
+de solicitante en cada tabla las habrian acercado al tope de columnas y
+no permitirian ver todo lo que pidio una persona. `service_requests`
+(modulo + entidad + foto del solicitante) con pasos en
+`service_request_tasks` lo resuelve para los tres, y la asignacion de un
+celular solo suma `request_id`.
+
+## 43. Un paso con evidencia obligatoria no puede aceptar "vacio = ninguna"
+
+El paso "Quitar las licencias" decia "vacio = ninguna" pero exigia
+evidencia: no se podia marcar. Lo explicito es escribir "ninguna"; asi un
+campo olvidado no se confunde con "sin licencias".

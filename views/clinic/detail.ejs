@@ -1,0 +1,90 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h2 class="mb-0"><%= item.full_name || '(sin nombre en Clinic)' %></h2>
+    <span class="font-monospace"><%= item.username %></span>
+    <span class="badge <%= STATUS[item.status].badge %> ms-1"><%= STATUS[item.status].label %></span>
+    <% if (!item.approved) { %><span class="badge text-bg-light border">sin aprobar</span><% } %>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/clinic" class="btn btn-outline-secondary">Volver</a>
+    <% if (currentUser.role !== 'lector') { %><a href="/clinic/<%= item.id %>/editar" class="btn btn-outline-primary"><i class="bi bi-pencil"></i> Editar</a><% } %>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-3 mb-3">
+      <table class="table table-sm mb-0">
+        <tr><th style="width: 200px">Perfil</th><td><%= item.perfil || '—' %></td></tr>
+        <tr><th>Sede</th><td><%= item.sede || '—' %></td></tr>
+        <tr><th>Área</th><td><%= item.area || '—' %></td></tr>
+        <tr><th>Supervisor</th><td><%= item.supervisor_name || item.supervisor_username || '—' %></td></tr>
+        <tr><th>Empleado (directorio)</th><td><%= item.employee_dni ? 'DNI ' + item.employee_dni : 'Sin vincular' %></td></tr>
+        <tr><th>Registrado en Clinic por</th><td><%= item.clinic_registered_by || '—' %> <span class="text-muted small"><%= item.clinic_registered_at ? String(item.clinic_registered_at).slice(0, 16) : '' %></span></td></tr>
+        <% if (item.status === 'baja') { %>
+          <tr><th>Baja</th><td><%= item.baja_date %>: <%= item.baja_reason %></td></tr>
+        <% } %>
+        <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
+      </table>
+    </div>
+
+    <div class="card p-3 mb-3">
+      <h5>Solicitudes (quién pidió qué)</h5>
+      <% if (!requests.length) { %>
+        <p class="text-muted mb-0">Sin solicitudes registradas (por ejemplo, un usuario importado del listado de Clinic).</p>
+      <% } else { %>
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Fecha</th><th>Tipo</th><th>Solicitado por</th><th>Referencia</th><th>Estado</th></tr></thead>
+          <tbody>
+            <% requests.forEach(function (r) { %>
+              <tr>
+                <td class="text-nowrap"><%= String(r.request_date).slice(0, 10) %></td>
+                <td><%= r.request_type %></td>
+                <td><%= r.requested_by_name %><div class="small text-muted"><%= [r.requested_by_cargo, r.requested_by_area].filter(Boolean).join(', ') %></div></td>
+                <td class="small"><%= r.request_ref || '—' %></td>
+                <td><span class="badge <%= (RSTATUS[r.status] || {}).badge %>"><%= (RSTATUS[r.status] || {}).label || r.status %></span></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+
+    <% if (team.length) { %>
+      <div class="card p-3 mb-3">
+        <h5>Supervisa a</h5>
+        <ul class="mb-0"><% team.forEach(function (t) { %><li><a href="/clinic/<%= t.id %>"><%= t.full_name || t.username %></a> <span class="small text-muted">(<%= t.username %>, <%= STATUS[t.status].label %>)</span></li><% }); %></ul>
+      </div>
+    <% } %>
+  </div>
+
+  <div class="col-lg-5">
+    <% if (currentUser.role !== 'lector') { %>
+      <% if (item.status !== 'baja') { %>
+        <form method="post" action="/clinic/<%= item.id %>/baja" class="card p-3 border-danger"
+              onsubmit="return confirm('¿Registrar la baja de <%= item.username %>? Luego desactívelo en Clinic.');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <h5 class="text-danger">Dar de baja</h5>
+          <div class="mb-2"><label class="form-label small mb-0" for="baja_date">Fecha de baja</label>
+            <input type="date" class="form-control form-control-sm" id="baja_date" name="baja_date" value="<%= new Date().toISOString().slice(0, 10) %>"></div>
+          <div class="mb-2"><label class="form-label small mb-0" for="baja_reason">Motivo *</label>
+            <input type="text" class="form-control form-control-sm" id="baja_reason" name="baja_reason" maxlength="255" required placeholder="Renuncia, cese, cambio de área..."></div>
+          <%- include('../partials/requester_fields', { requesterOptions: requesterOptions, prefix: 'req_', required: true, value: {} }) %>
+          <button class="btn btn-sm btn-danger" type="submit">Registrar baja</button>
+        </form>
+      <% } else { %>
+        <form method="post" action="/clinic/<%= item.id %>/reactivar" class="card p-3"
+              onsubmit="return confirm('¿Reactivar a <%= item.username %>?');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <h5>Reactivar</h5>
+          <%- include('../partials/requester_fields', { requesterOptions: requesterOptions, prefix: 'req_', required: true, value: {} }) %>
+          <button class="btn btn-sm btn-primary" type="submit">Reactivar usuario</button>
+        </form>
+      <% } %>
+    <% } %>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

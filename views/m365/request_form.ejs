@@ -1,0 +1,80 @@
+<%- include('../partials/head', { title: title }) %>
+<% const f = form || {}; const lic = [].concat(f.target_licenses || []); %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Nueva solicitud de Microsoft 365</h2>
+  <a href="<%= account ? '/m365/cuentas/' + account.id : '/m365' %>" class="btn btn-outline-secondary">Volver</a>
+</div>
+
+<form method="get" class="d-flex flex-wrap gap-2 mb-3" aria-label="Tipo de solicitud">
+  <% if (account) { %><input type="hidden" name="cuenta" value="<%= account.id %>"><% } %>
+  <% Object.keys(REQUEST_TYPES).forEach(function (k) { %>
+    <button name="tipo" value="<%= k %>" class="btn btn-sm <%= tipo === k ? 'btn-primary' : 'btn-outline-primary' %>"><%= REQUEST_TYPES[k] %></button>
+  <% }); %>
+</form>
+
+<form method="post" action="/m365/solicitudes/nueva" class="card p-4" style="max-width: 900px" autocomplete="off">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <input type="hidden" name="request_type" value="<%= tipo %>">
+  <h5><%= REQUEST_TYPES[tipo] %></h5>
+
+  <% if (tipo === 'alta') { %>
+    <div class="row g-3 mb-3">
+      <div class="col-md-6"><label class="form-label" for="target_name">Nombre de la persona *</label>
+        <input class="form-control" id="target_name" name="target_name" maxlength="150" required value="<%= f.target_name || '' %>"></div>
+      <div class="col-md-6"><label class="form-label" for="target_dni">DNI</label>
+        <input class="form-control" id="target_dni" name="target_dni" maxlength="8" inputmode="numeric" pattern="\d{8}" value="<%= f.target_dni || '' %>"></div>
+      <div class="col-md-6"><label class="form-label" for="target_cargo">Cargo *</label>
+        <input class="form-control" id="target_cargo" name="target_cargo" maxlength="150" required value="<%= f.target_cargo || '' %>">
+        <div class="form-text">Si es gerente, jefe o director se marca como jefatura (al retirarse: PST y buzón compartido).</div></div>
+      <div class="col-md-6"><label class="form-label" for="target_upn">Correo propuesto</label>
+        <input class="form-control font-monospace" id="target_upn" name="target_upn" placeholder="nombre.apellido@empresa.com" value="<%= f.target_upn || '' %>"></div>
+      <div class="col-md-6"><label class="form-label" for="target_area">Área *</label>
+        <select class="form-select" id="target_area" name="target_area" required><option value="">—</option>
+          <% areas.forEach(function (a) { %><option <%= f.target_area === a ? 'selected' : '' %>><%= a %></option><% }); %></select></div>
+      <div class="col-md-6"><label class="form-label" for="target_sede">Sede</label>
+        <select class="form-select" id="target_sede" name="target_sede"><option value="">—</option>
+          <% sedes.forEach(function (s) { %><option <%= f.target_sede === s ? 'selected' : '' %>><%= s %></option><% }); %></select></div>
+    </div>
+  <% } else { %>
+    <div class="mb-3"><label class="form-label" for="account_id">Cuenta *</label>
+      <select class="form-select" id="account_id" name="account_id" required><option value="">— Elegir —</option>
+        <% accounts.forEach(function (a) { %><option value="<%= a.id %>" <%= (account && account.id === a.id) || Number(f.account_id) === a.id ? 'selected' : '' %>><%= a.display_name %> (<%= a.upn %>)</option><% }); %></select>
+      <% if (account) { %><div class="form-text">Cargo: <%= account.cargo || '—' %><%= account.is_manager ? ' · jefatura' : '' %> · Licencias: <%= account.licenses || 'ninguna' %></div><% } %></div>
+  <% } %>
+
+  <% if (tipo === 'alta' || tipo === 'licencia') { %>
+    <div class="mb-3"><label class="form-label" for="target_licenses"><%= tipo === 'alta' ? 'Licencias solicitadas' : 'Licencias que debe tener' %></label>
+      <select class="form-select" id="target_licenses" name="target_licenses" multiple size="<%= Math.min(Math.max(licenseOptions.length, 3), 8) %>">
+        <% licenseOptions.forEach(function (l) { %><option <%= lic.includes(l) ? 'selected' : '' %>><%= l %></option><% }); %></select>
+      <div class="form-text">Ctrl+clic para varias.<%= licenseOptions.length ? '' : ' No hay licencias: lea el tenant o agréguelas en Configuración > Catálogos > Licencias de Microsoft 365.' %></div></div>
+  <% } %>
+  <% if (tipo === 'renombre') { %>
+    <div class="mb-3"><label class="form-label" for="target_upn">Correo nuevo propuesto</label>
+      <input class="form-control font-monospace" id="target_upn" name="target_upn" value="<%= f.target_upn || '' %>"></div>
+  <% } %>
+  <% if (tipo === 'baja') { %>
+    <div class="row g-3 mb-3">
+      <div class="col-md-6"><label class="form-label" for="retiro_date">Fecha de retiro</label>
+        <input type="date" class="form-control" id="retiro_date" name="retiro_date" value="<%= f.retiro_date || '' %>"></div>
+      <div class="col-md-6"><label class="form-label" for="receiver_name">Quién recibe el buzón (si ya se sabe)</label>
+        <input class="form-control" id="receiver_name" name="receiver_name" maxlength="150" value="<%= f.receiver_name || '' %>"></div>
+    </div>
+    <div class="alert alert-light border small">Pasos que se generan: bloquear el acceso, restablecer la contraseña,
+      <strong>si es jefatura: respaldo PST y convertir en buzón compartido</strong>, dar acceso a quien recibe, renombrar el correo,
+      quitar licencias y dar acceso a OneDrive. Cada uno se marca con su evidencia y queda la constancia.</div>
+  <% } %>
+  <% if (tipo !== 'alta') { %>
+    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="is_manager" name="is_manager" value="1" <%= f.is_manager ? 'checked' : '' %>>
+      <label class="form-check-label" for="is_manager">Tratar como jefatura (agrega PST y buzón compartido) aunque el cargo no lo diga</label></div>
+  <% } %>
+
+  <%- include('../partials/requester_fields', { requesterOptions: requesterOptions, prefix: 'req_', required: true,
+        value: { name: f.req_name, cargo: f.req_cargo, area: f.req_area, date: f.req_date, ref: f.req_ref } }) %>
+
+  <div class="mb-3"><label class="form-label" for="notes">Notas</label>
+    <textarea class="form-control" id="notes" name="notes" rows="2"><%= f.notes || '' %></textarea></div>
+  <div><button class="btn btn-primary" type="submit">Registrar solicitud</button></div>
+</form>
+
+<%- include('../partials/foot') %>

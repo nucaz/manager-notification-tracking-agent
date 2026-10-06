@@ -1,0 +1,56 @@
+<%#
+  Quien solicita (jefe, gerente). Uso:
+    include('../partials/requester_fields', { requesterOptions, prefix: 'req_', required: true, value: {} })
+  Elegir del directorio vincula al empleado (y completa cargo y area);
+  tambien se puede escribir un nombre que no este en el directorio.
+%>
+<% const rp = typeof prefix !== 'undefined' ? prefix : 'req_'; %>
+<% const rv = typeof value !== 'undefined' && value ? value : {}; %>
+<% const rreq = typeof required !== 'undefined' ? required : false; %>
+<fieldset class="border rounded p-2 mb-2">
+  <legend class="float-none w-auto px-1 mb-0 small fw-semibold">Solicitado por<%= rreq ? ' *' : '' %></legend>
+  <div class="row g-2">
+    <div class="col-12">
+      <label class="form-label small mb-0" for="<%= rp %>name">Jefe o gerente que lo pide</label>
+      <input type="text" class="form-control form-control-sm" id="<%= rp %>name" name="<%= rp %>name" list="<%= rp %>lista"
+             maxlength="200" autocomplete="off" placeholder="Escriba apellido o DNI y elija del directorio" value="<%= rv.name || '' %>" <%= rreq ? 'required' : '' %>
+             data-requester-prefix="<%= rp %>">
+      <datalist id="<%= rp %>lista">
+        <% (requesterOptions || []).forEach(function (e) { %>
+          <option value="<%= e.label %>" data-cargo="<%= e.cargo || '' %>" data-area="<%= e.area || '' %>"></option>
+        <% }); %>
+      </datalist>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small mb-0" for="<%= rp %>cargo">Cargo del solicitante</label>
+      <input type="text" class="form-control form-control-sm" id="<%= rp %>cargo" name="<%= rp %>cargo" maxlength="150" value="<%= rv.cargo || '' %>">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small mb-0" for="<%= rp %>area">Área del solicitante</label>
+      <input type="text" class="form-control form-control-sm" id="<%= rp %>area" name="<%= rp %>area" maxlength="100" value="<%= rv.area || '' %>">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small mb-0" for="<%= rp %>date">Fecha de la solicitud</label>
+      <input type="date" class="form-control form-control-sm" id="<%= rp %>date" name="<%= rp %>date" value="<%= rv.date || new Date().toISOString().slice(0, 10) %>">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small mb-0" for="<%= rp %>ref">Referencia (ticket, correo, memo)</label>
+      <input type="text" class="form-control form-control-sm" id="<%= rp %>ref" name="<%= rp %>ref" maxlength="80" value="<%= rv.ref || '' %>">
+    </div>
+  </div>
+</fieldset>
+<script>
+  (function () {
+    var input = document.getElementById('<%= rp %>name');
+    if (!input || input.dataset.bound) return;
+    input.dataset.bound = '1';
+    input.addEventListener('change', function () {
+      var opt = Array.prototype.find.call(document.getElementById('<%= rp %>lista').options, function (o) { return o.value === input.value; });
+      if (!opt) return;
+      var cargo = document.getElementById('<%= rp %>cargo');
+      var area = document.getElementById('<%= rp %>area');
+      if (!cargo.value) cargo.value = opt.dataset.cargo || '';
+      if (!area.value) area.value = opt.dataset.area || '';
+    });
+  })();
+</script>

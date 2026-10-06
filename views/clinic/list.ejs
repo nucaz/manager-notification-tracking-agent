@@ -1,0 +1,75 @@
+<%- include('../partials/head', { title: title }) %>
+<% const qs = Object.entries(filters).filter(function (kv) { return kv[1]; }).map(function (kv) { return (kv[0] === 'status' ? 'estado' : kv[0]) + '=' + encodeURIComponent(kv[1]); }).join('&'); %>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h2 class="mb-0">Usuarios de Clinic</h2>
+    <div class="small text-muted">
+      <span class="badge text-bg-success"><%= counts.activo || 0 %> activos</span>
+      <span class="badge text-bg-secondary"><%= counts.inactivo || 0 %> inactivos</span>
+      <span class="badge text-bg-danger"><%= counts.baja || 0 %> de baja</span>
+    </div>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/clinic/exportar.xlsx<%= qs ? '?' + qs : '' %>" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-excel"></i> Exportar</a>
+    <% if (currentUser.role !== 'lector') { %>
+      <a href="/clinic/importar" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar listado de Clinic</a>
+      <a href="/clinic/nuevo" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo usuario</a>
+    <% } %>
+  </div>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-md-3"><label class="visually-hidden" for="f_q">Buscar</label>
+    <input type="text" name="q" id="f_q" value="<%= filters.q %>" class="form-control" placeholder="Nombre, usuario o registrado por..."></div>
+  <div class="col-md-2"><label class="visually-hidden" for="f_estado">Estado</label>
+    <select name="estado" id="f_estado" class="form-select">
+      <option value="">Todos los estados</option>
+      <% Object.keys(STATUS).forEach(function (k) { %><option value="<%= k %>" <%= filters.status === k ? 'selected' : '' %>><%= STATUS[k].label %></option><% }); %>
+    </select></div>
+  <div class="col-md-2"><label class="visually-hidden" for="f_perfil">Perfil</label>
+    <select name="perfil" id="f_perfil" class="form-select">
+      <option value="">Todos los perfiles</option>
+      <% perfiles.forEach(function (p) { %><option <%= filters.perfil === p ? 'selected' : '' %>><%= p %></option><% }); %>
+    </select></div>
+  <div class="col-md-2"><label class="visually-hidden" for="f_sede">Sede</label>
+    <select name="sede" id="f_sede" class="form-select">
+      <option value="">Todas las sedes</option>
+      <% sedes.forEach(function (s) { %><option <%= filters.sede === s ? 'selected' : '' %>><%= s %></option><% }); %>
+    </select></div>
+  <div class="col-md-2"><label class="visually-hidden" for="f_area">Área</label>
+    <select name="area" id="f_area" class="form-select">
+      <option value="">Todas las áreas</option>
+      <% areas.forEach(function (a) { %><option <%= filters.area === a ? 'selected' : '' %>><%= a %></option><% }); %>
+    </select></div>
+  <div class="col-md-1"><button class="btn btn-outline-secondary w-100" type="submit">Filtrar</button></div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Nombre</th><th>Usuario</th><th>Estado</th><th>Perfil</th><th>Sede</th><th>Área</th><th>Supervisor</th><th>Solicitado por</th><th>Registro en Clinic</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (c) { %>
+          <tr>
+            <td><a href="/clinic/<%= c.id %>"><%= c.full_name || '(sin nombre en Clinic)' %></a><%= c.approved ? '' : '' %>
+              <% if (!c.approved) { %><span class="badge text-bg-light border ms-1">sin aprobar</span><% } %></td>
+            <td class="font-monospace small"><%= c.username %></td>
+            <td><span class="badge <%= STATUS[c.status].badge %>"><%= STATUS[c.status].label %></span></td>
+            <td class="small"><%= c.perfil || '—' %></td>
+            <td class="small"><%= c.sede || '—' %></td>
+            <td class="small"><%= c.area || '—' %></td>
+            <td class="small"><%= c.supervisor_name || c.supervisor_username || '—' %></td>
+            <td class="small"><%= c.requested_by_name || '—' %></td>
+            <td class="small text-nowrap"><%= c.clinic_registered_by || '' %><div class="text-muted"><%= c.clinic_registered_at ? String(c.clinic_registered_at).slice(0, 16) : '' %></div></td>
+          </tr>
+        <% }); %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="9" class="text-center text-muted py-4">No hay usuarios con esos filtros. Puede importar el listado que exporta Clinic.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

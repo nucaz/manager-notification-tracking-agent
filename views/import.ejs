@@ -11,7 +11,13 @@
     <p class="mb-2">
       <span class="badge bg-success">Importados: <%= results.imported %></span>
       <span class="badge bg-danger">Con errores: <%= results.errors.length %></span>
+      <% if (results.notes && results.notes.length) { %><span class="badge bg-warning text-dark">Avisos: <%= results.notes.length %></span><% } %>
     </p>
+    <% if (results.notes && results.notes.length) { %>
+      <ul class="small mb-2">
+        <% results.notes.forEach(function(n) { %><li><%= n %></li><% }); %>
+      </ul>
+    <% } %>
     <% if (results.errors.length > 0) { %>
       <table class="table table-sm">
         <thead><tr><th style="width:100px;">Fila</th><th>Error</th></tr></thead>

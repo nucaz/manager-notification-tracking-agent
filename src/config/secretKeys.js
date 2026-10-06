@@ -12,6 +12,7 @@ const SECRET_KEYS = new Set([
   'telegram_bot_token',
   'devops_sidecar_password',
   'backup_recovery_password',
+  'm365_client_secret',
 ]);
 
 module.exports = { SECRET_KEYS };

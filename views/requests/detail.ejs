@@ -1,0 +1,111 @@
+<%- include('../partials/head', { title: title }) %>
+<% const st = STATUS[r.status] || {}; const inCourse = ['aprobada', 'en_proceso'].includes(r.status);
+   const done = r.tasks.filter(function (t) { return t.done_at; }).length; const pct = r.tasks.length ? Math.round(done * 100 / r.tasks.length) : 0;
+   const LBL = { nombre: 'Nombre', dni: 'DNI', cargo: 'Cargo', area: 'Área', sede: 'Sede', correo: 'Correo', licencias: 'Licencias', correo_nuevo: 'Correo nuevo',
+     fecha_retiro: 'Fecha de retiro', recibe: 'Recibe el buzón', jefatura: 'Jefatura', imei: 'IMEI', username: 'Usuario', perfil: 'Perfil', motivo: 'Motivo', fecha: 'Fecha' }; %>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h2 class="mb-0">Solicitud #<%= r.id %>: <%= TYPE_LABELS[r.request_type] || r.request_type %></h2>
+    <span class="badge <%= st.badge %>"><%= st.label || r.status %></span>
+    <span class="text-muted small ms-1"><%= MODULES[r.module] %></span>
+  </div>
+  <a href="/solicitudes" class="btn btn-outline-secondary">Volver</a>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card p-3 mb-3">
+      <table class="table table-sm mb-0">
+        <tr><th style="width: 160px">Solicitado por</th><td><strong><%= r.requested_by_name %></strong>
+          <div class="small text-muted"><%= [r.requested_by_cargo, r.requested_by_area].filter(Boolean).join(', ') %></div></td></tr>
+        <tr><th>Fecha</th><td><%= String(r.request_date).slice(0, 10) %></td></tr>
+        <tr><th>Referencia</th><td><%= r.request_ref || '—' %></td></tr>
+        <tr><th>Para</th><td><% if (r.entity_id && ENTITY_URL[r.module]) { %><a href="<%= ENTITY_URL[r.module] + r.entity_id %>"><%= r.beneficiary_name || 'ver' %></a><% } else { %><%= r.beneficiary_name || '—' %><% } %></td></tr>
+        <% Object.keys(r.details).filter(function (k) { return r.details[k] !== '' && r.details[k] !== null && r.details[k] !== false; }).forEach(function (k) { %>
+          <tr><th><%= LBL[k] || k %></th><td><%= r.details[k] === true ? 'Sí' : r.details[k] %></td></tr>
+        <% }); %>
+        <tr><th>Registrada por</th><td><%= r.created_by_name || '—' %> <span class="small text-muted"><%= String(r.created_at).slice(0, 16) %></span></td></tr>
+        <% if (r.decided_at) { %><tr><th><%= r.status === 'rechazada' ? 'Rechazada' : 'Aprobada' %> por</th><td><%= r.decided_by_name %> <span class="small text-muted"><%= String(r.decided_at).slice(0, 16) %></span></td></tr><% } %>
+        <% if (r.completed_at) { %><tr><th>Completada</th><td><%= String(r.completed_at).slice(0, 16) %></td></tr><% } %>
+        <% if (r.notes) { %><tr><th>Notas</th><td style="white-space: pre-line"><%= r.notes %></td></tr><% } %>
+      </table>
+    </div>
+
+    <% if (canAct && r.status === 'pendiente') { %>
+      <form method="post" action="/solicitudes/<%= r.id %>/aprobar" class="card p-3 mb-3">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <h6>Aprobar o rechazar</h6>
+        <label class="form-label small mb-0" for="reason">Motivo (obligatorio para rechazar)</label>
+        <input class="form-control form-control-sm mb-2" id="reason" name="reason" maxlength="500">
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-success" name="decision" value="aprobar">Aprobar</button>
+          <button class="btn btn-sm btn-outline-danger" name="decision" value="rechazar">Rechazar</button>
+        </div>
+      </form>
+    <% } %>
+    <% if (canAct && ['pendiente', 'aprobada', 'en_proceso'].includes(r.status)) { %>
+      <form method="post" action="/solicitudes/<%= r.id %>/cancelar" class="d-flex gap-2" onsubmit="return confirm('¿Cancelar la solicitud?');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <label class="visually-hidden" for="cancel_reason">Motivo de la cancelación</label>
+        <input class="form-control form-control-sm" id="cancel_reason" name="reason" placeholder="Motivo de la cancelación" maxlength="400">
+        <button class="btn btn-sm btn-outline-secondary text-nowrap">Cancelar solicitud</button>
+      </form>
+    <% } %>
+  </div>
+
+  <div class="col-lg-7">
+    <% if (r.tasks.length) { %>
+      <div class="card p-3" id="pasos">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="mb-0">Pasos</h5>
+          <span class="small text-muted"><%= done %> de <%= r.tasks.length %></span>
+        </div>
+        <div class="progress mb-3" role="progressbar" aria-label="Avance de la solicitud" aria-valuenow="<%= pct %>" aria-valuemin="0" aria-valuemax="100" style="height: .6rem">
+          <div class="progress-bar <%= r.status === 'completada' ? 'bg-success' : '' %>" style="width: <%= pct %>%"></div>
+        </div>
+        <% if (r.status === 'pendiente') { %><div class="alert alert-light border small py-2">Se marcan los pasos después de aprobar la solicitud.</div><% } %>
+        <ol class="list-unstyled mb-0">
+          <% r.tasks.forEach(function (t) { %>
+            <li class="border rounded p-2 mb-2 <%= t.done_at ? 'bg-body-tertiary' : '' %>">
+              <div class="d-flex gap-2">
+                <i class="bi <%= t.done_at ? 'bi-check-circle-fill text-success' : 'bi-circle text-muted' %> mt-1"></i>
+                <div class="flex-grow-1">
+                  <div><%= t.label %> <% if (!t.required) { %><span class="badge text-bg-light border">opcional</span><% } %></div>
+                  <% if (t.done_at) { %>
+                    <div class="small text-muted"><%= t.done_by_name %> · <%= String(t.done_at).slice(0, 16) %><%= t.evidence ? ' · ' : '' %><% if (t.evidence) { %><strong class="text-body"><%= t.evidence %></strong><% } %></div>
+                  <% } else if (canAct && inCourse) { %>
+                    <form method="post" action="/solicitudes/<%= r.id %>/pasos/<%= t.id %>" class="d-flex flex-wrap gap-2 mt-1">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <% if (t.evidence_label) { %>
+                        <label class="visually-hidden" for="ev_<%= t.id %>"><%= t.evidence_label %></label>
+                        <input class="form-control form-control-sm" style="max-width: 340px" id="ev_<%= t.id %>" name="evidence" maxlength="500" required
+                          placeholder="<%= t.evidence_label %>" <%= ['reasignar', 'onedrive'].includes(t.task_key) ? 'list=dir_empleados' : '' %>
+                          value="<%= t.task_key === 'crear_usuario' ? (r.details.correo || '') : (t.task_key === 'asignar_licencias' || t.task_key === 'cambiar_licencias' ? (r.details.licencias || '') : (t.task_key === 'reasignar' ? (r.details.recibe || '') : (t.task_key === 'renombrar' && r.details.correo_nuevo ? r.details.correo_nuevo : ''))) %>">
+                      <% } %>
+                      <button class="btn btn-sm btn-outline-success">Marcar hecho</button>
+                    </form>
+                  <% } %>
+                </div>
+              </div>
+            </li>
+          <% }); %>
+        </ol>
+        <datalist id="dir_empleados">
+          <% (typeof requesterOptions !== 'undefined' ? requesterOptions : []).forEach(function (e) { %><option value="<%= e.label %>"></option><% }); %>
+        </datalist>
+        <% if (canAct && inCourse) { %>
+          <form method="post" action="/solicitudes/<%= r.id %>/completar" class="mt-2" onsubmit="return confirm('¿Completar la solicitud? Se actualiza la cuenta con la constancia de cada cambio.');">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn-primary" <%= pending.length ? 'disabled' : '' %>>Completar solicitud</button>
+            <% if (pending.length) { %><span class="small text-muted ms-2">Faltan <%= pending.length %> paso(s) obligatorio(s).</span><% } %>
+          </form>
+        <% } %>
+      </div>
+    <% } else { %>
+      <div class="card p-3 text-muted small">Solicitud registrada ya cumplida (sin pasos): se asignó o creó en el momento.</div>
+    <% } %>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

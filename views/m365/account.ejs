@@ -1,0 +1,86 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h2 class="mb-0"><%= item.display_name %></h2>
+    <span class="font-monospace"><%= item.upn %></span>
+    <span class="badge <%= STATUS[item.status].badge %> ms-1"><%= STATUS[item.status].label %></span>
+    <% if (item.is_manager) { %><span class="badge text-bg-info">jefatura</span><% } %>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/m365" class="btn btn-outline-secondary">Volver</a>
+    <% if (currentUser.role !== 'lector' && item.status !== 'eliminada') { %>
+      <a href="/m365/cuentas/<%= item.id %>/editar" class="btn btn-outline-primary"><i class="bi bi-pencil"></i> Editar datos</a>
+    <% } %>
+  </div>
+</div>
+
+<% if (item.diffs.length) { %>
+  <div class="alert alert-warning"><strong>Diferencias con el tenant:</strong> <%= item.diffs.join('; ') %>.</div>
+<% } %>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card p-3 mb-3">
+      <table class="table table-sm mb-0">
+        <tr><th style="width: 190px">Tipo</th><td><%= ACCOUNT_TYPES[item.account_type] %></td></tr>
+        <tr><th>Cargo</th><td><%= item.cargo || '—' %></td></tr>
+        <tr><th>Área / Sede</th><td><%= [item.area, item.sede].filter(Boolean).join(' · ') || '—' %></td></tr>
+        <tr><th>Empleado</th><td><%= item.employee_dni ? 'DNI ' + item.employee_dni : 'Sin vincular' %></td></tr>
+        <tr><th>Licencias registradas</th><td><%= item.licenses || 'Ninguna' %></td></tr>
+        <tr><th>En el tenant</th><td>
+          <% if (item.tenant_seen_at) { %>
+            <%= item.tenant_enabled ? 'Puede iniciar sesión' : 'Inicio de sesión bloqueado' %> · <%= item.tenant_licenses || 'sin licencias' %>
+            <div class="small text-muted">leído <%= String(item.tenant_seen_at).slice(0, 16) %></div>
+          <% } else { %><span class="text-muted">Todavía no se leyó</span><% } %></td></tr>
+        <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
+      </table>
+    </div>
+
+    <% if (currentUser.role !== 'lector' && item.status !== 'eliminada') { %>
+      <div class="card p-3 mb-3">
+        <h6>Nueva solicitud para esta cuenta</h6>
+        <div class="d-flex flex-wrap gap-2">
+          <% Object.keys(REQUEST_TYPES).filter(function (k) { return k !== 'alta'; }).forEach(function (k) { %>
+            <a class="btn btn-sm <%= k === 'baja' || k === 'eliminacion' ? 'btn-outline-danger' : 'btn-outline-primary' %>" href="/m365/solicitudes/nueva?tipo=<%= k %>&cuenta=<%= item.id %>"><%= REQUEST_TYPES[k] %></a>
+          <% }); %>
+        </div>
+        <% if (item.is_manager) { %><div class="form-text">Es jefatura: la baja incluye respaldo PST, buzón compartido y a quién se reasigna el buzón.</div><% } %>
+      </div>
+    <% } %>
+
+    <div class="card p-3">
+      <h6>Solicitudes</h6>
+      <% if (!requests.length) { %><p class="text-muted small mb-0">Sin solicitudes.</p><% } else { %>
+        <ul class="list-unstyled small mb-0">
+          <% requests.forEach(function (r) { %>
+            <li class="mb-1"><a href="/solicitudes/<%= r.id %>">#<%= r.id %> <%= REQUEST_TYPES[r.request_type] || r.request_type %></a>
+              <span class="badge <%= (RSTATUS[r.status] || {}).badge %>"><%= (RSTATUS[r.status] || {}).label %></span>
+              — <%= r.requested_by_name %>, <%= String(r.request_date).slice(0, 10) %></li>
+          <% }); %>
+        </ul>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card p-3">
+      <h6>Constancia de cambios</h6>
+      <% if (!item.events.length) { %><p class="text-muted small mb-0">Sin cambios registrados.</p><% } else { %>
+        <ol class="list-unstyled mb-0">
+          <% item.events.forEach(function (e) { %>
+            <li class="border-start border-3 ps-2 mb-2 <%= ['baja', 'eliminacion'].includes(e.event_type) ? 'border-danger' : (e.event_type === 'reasignacion' || e.event_type === 'renombre' ? 'border-primary' : 'border-secondary') %>">
+              <div class="small text-muted"><%= String(e.created_at).slice(0, 16) %> · <%= e.user_name || 'sistema' %><%= e.request_id ? ' · solicitud #' + e.request_id : '' %></div>
+              <strong><%= EVENT_LABELS[e.event_type] || e.event_type %></strong>
+              <% if (e.from_value || e.to_value) { %>: <span class="font-monospace small"><%= e.from_value || '' %><%= e.from_value && e.to_value ? ' → ' : '' %><%= e.to_value || '' %></span><% } %>
+              <% if (e.related_name && e.event_type === 'reasignacion') { %><div class="small">Recibe: <strong><%= e.related_name %></strong></div><% } %>
+              <% if (e.notes) { %><div class="small text-muted"><%= e.notes %></div><% } %>
+            </li>
+          <% }); %>
+        </ol>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

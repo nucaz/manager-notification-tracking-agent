@@ -117,7 +117,7 @@
         <p class="text-muted mb-0">Sin asignaciones anteriores.</p>
       <% } else { %>
         <table class="table table-sm">
-          <thead><tr><th>Usuario</th><th>DNI</th><th>Cargo</th><th>Área / Sede</th><th>Desde</th><th>Hasta</th><th>Cómo terminó</th><th>Antes de la asignación</th><th>Durante</th><th>Observación</th></tr></thead>
+          <thead><tr><th>Usuario</th><th>DNI</th><th>Cargo</th><th>Área / Sede</th><th>Solicitado por</th><th>Desde</th><th>Hasta</th><th>Cómo terminó</th><th>Antes de la asignación</th><th>Durante</th><th>Observación</th></tr></thead>
           <tbody>
             <% history.forEach(function(h) { %>
               <tr>
@@ -125,6 +125,7 @@
                 <td><%= h.dni || '—' %></td>
                 <td><%= h.cargo || '—' %><%= h.turno ? ' · ' + h.turno : '' %></td>
                 <td><%= h.lugar || 'Sin dato' %></td>
+                <td class="small"><% if (h.requested_by_name) { %><%= h.requested_by_name %><%= h.requested_by_cargo ? ' (' + h.requested_by_cargo + ')' : '' %><div class="text-muted"><%= h.request_date %><%= h.request_ref ? ' · ' + h.request_ref : '' %></div><% } else { %><span class="text-muted">Sin registro</span><% } %></td>
                 <td class="text-nowrap"><%= h.assigned_date || '—' %></td>
                 <td class="text-nowrap"><%= h.returned_date %></td>
                 <td><%= h.termino || '—' %></td>
@@ -246,6 +247,12 @@
           <tr><th>Turno</th><td><%= currentAssignment.turno || '—' %></td></tr>
           <tr><th>Fecha de entrega</th><td><%= currentAssignment.assigned_date || '—' %></td></tr>
           <tr><th>Observación</th><td><%= currentAssignment.observacion || '—' %></td></tr>
+          <tr><th>Solicitado por</th><td>
+            <% if (currentAssignment.requested_by_name) { %>
+              <%= currentAssignment.requested_by_name %><%= currentAssignment.requested_by_cargo ? ' (' + currentAssignment.requested_by_cargo + ')' : '' %>
+              <div class="small text-muted"><%= currentAssignment.requested_by_area || '' %><%= currentAssignment.requested_by_area ? ' · ' : '' %><%= currentAssignment.request_date %><%= currentAssignment.request_ref ? ' · Ref. ' + currentAssignment.request_ref : '' %></div>
+            <% } else { %><span class="text-muted">Sin registro (complételo con "Corregir datos del usuario")</span><% } %>
+          </td></tr>
         </table>
       <% } else { %>
         <p class="text-muted">Sin asignar (en stock).</p>
@@ -306,6 +313,9 @@
                   <label class="form-label small">Observación</label>
                   <input type="text" name="observacion" class="form-control form-control-sm" value="<%= currentAssignment.observacion || '' %>">
                 </div>
+                <%- include('../partials/requester_fields', { requesterOptions: requesterOptions, prefix: 'req_', required: false,
+                      value: { name: currentAssignment.requested_by_name, cargo: currentAssignment.requested_by_cargo, area: currentAssignment.requested_by_area,
+                               date: currentAssignment.request_date, ref: currentAssignment.request_ref } }) %>
                 <button type="submit" class="btn btn-sm btn-primary">Guardar corrección</button>
               </form>
             </div>
@@ -395,6 +405,7 @@
               <label class="form-label small">Observación</label>
               <input type="text" name="observacion" class="form-control form-control-sm">
             </div>
+            <%- include('../partials/requester_fields', { requesterOptions: requesterOptions, prefix: 'req_', required: true, value: {} }) %>
             <button type="submit" class="btn btn-sm btn-primary"><%= currentAssignment ? 'Confirmar reasignación' : 'Confirmar asignación' %></button>
           </form>
         </div>

@@ -1,0 +1,97 @@
+<%- include('../partials/head', { title: title }) %>
+<% const qs = ['q', 'status', 'area'].filter(function (k) { return filters[k]; }).map(function (k) { return (k === 'status' ? 'estado' : k) + '=' + encodeURIComponent(filters[k]); }).join('&'); %>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h2 class="mb-0">Cuentas de Microsoft 365</h2>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/solicitudes?modulo=m365&estado=abiertas" class="btn btn-outline-primary">Solicitudes abiertas <span class="badge text-bg-primary"><%= openRequests %></span></a>
+    <a href="/m365/exportar.xlsx<%= qs ? '?' + qs : '' %>" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-excel"></i> Exportar</a>
+    <% if (currentUser.role !== 'lector') { %>
+      <a href="/m365/cuentas/nueva" class="btn btn-outline-secondary">Registrar cuenta existente</a>
+      <a href="/m365/solicitudes/nueva?tipo=alta" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nueva solicitud</a>
+    <% } %>
+  </div>
+</div>
+
+<div class="alert alert-light border small d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div>
+    Los cambios en el tenant se hacen en el centro de administración de Microsoft 365, Exchange o Purview; aquí se registra
+    <strong>quién lo pidió, cada paso y su evidencia</strong>. <% if (configured) { %>
+      Última lectura del tenant: <strong><%= lastSync || 'nunca' %></strong><%= lastResult ? ' (' + lastResult + ')' : '' %>.
+    <% } else { %>
+      <strong>Sin conexión de lectura al tenant</strong>: no se comparan cuentas ni licencias.
+    <% } %>
+  </div>
+  <% if (currentUser.role === 'admin') { %>
+    <div class="d-flex gap-2">
+      <% if (configured) { %>
+        <form method="post" action="/m365/sincronizar"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-repeat"></i> Leer el tenant ahora</button></form>
+      <% } %>
+      <a href="/m365/configuracion" class="btn btn-sm btn-outline-secondary"><i class="bi bi-gear"></i> Conexión</a>
+    </div>
+  <% } %>
+</div>
+
+<% if (skus.length) { %>
+  <div class="card p-3 mb-3">
+    <h6 class="mb-2">Licencias del tenant</h6>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0" style="font-variant-numeric: tabular-nums">
+        <thead><tr><th>Licencia</th><th class="text-end">Compradas</th><th class="text-end">Asignadas</th><th class="text-end">Disponibles</th></tr></thead>
+        <tbody>
+          <% skus.forEach(function (s) { var free = s.prepaid - s.consumed; %>
+            <tr><td><%= s.friendly_name || s.part_number %> <span class="text-muted small font-monospace"><%= s.friendly_name ? s.part_number : '' %></span></td>
+              <td class="text-end"><%= s.prepaid %></td><td class="text-end"><%= s.consumed %></td>
+              <td class="text-end <%= free <= 0 ? 'text-danger fw-bold' : '' %>"><%= free %></td></tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<% } %>
+
+<form class="row g-2 mb-3 align-items-center" method="get">
+  <div class="col-md-4"><label class="visually-hidden" for="f_q">Buscar</label>
+    <input type="text" name="q" id="f_q" value="<%= filters.q %>" class="form-control" placeholder="Correo, nombre o cargo..."></div>
+  <div class="col-md-2"><label class="visually-hidden" for="f_estado">Estado</label>
+    <select name="estado" id="f_estado" class="form-select"><option value="">Todos los estados</option>
+      <% Object.keys(STATUS).forEach(function (k) { %><option value="<%= k %>" <%= filters.status === k ? 'selected' : '' %>><%= STATUS[k].label %></option><% }); %></select></div>
+  <div class="col-md-2"><label class="visually-hidden" for="f_area">Área</label>
+    <select name="area" id="f_area" class="form-select"><option value="">Todas las áreas</option>
+      <% areas.forEach(function (a) { %><option <%= filters.area === a ? 'selected' : '' %>><%= a %></option><% }); %></select></div>
+  <div class="col-md-2"><div class="form-check">
+    <input class="form-check-input" type="checkbox" name="diferencias" value="1" id="f_diff" <%= filters.diff ? 'checked' : '' %>>
+    <label class="form-check-label" for="f_diff">Solo con diferencias <span class="badge text-bg-warning"><%= diffCount %></span></label></div></div>
+  <div class="col-md-2"><button class="btn btn-outline-secondary w-100" type="submit">Filtrar</button></div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Cuenta</th><th>Cargo / Área</th><th>Estado</th><th>Licencias</th><th>Tenant</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (a) { %>
+          <tr>
+            <td><a href="/m365/cuentas/<%= a.id %>"><%= a.display_name %></a>
+              <% if (a.is_manager) { %><span class="badge text-bg-info ms-1" title="Al retirarse: PST y buzón compartido">jefatura</span><% } %>
+              <% if (a.account_type !== 'usuario') { %><span class="badge text-bg-light border ms-1"><%= ACCOUNT_TYPES[a.account_type] %></span><% } %>
+              <div class="small text-muted font-monospace"><%= a.upn %></div></td>
+            <td class="small"><%= a.cargo || '—' %><div class="text-muted"><%= [a.area, a.sede].filter(Boolean).join(' · ') %></div></td>
+            <td><span class="badge <%= STATUS[a.status].badge %>"><%= STATUS[a.status].label %></span></td>
+            <td class="small"><%= a.licenses || '—' %></td>
+            <td class="small">
+              <% if (a.diffs.length) { %><span class="text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> <%= a.diffs.join('; ') %></span>
+              <% } else if (a.tenant_seen_at) { %><span class="text-success"><i class="bi bi-check2"></i> coincide</span>
+              <% } else { %><span class="text-muted">sin leer</span><% } %></td>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %>
+          <tr><td colspan="5" class="text-center text-muted py-4">No hay cuentas con esos filtros. Configure la lectura del tenant para traer las cuentas existentes, o regístrelas a mano.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

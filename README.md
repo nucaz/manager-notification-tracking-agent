@@ -462,6 +462,46 @@ automatización, es una ampliación natural sobre esta misma base: el
 `src/services/invoiceExtractor.js` ya queda listo para reutilizarse detrás de
 cualquier origen de archivos.
 
+### 5.1 Solicitudes, usuarios de Clinic y cuentas de Microsoft 365
+
+**Solicitudes** (menú *Solicitudes*): quién pidió qué, para quién y cuándo,
+en todos los módulos. El solicitante (jefe o gerente) se elige del
+directorio de empleados (queda vinculado y se completan su cargo y área) o
+se escribe si no está; se guarda como foto con la fecha y una referencia
+(ticket, correo, memo). Buscando el nombre del jefe se ve todo lo que pidió.
+
+- **Celulares**: asignar o reasignar pide "Solicitado por"; aparece en la
+  asignación actual, en el historial y en Auditoría ("Corregir datos del
+  usuario" también lo corrige).
+- **Usuarios de Clinic** (menú *Usuarios de Clinic*): inventario con perfil,
+  sede y área (catálogos; *Perfiles de Clinic* es un catálogo nuevo),
+  supervisor, aprobación, alta y baja con quién las pidió. **Importar
+  listado de Clinic** actualiza por usuario, agrega al catálogo los perfiles
+  nuevos y avisa si un usuario dado de baja aquí sigue ACTIVO en Clinic. La
+  contraseña de Clinic no se guarda aquí.
+- **Microsoft 365** (menú *Microsoft 365*): inventario de cuentas y
+  solicitudes con flujo: *pendiente → aprobada → en proceso → completada*.
+  Cada tipo genera sus pasos (alta, licencias, bloqueo, desbloqueo,
+  renombre, baja por retiro, eliminación) y cada paso se marca con su
+  evidencia (correo creado, licencias, ubicación del PST, quién recibe el
+  buzón, correo nuevo). En cargos de **jefatura** (gerente, jefe,
+  director) la baja exige **respaldo PST** y **convertir en buzón
+  compartido**. Al completar, la cuenta se actualiza y queda la
+  **constancia** de cada cambio (renombre de → a, reasignación del buzón y
+  a quién, PST, baja); una cuenta eliminada no se borra del inventario.
+- **La aplicación no escribe en el tenant**: los cambios se hacen en el
+  centro de administración de Microsoft 365, Exchange o Purview (PST y
+  buzón compartido no existen en Microsoft Graph). Opcionalmente
+  (*Microsoft 365 > Conexión*, solo admin) lee el tenant con una aplicación
+  de Entra ID con permisos **de solo lectura** `User.Read.All` y
+  `Organization.Read.All`: trae las cuentas existentes, si pueden iniciar
+  sesión, sus licencias y las licencias compradas/usadas, y marca las
+  **diferencias** con lo registrado (ej. "desactivada aquí, puede iniciar
+  sesión en el tenant"). Se lee todos los días a las 06:20. El secreto se
+  guarda cifrado.
+
+Prueba: `E2E_PERMITIR=1 node tests/solicitudes.e2e.js` (Graph simulado).
+
 ## 6. Roles de usuario
 
 - **admin**: acceso total, incluye Usuarios, Configuración, Permisos y

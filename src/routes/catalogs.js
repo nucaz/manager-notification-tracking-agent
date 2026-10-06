@@ -15,6 +15,8 @@ const TYPES = [
   { value: 'marca', label: 'Marcas' },
   { value: 'modelo', label: 'Modelos (por marca)' },
   { value: 'operadora', label: 'Operadoras' },
+  { value: 'perfil_clinic', label: 'Perfiles de Clinic' },
+  { value: 'licencia_m365', label: 'Licencias de Microsoft 365' },
 ];
 
 router.get('/', async (req, res, next) => {

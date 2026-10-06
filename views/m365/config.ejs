@@ -1,0 +1,46 @@
+<%- include('../partials/head', { title: title }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Microsoft 365: conexión de lectura</h2>
+  <a href="/m365" class="btn btn-outline-secondary">Volver</a>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <form method="post" action="/m365/configuracion" class="card p-3" autocomplete="off">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="mb-2"><label class="form-label" for="m365_tenant_id">Tenant (dominio o ID del directorio)</label>
+        <input class="form-control" id="m365_tenant_id" name="m365_tenant_id" value="<%= cfg.tenant %>" placeholder="empresa.onmicrosoft.com"></div>
+      <div class="mb-2"><label class="form-label" for="m365_client_id">ID de aplicación (cliente)</label>
+        <input class="form-control font-monospace" id="m365_client_id" name="m365_client_id" value="<%= cfg.clientId %>" placeholder="00000000-0000-0000-0000-000000000000"></div>
+      <div class="mb-3"><label class="form-label" for="m365_client_secret">Valor del secreto de cliente</label>
+        <input class="form-control" type="password" id="m365_client_secret" name="m365_client_secret" autocomplete="new-password"
+          placeholder="<%= cfg.secret ? 'Configurado - dejar vacío para conservarlo' : '' %>">
+        <div class="form-text">Se guarda cifrado y no se vuelve a mostrar. Anote cuándo vence: al vencer, la lectura falla hasta cargar uno nuevo.</div></div>
+      <div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Guardar</button></div>
+    </form>
+    <% if (cfg.tenant && cfg.clientId && cfg.secret) { %>
+      <form method="post" action="/m365/sincronizar" class="mt-2">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="volver" value="config">
+        <button class="btn btn-outline-primary"><i class="bi bi-arrow-repeat"></i> Leer el tenant ahora</button>
+        <span class="small text-muted ms-2">Última: <%= cfg.lastSync || 'nunca' %><%= cfg.lastResult ? ' — ' + cfg.lastResult : '' %></span>
+      </form>
+    <% } %>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-3 small">
+      <h6>Cómo crear la aplicación (una vez, un administrador del tenant)</h6>
+      <ol class="mb-2">
+        <li>Portal de Azure &gt; <strong>Microsoft Entra ID</strong> &gt; Registros de aplicaciones &gt; Nuevo registro (nombre: "Gestor - lectura M365").</li>
+        <li>Permisos de API &gt; Microsoft Graph &gt; <strong>Permisos de aplicación</strong>: <code>User.Read.All</code> y <code>Organization.Read.All</code>. Solo lectura.</li>
+        <li><strong>Conceder consentimiento de administrador</strong>.</li>
+        <li>Certificados y secretos &gt; Nuevo secreto de cliente: copie el <strong>valor</strong> (no el ID).</li>
+      </ol>
+      <p class="mb-0">Con esos permisos la aplicación solo puede leer usuarios, si están habilitados, sus licencias y las licencias compradas.
+        No puede crear, bloquear ni borrar nada: los cambios se siguen haciendo en el portal y aquí se registra cada paso.
+        La lectura corre sola todos los días a las 06:20.</p>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>
