@@ -34,6 +34,16 @@ const BUCKETS = [
   { key: 'mas365', label: 'Más de 1 año', tone: 'bad' },
   { key: 'nunca', label: 'Nunca entró', tone: 'bad' },
 ];
+// Tramo de una fecha de ultima conexion ('YYYY-MM-DD[ HH:MM:SS]' o Date),
+// para quien calcula en JS (Microsoft 365, reportes). null -> 'nunca'.
+function bucketOf(last) {
+  if (!last) return 'nunca';
+  const t = last instanceof Date ? last.getTime() : new Date(String(last).replace(' ', 'T').slice(0, 19)).getTime();
+  const days = (Date.now() - t) / 86400000;
+  const hit = [[30, 'd30'], [90, 'd90'], [180, 'd180'], [365, 'd365']].find(([n]) => days <= n);
+  return hit ? hit[1] : 'mas365';
+}
+const bucketLabel = (key) => (BUCKETS.find((b) => b.key === key) || {}).label || '';
 const BUCKET_SQL = `CASE WHEN o.last_login_at IS NULL THEN 'nunca'
   WHEN o.last_login_at >= NOW() - INTERVAL 30 DAY THEN 'd30'
   WHEN o.last_login_at >= NOW() - INTERVAL 90 DAY THEN 'd90'
@@ -553,7 +563,7 @@ async function getImport(id) {
 }
 
 module.exports = {
-  STATUS, APPROVAL, EVENTS, ALERTS, SORTS, IDLE_DAYS, PURGE_DAYS, BUCKETS, PER_PAGE, USERNAME, EMAIL,
+  STATUS, APPROVAL, EVENTS, ALERTS, SORTS, IDLE_DAYS, PURGE_DAYS, BUCKETS, bucketOf, bucketLabel, PER_PAGE, USERNAME, EMAIL,
   clean, fold, normUsername, intOrNull,
   areas, generalSedes, profiles, sedes, saveCatalog,
   filtersOf, list, counts, bySede, connectionDashboard, get, events, addEvent, supervisorOptions, validate, create, update, setBaja, reactivate,

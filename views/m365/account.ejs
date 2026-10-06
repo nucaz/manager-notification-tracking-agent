@@ -33,6 +33,20 @@
             <%= item.tenant_enabled ? 'Puede iniciar sesión' : 'Inicio de sesión bloqueado' %> · <%= item.tenant_licenses || 'sin licencias' %>
             <div class="small text-muted">leído <%= String(item.tenant_seen_at).slice(0, 16) %></div>
           <% } else { %><span class="text-muted">Todavía no se leyó</span><% } %></td></tr>
+        <tr><th>Última conexión</th><td>
+          <% if (!item.activity_read_at) { %><span class="text-muted">Todavía no se leyó</span>
+          <% } else { %>
+            <strong><%= item.last_seen ? String(item.last_seen).slice(0, item.last_seen.length > 10 ? 16 : 10) : 'Sin actividad registrada' %></strong>
+            <span class="badge text-bg-light border ms-1"><%= item.conexion_label %></span>
+            <div class="small text-muted">
+              <% if (item.last_signin_at) { %>Inicio de sesión: <%= String(item.last_signin_at).slice(0, 16) %><% if (item.last_interactive_at) { %> (de la persona: <%= String(item.last_interactive_at).slice(0, 16) %>)<% } %><br><% } %>
+              <% [['exchange_date', 'Correo'], ['teams_date', 'Teams'], ['onedrive_date', 'OneDrive'], ['sharepoint_date', 'SharePoint']].forEach(function (s) { if (item[s[0]]) { %>
+                <%= s[1] %>: <%= String(item[s[0]]).slice(0, 10) %> ·
+              <% } }); %>
+              <% if (item.report_date) { %>informe al <%= String(item.report_date).slice(0, 10) %><% } %>
+              · leído <%= String(item.activity_read_at).slice(0, 16) %>
+            </div>
+          <% } %></td></tr>
         <tr><th>Notas</th><td><%= item.notes || '—' %></td></tr>
       </table>
     </div>

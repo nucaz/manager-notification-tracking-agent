@@ -7,10 +7,16 @@
 // (usuarios, si estan habilitados y sus licencias; licencias compradas y
 // usadas) y mostrar diferencias con lo registrado. Permisos de aplicacion
 // necesarios: User.Read.All y Organization.Read.All (solo lectura).
+//
+// Ultima conexion (opcional, readActivity): Reports.Read.All para el informe
+// de uso de Microsoft 365 (ultima actividad en correo, Teams, OneDrive y
+// SharePoint; sin licencia premium) y, si el tenant tiene Microsoft Entra ID
+// P1 o P2, AuditLog.Read.All para el inicio de sesion exacto.
 const axios = require('axios');
 const pool = require('../db/pool');
 const settingsService = require('./settingsService');
 const requestService = require('./requestService');
+const clinicService = require('./clinicService');
 
 const LOGIN_BASE = process.env.MS_LOGIN_BASE_URL || 'https://login.microsoftonline.com';
 const GRAPH_BASE = process.env.GRAPH_BASE_URL || 'https://graph.microsoft.com';
@@ -106,8 +112,24 @@ async function event(accountId, type, { from = null, to = null, relatedEmployeeI
   );
 }
 
-async function list({ q, status, area, diff } = {}) {
-  let sql = 'SELECT a.* FROM m365_accounts a WHERE 1=1';
+// Ultima conexion conocida: el inicio de sesion si se tiene; si no, la
+// ultima actividad del informe de uso (solo fecha).
+function lastSeen(a) {
+  const signin = a.last_signin_at ? String(a.last_signin_at).slice(0, 19) : '';
+  const act = a.last_activity_date ? String(a.last_activity_date).slice(0, 10) : '';
+  return (signin > act ? signin : act) || null;
+}
+function withActivity(a) {
+  const seen = lastSeen(a);
+  const read = !!a.activity_read_at;
+  const bucket = read ? clinicService.bucketOf(seen) : '';
+  return { ...a, last_seen: seen, conexion: bucket, conexion_label: read ? clinicService.bucketLabel(bucket) : 'Sin leer' };
+}
+
+async function list({ q, status, area, diff, conexion } = {}) {
+  let sql = `SELECT a.*, act.last_signin_at, act.last_interactive_at, act.last_activity_date, act.exchange_date, act.teams_date,
+                    act.onedrive_date, act.sharepoint_date, act.report_date, act.source AS activity_source, act.read_at AS activity_read_at
+             FROM m365_accounts a LEFT JOIN m365_account_activity act ON act.account_id = a.id WHERE 1=1`;
   const params = [];
   if (status && STATUS[status]) { sql += ' AND a.status = ?'; params.push(status); }
   if (area) { sql += ' AND a.area = ?'; params.push(area); }
@@ -115,8 +137,11 @@ async function list({ q, status, area, diff } = {}) {
   sql += " ORDER BY a.status = 'eliminada', a.display_name";
   const [rows] = await pool.query(sql, params);
   const lastSync = await settingsService.get('m365_last_sync');
-  const out = rows.map((a) => ({ ...a, diffs: differences(a, lastSync) }));
-  return diff ? out.filter((a) => a.diffs.length) : out;
+  let out = rows.map((a) => withActivity({ ...a, diffs: differences(a, lastSync) }));
+  if (diff) out = out.filter((a) => a.diffs.length);
+  const tramos = String(conexion || '').split(',').filter(Boolean);
+  if (tramos.length) out = out.filter((a) => tramos.includes(a.conexion));
+  return out;
 }
 
 // Diferencias entre lo registrado y lo que dijo el tenant en la ultima lectura.
@@ -136,9 +161,13 @@ function differences(a, lastSync) {
 
 async function get(id) {
   const [[a]] = await pool.query(
-    'SELECT a.*, e.dni AS employee_dni FROM m365_accounts a LEFT JOIN employees e ON e.id = a.employee_id WHERE a.id = ?', [id]
+    `SELECT a.*, e.dni AS employee_dni, act.last_signin_at, act.last_interactive_at, act.last_activity_date, act.exchange_date, act.teams_date,
+            act.onedrive_date, act.sharepoint_date, act.report_date, act.source AS activity_source, act.read_at AS activity_read_at
+     FROM m365_accounts a LEFT JOIN employees e ON e.id = a.employee_id LEFT JOIN m365_account_activity act ON act.account_id = a.id
+     WHERE a.id = ?`, [id]
   );
   if (!a) return null;
+  Object.assign(a, withActivity(a));
   const [events] = await pool.query(
     `SELECT ev.*, u.full_name AS user_name FROM m365_account_events ev LEFT JOIN users u ON u.id = ev.user_id
      WHERE ev.account_id = ? ORDER BY ev.created_at DESC, ev.id DESC`, [id]
@@ -350,6 +379,141 @@ async function graphGetAll(tok, path) {
   return out;
 }
 
+// ------------------------------ ultima conexion ------------------------------
+// Pide a Graph sin lanzar: { status, data, code }.
+async function graphRaw(tok, path, opts = {}) {
+  try {
+    const r = await axios.get(path.startsWith('http') ? path : `${GRAPH_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${tok}` }, timeout: 60000, maxRedirects: 5, ...opts,
+    });
+    return { status: r.status, data: r.data };
+  } catch (err) {
+    const data = err.response && err.response.data;
+    let code = '';
+    try { code = (typeof data === 'string' ? JSON.parse(data) : data).error.code || ''; } catch (_) { code = ''; }
+    return { status: (err.response && err.response.status) || 0, data, code, message: err.message };
+  }
+}
+
+// CSV del informe de Graph (con BOM y comillas).
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  const t = String(text || '').replace(/^\uFEFF/, '');
+  for (let i = 0; i < t.length; i += 1) {
+    const ch = t[i];
+    if (quoted) {
+      if (ch === '"' && t[i + 1] === '"') { cell += '"'; i += 1; } else if (ch === '"') quoted = false; else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') { row.push(cell); cell = ''; } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && t[i + 1] === '\n') i += 1;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  const [head, ...body] = rows.filter((r) => r.some((c) => c !== ''));
+  return (body || []).map((r) => Object.fromEntries((head || []).map((h, i) => [h.trim(), (r[i] || '').trim()])));
+}
+
+const sqlDateTime = (iso) => (iso ? String(iso).replace('T', ' ').replace(/Z$|\.\d+.*$/, '').slice(0, 19) : null);
+const maxOf = (list) => list.filter(Boolean).sort().pop() || null;
+
+// Lee la ultima conexion de cada cuenta registrada. No falla la lectura del
+// tenant: lo que no se pudo leer queda explicado en notes.
+async function readActivity(tok) {
+  const [accounts] = await pool.query('SELECT id, upn, entra_id FROM m365_accounts');
+  const byEntra = new Map(accounts.filter((a) => a.entra_id).map((a) => [a.entra_id, a]));
+  const byUpn = new Map(accounts.map((a) => [String(a.upn).toLowerCase(), a]));
+  const data = new Map();
+  const put = (id, fields) => data.set(id, { ...(data.get(id) || {}), ...fields });
+  const notes = [];
+  let signin = false;
+  let report = false;
+
+  // 1) Inicio de sesion exacto (Entra ID P1/P2 + AuditLog.Read.All).
+  let url = '/v1.0/users?$select=id,userPrincipalName,signInActivity&$top=999';
+  for (let page = 0; url && page < 100; page += 1) {
+    const r = await graphRaw(tok, url);
+    if (r.status !== 200) {
+      if (/NonPremium|B2C/i.test(r.code) || /premium/i.test(JSON.stringify(r.data || ''))) {
+        notes.push('Inicio de sesión exacto: el tenant no tiene Microsoft Entra ID P1/P2 (lo incluye Business Premium); se usa la última actividad del informe de uso.');
+      } else if (r.status === 403) {
+        notes.push('Inicio de sesión exacto: falta el permiso de aplicación AuditLog.Read.All (y Microsoft Entra ID P1/P2); se usa la última actividad del informe de uso.');
+      } else notes.push(`Inicio de sesión exacto: Microsoft Graph respondió ${r.status || r.message}.`);
+      data.clear();
+      break;
+    }
+    for (const u of r.data.value || []) {
+      const a = byEntra.get(u.id) || byUpn.get(String(u.userPrincipalName || '').toLowerCase());
+      if (!a) continue;
+      const si = u.signInActivity || {};
+      put(a.id, {
+        last_signin_at: sqlDateTime(maxOf([si.lastSignInDateTime, si.lastNonInteractiveSignInDateTime, si.lastSuccessfulSignInDateTime])),
+        last_interactive_at: sqlDateTime(si.lastSignInDateTime), signin: true,
+      });
+    }
+    url = r.data['@odata.nextLink'] || null;
+    if (!url) signin = true;
+  }
+
+  // 2) Informe de uso de Microsoft 365 de los ultimos 180 dias (Reports.Read.All).
+  const r = await graphRaw(tok, "/v1.0/reports/getOffice365ActiveUserDetail(period='D180')", { responseType: 'text', headers: { Authorization: `Bearer ${tok}`, Accept: 'text/csv' } });
+  if (r.status === 200) {
+    const rows = parseCsv(r.data);
+    const upnCol = 'User Principal Name';
+    if (rows.length && !rows.some((x) => String(x[upnCol] || '').includes('@'))) {
+      notes.push('El informe de uso llegó con los nombres ocultos: en el Centro de administración de Microsoft 365 > Configuración > Configuración de la organización > '
+        + 'Informes, desmarque "Mostrar nombres de usuario, grupo y sitio ocultos en todos los informes" y vuelva a leer el tenant.');
+    } else {
+      for (const x of rows) {
+        const a = byUpn.get(String(x[upnCol] || '').toLowerCase());
+        if (!a) continue;
+        const d = (k) => (/^\d{4}-\d{2}-\d{2}/.test(x[k] || '') ? x[k].slice(0, 10) : null);
+        const fields = {
+          exchange_date: d('Exchange Last Activity Date'), teams_date: d('Teams Last Activity Date'),
+          onedrive_date: d('OneDrive Last Activity Date'), sharepoint_date: d('SharePoint Last Activity Date'),
+          report_date: d('Report Refresh Date'), report: true,
+        };
+        fields.last_activity_date = maxOf([fields.exchange_date, fields.teams_date, fields.onedrive_date, fields.sharepoint_date]);
+        put(a.id, fields);
+      }
+      report = true;
+    }
+  } else if (r.status === 403) {
+    notes.push('Última actividad: falta el permiso de aplicación Reports.Read.All (con consentimiento del administrador).');
+  } else notes.push(`Última actividad: Microsoft Graph respondió ${r.status || r.message}.`);
+
+  // Se guarda para TODAS las cuentas leidas: sin dato = sin actividad registrada.
+  if (signin || report) {
+    const rows = accounts.map((a) => {
+      const x = data.get(a.id) || {};
+      const source = x.signin && x.report ? 'ambos' : (x.signin ? 'inicio_sesion' : (x.report ? 'informe' : (signin ? 'inicio_sesion' : 'informe')));
+      return [a.id, x.last_signin_at || null, x.last_interactive_at || null, x.last_activity_date || null, x.exchange_date || null, x.teams_date || null,
+        x.onedrive_date || null, x.sharepoint_date || null, x.report_date || null, source];
+    });
+    for (let i = 0; i < rows.length; i += 500) {
+      await pool.query(
+        `INSERT INTO m365_account_activity (account_id, last_signin_at, last_interactive_at, last_activity_date, exchange_date, teams_date, onedrive_date,
+           sharepoint_date, report_date, source) VALUES ?
+         ON DUPLICATE KEY UPDATE
+           last_signin_at = IF(${signin ? 1 : 0}, VALUES(last_signin_at), last_signin_at),
+           last_interactive_at = IF(${signin ? 1 : 0}, VALUES(last_interactive_at), last_interactive_at),
+           last_activity_date = IF(${report ? 1 : 0}, VALUES(last_activity_date), last_activity_date),
+           exchange_date = IF(${report ? 1 : 0}, VALUES(exchange_date), exchange_date), teams_date = IF(${report ? 1 : 0}, VALUES(teams_date), teams_date),
+           onedrive_date = IF(${report ? 1 : 0}, VALUES(onedrive_date), onedrive_date),
+           sharepoint_date = IF(${report ? 1 : 0}, VALUES(sharepoint_date), sharepoint_date),
+           report_date = IF(${report ? 1 : 0}, VALUES(report_date), report_date), source = VALUES(source), read_at = NOW()`,
+        [rows.slice(i, i + 500)]
+      );
+    }
+    await pool.query('UPDATE m365_account_activity SET read_at = NOW() WHERE read_at IS NULL');
+  }
+  const withData = [...data.values()].filter((x) => x.last_signin_at || x.last_activity_date).length;
+  return { signin, report, notes, withData };
+}
+
 // Lee el tenant y actualiza lo que se ve aqui (tenant_*), sin tocar lo
 // registrado. Las cuentas del tenant que no estaban se agregan marcadas
 // como "detectadas" para completarlas (cargo, area, quien la pidio).
@@ -394,9 +558,12 @@ async function sync(user = null) {
       added += 1;
     }
   }
-  const result = `${users.length} usuario(s) leídos, ${matched} ya registrados, ${added} nuevos detectados; ${skus.length} tipo(s) de licencia.`;
-  await settingsService.setMany({ m365_last_sync: started, m365_last_sync_result: result });
-  return { users: users.length, matched, added, skus: skus.length, result };
+  const act = await readActivity(tok);
+  const how = act.signin && act.report ? 'inicio de sesión e informe de uso' : (act.signin ? 'inicio de sesión' : 'informe de uso');
+  const result = `${users.length} usuario(s) leídos, ${matched} ya registrados, ${added} nuevos detectados; ${skus.length} tipo(s) de licencia.`
+    + (act.signin || act.report ? ` Última conexión (${how}): ${act.withData} cuenta(s) con actividad registrada.` : ' Última conexión: no se pudo leer.');
+  await settingsService.setMany({ m365_last_sync: started, m365_last_sync_result: result, m365_activity_note: act.notes.join(' ') });
+  return { users: users.length, matched, added, skus: skus.length, result, activity: act };
 }
 
 async function skuList() {
@@ -415,5 +582,5 @@ async function licenseOptions() {
 
 module.exports = {
   STATUS, ACCOUNT_TYPES, EVENT_LABELS, REQUEST_TYPES, MANAGER_RE, tasksFor, list, get, differences, event, createRequest, applyCompleted,
-  config, sync, skuList, licenseOptions, UPN,
+  config, sync, skuList, licenseOptions, UPN, readActivity, parseCsv, lastSeen,
 };

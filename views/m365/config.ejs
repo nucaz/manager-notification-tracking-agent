@@ -33,6 +33,11 @@
       <ol class="mb-2">
         <li>Portal de Azure &gt; <strong>Microsoft Entra ID</strong> &gt; Registros de aplicaciones &gt; Nuevo registro (nombre: "Gestor - lectura M365").</li>
         <li>Permisos de API &gt; Microsoft Graph &gt; <strong>Permisos de aplicación</strong>: <code>User.Read.All</code> y <code>Organization.Read.All</code>. Solo lectura.</li>
+        <li>Para la <strong>última conexión</strong> (opcional): <code>Reports.Read.All</code> (última actividad en correo, Teams, OneDrive y SharePoint, con unos
+          dos días de retraso; sirve con cualquier licencia) y, si el tenant tiene <strong>Microsoft Entra ID P1 o P2</strong> (incluido en Business Premium),
+          <code>AuditLog.Read.All</code> para el inicio de sesión exacto. Conceda el consentimiento del administrador. Si los informes salen con nombres ocultos:
+          Centro de administración &gt; Configuración &gt; Configuración de la organización &gt; Informes, desmarque
+          "Mostrar nombres de usuario, grupo y sitio ocultos en todos los informes".</li>
         <li><strong>Conceder consentimiento de administrador</strong>.</li>
         <li>Certificados y secretos &gt; Nuevo secreto de cliente: copie el <strong>valor</strong> (no el ID).</li>
       </ol>

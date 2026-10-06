@@ -173,6 +173,7 @@
           <%- linea('Activas sin licencia registrada', m.sinLicencia, '/m365?estado=activa', 'warning') %>
           <% if (m.compradas) { %><%- linea('Licencias libres (de ' + m.compradas + ')', m.libres, '/reportes?modulo=m365_licencias', m.libres < 0 ? 'danger' : '') %><% } %>
           <%- linea('Diferencias con el tenant', m.diferencias, '/m365?diferencias=1', 'danger') %>
+          <% if (m.conexionLeida) { %><%- linea('Activas sin conexión en 90 días', m.sinConexion, '/m365?estado=activa&conexion=d180,d365,mas365,nunca', 'warning') %><% } %>
           <%- linea('Solicitudes abiertas', m.solicitudesAbiertas, '/solicitudes?modulo=m365&estado=abiertas', 'primary') %>
         </ul>
         <div class="small text-muted mt-auto"><%= m.ultimaLectura ? 'Última lectura del tenant: ' + m.ultimaLectura : 'El tenant aún no se ha leído (Microsoft 365 > Conexión).' %></div>

@@ -546,7 +546,15 @@ se escribe si no está; se guarda como foto con la fecha y una referencia
   sesión, sus licencias y las licencias compradas/usadas, y marca las
   **diferencias** con lo registrado (ej. "desactivada aquí, puede iniciar
   sesión en el tenant"). Se lee todos los días a las 06:20. El secreto se
-  guarda cifrado.
+  guarda cifrado. **Última conexión** de cada cuenta (columnas "Última
+  conexión" y "Antigüedad", con los mismos tramos que Clinic, ordenables y
+  filtrables, también en el Excel, el reporte y el Panel): con el permiso
+  `Reports.Read.All` sale la última actividad en correo, Teams, OneDrive y
+  SharePoint del informe de uso (cualquier licencia, unos dos días de
+  retraso); si el tenant tiene Microsoft Entra ID P1/P2 (Business Premium)
+  y el permiso `AuditLog.Read.All`, además el inicio de sesión exacto. Lo
+  que falte (licencia, permiso, nombres ocultos en los informes) se explica
+  en pantalla sin detener la lectura del tenant.
 
 Prueba: `E2E_PERMITIR=1 node tests/solicitudes.e2e.js` (Graph simulado).
 

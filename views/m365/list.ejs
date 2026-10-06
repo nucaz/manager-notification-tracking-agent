@@ -1,5 +1,5 @@
 <%- include('../partials/head', { title: title }) %>
-<% const qs = ['q', 'status', 'area'].filter(function (k) { return filters[k]; }).map(function (k) { return (k === 'status' ? 'estado' : k) + '=' + encodeURIComponent(filters[k]); }).join('&'); %>
+<% const qs = ['q', 'status', 'area', 'conexion'].filter(function (k) { return filters[k]; }).map(function (k) { return (k === 'status' ? 'estado' : k) + '=' + encodeURIComponent(filters[k]); }).join('&'); %>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
   <h2 class="mb-0">Cuentas de Microsoft 365</h2>
@@ -51,6 +51,14 @@
   </div>
 <% } %>
 
+<% if (activityNote) { %>
+  <div class="alert alert-warning small py-2"><i class="bi bi-info-circle"></i> <strong>Última conexión:</strong> <%= activityNote %>
+    <% if (currentUser.role === 'admin') { %><a href="/m365/configuracion">Ver permisos</a><% } %></div>
+<% } else if (configured && !activityRead) { %>
+  <div class="alert alert-light border small py-2"><i class="bi bi-info-circle"></i> La última conexión se llena al leer el tenant con el permiso
+    <code>Reports.Read.All</code> (y, con Microsoft Entra ID P1, <code>AuditLog.Read.All</code> para el inicio de sesión exacto).</div>
+<% } %>
+
 <form class="row g-2 mb-3 align-items-center" method="get">
   <div class="col-md-4"><label class="visually-hidden" for="f_q">Buscar</label>
     <input type="text" name="q" id="f_q" value="<%= filters.q %>" class="form-control" placeholder="Correo, nombre o cargo..."></div>
@@ -60,6 +68,10 @@
   <div class="col-md-2"><label class="visually-hidden" for="f_area">Área</label>
     <select name="area" id="f_area" class="form-select"><option value="">Todas las áreas</option>
       <% areas.forEach(function (a) { %><option <%= filters.area === a ? 'selected' : '' %>><%= a %></option><% }); %></select></div>
+  <div class="col-md-2"><label class="visually-hidden" for="f_conexion">Última conexión</label>
+    <select name="conexion" id="f_conexion" class="form-select"><option value="">Cualquier conexión</option>
+      <option value="d180,d365,mas365,nunca" <%= filters.conexion === 'd180,d365,mas365,nunca' ? 'selected' : '' %>>Sin conexión en 90 días</option>
+      <% BUCKETS.forEach(function (b) { %><option value="<%= b.key %>" <%= filters.conexion === b.key ? 'selected' : '' %>><%= b.label %></option><% }); %></select></div>
   <div class="col-md-2"><div class="form-check">
     <input class="form-check-input" type="checkbox" name="diferencias" value="1" id="f_diff" <%= filters.diff ? 'checked' : '' %>>
     <label class="form-check-label" for="f_diff">Solo con diferencias <span class="badge text-bg-warning"><%= diffCount %></span></label></div></div>
@@ -69,7 +81,7 @@
 <div class="card p-3">
   <div class="table-responsive">
     <table class="table table-hover align-middle">
-      <thead><tr><th>Cuenta</th><th>Cargo / Área</th><th>Estado</th><th>Licencias</th><th>Tenant</th></tr></thead>
+      <thead><tr><th>Cuenta</th><th>Cargo / Área</th><th>Estado</th><th>Licencias</th><th>Última conexión</th><th>Antigüedad</th><th>Tenant</th></tr></thead>
       <tbody>
         <% items.forEach(function (a) { %>
           <tr>
@@ -80,6 +92,11 @@
             <td class="small"><%= a.cargo || '—' %><div class="text-muted"><%= [a.area, a.sede].filter(Boolean).join(' · ') %></div></td>
             <td><span class="badge <%= STATUS[a.status].badge %>"><%= STATUS[a.status].label %></span></td>
             <td class="small"><%= a.licenses || '—' %></td>
+            <% const fuente = a.activity_source === 'informe' || (!a.last_signin_at && a.last_activity_date) ? 'Última actividad (correo, Teams, OneDrive o SharePoint) del informe de uso de Microsoft 365'
+                 : 'Último inicio de sesión'; %>
+            <td class="small text-nowrap" data-valor="<%= a.last_seen || '' %>" title="<%= a.last_seen ? fuente : '' %>">
+              <%= a.last_seen ? String(a.last_seen).slice(0, a.last_seen.length > 10 ? 16 : 10) : (a.activity_read_at ? 'Sin actividad' : '—') %></td>
+            <td class="small"><span class="<%= ['d365', 'mas365', 'nunca'].includes(a.conexion) && a.status === 'activa' ? 'text-danger fw-semibold' : (a.conexion === 'd180' ? 'text-warning-emphasis' : '') %>"><%= a.conexion_label %></span></td>
             <td class="small">
               <% if (a.diffs.length) { %><span class="text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> <%= a.diffs.join('; ') %></span>
               <% } else if (a.tenant_seen_at) { %><span class="text-success"><i class="bi bi-check2"></i> coincide</span>
@@ -87,7 +104,7 @@
           </tr>
         <% }); %>
         <% if (!items.length) { %>
-          <tr><td colspan="5" class="text-center text-muted py-4">No hay cuentas con esos filtros. Configure la lectura del tenant para traer las cuentas existentes, o regístrelas a mano.</td></tr>
+          <tr><td colspan="7" class="text-center text-muted py-4">No hay cuentas con esos filtros. Configure la lectura del tenant para traer las cuentas existentes, o regístrelas a mano.</td></tr>
         <% } %>
       </tbody>
     </table>

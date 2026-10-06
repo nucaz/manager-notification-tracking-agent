@@ -160,13 +160,7 @@ function glpi(typeKey) {
 const day = (v) => (v ? String(v).slice(0, 10) : '');
 const yesNo = (v) => (v ? 'Sí' : 'No');
 // Tramo de antiguedad de la ultima conexion (los mismos del tablero de Clinic).
-function loginBucket(last) {
-  if (!last) return 'Nunca entró';
-  const days = (Date.now() - new Date(String(last).replace(' ', 'T')).getTime()) / 86400000;
-  const b = [[30, 'd30'], [90, 'd90'], [180, 'd180'], [365, 'd365']].find(([n]) => days <= n);
-  const key = b ? b[1] : 'mas365';
-  return clinicService.BUCKETS.find((x) => x.key === key).label;
-}
+const loginBucket = (last) => clinicService.bucketLabel(clinicService.bucketOf(last));
 // Empleado de planilla, creado desde Clinic o sin empleado.
 const payroll = (employeeId, source) => (!employeeId ? 'Sin empleado' : (source === 'clinic' ? 'Creado desde Clinic' : 'Planilla / directorio'));
 
@@ -215,6 +209,7 @@ const m365Cuentas = {
     { key: 'area', label: 'Área' }, { key: 'sede', label: 'Sede' }, { key: 'tipo', label: 'Tipo' }, { key: 'estado', label: 'Estado' },
     { key: 'jefatura', label: 'Jefatura' }, { key: 'licenses', label: 'Licencias (registradas)' }, { key: 'tenant', label: 'En el tenant' },
     { key: 'tenant_licenses', label: 'Licencias (tenant)' }, { key: 'diferencias', label: 'Diferencias' },
+    { key: 'ultima', label: 'Última conexión' }, { key: 'conexion_label', label: 'Antigüedad de conexión' },
   ],
   print: [
     { key: 'upn', label: 'Correo', w: 1.6 }, { key: 'display_name', label: 'Nombre', w: 1.3 }, { key: 'lugar', label: 'Cargo / Área', w: 1.3 },
@@ -222,8 +217,9 @@ const m365Cuentas = {
   ],
   barcodes: [],
   selects: [{ key: 'estado', label: 'Estado' }, { key: 'tipo', label: 'Tipo' }, { key: 'area', label: 'Área' }, { key: 'sede', label: 'Sede' },
-    { key: 'con_diferencias', label: 'Con diferencias' }],
-  groupBy: [{ key: 'estado', label: 'Por estado' }, { key: 'tipo', label: 'Por tipo' }, { key: 'area', label: 'Por área' }, { key: 'con_diferencias', label: 'Diferencias con el tenant' }],
+    { key: 'con_diferencias', label: 'Con diferencias' }, { key: 'conexion_label', label: 'Conexión' }],
+  groupBy: [{ key: 'estado', label: 'Por estado' }, { key: 'conexion_label', label: 'Por antigüedad de conexión' }, { key: 'tipo', label: 'Por tipo' },
+    { key: 'area', label: 'Por área' }, { key: 'con_diferencias', label: 'Diferencias con el tenant' }],
   async load() {
     const rows = await m365Service.list({});
     const [emps] = await pool.query('SELECT id, dni FROM employees');
@@ -233,6 +229,7 @@ const m365Cuentas = {
       estado: (m365Service.STATUS[a.status] || {}).label || a.status, jefatura: yesNo(a.is_manager),
       tenant: a.tenant_enabled === null || a.tenant_enabled === undefined ? 'Sin leer' : (a.tenant_enabled ? 'Puede iniciar sesión' : 'Bloqueada'),
       diferencias: a.diffs.join('; '), con_diferencias: yesNo(a.diffs.length), lugar: stacked(a.cargo, a.area),
+      ultima: a.last_seen ? String(a.last_seen).slice(0, a.last_seen.length > 10 ? 16 : 10) : '',
     }));
   },
 };

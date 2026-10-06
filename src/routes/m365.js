@@ -11,6 +11,7 @@ const catalogService = require('../services/catalogService');
 const settingsService = require('../services/settingsService');
 const requestService = require('../services/requestService');
 const m365Service = require('../services/m365Service');
+const clinicService = require('../services/clinicService');
 const auditService = require('../services/auditService');
 
 const router = express.Router();
@@ -20,15 +21,18 @@ const clean = (v, max = 255) => String(v === undefined || v === null ? '' : v).t
 
 router.get('/', async (req, res, next) => {
   try {
-    const filters = { q: req.query.q || '', status: req.query.estado || '', area: req.query.area || '', diff: req.query.diferencias === '1' };
-    const [items, skus, cfg, areas, [openReq]] = await Promise.all([
+    const filters = { q: req.query.q || '', status: req.query.estado || '', area: req.query.area || '', diff: req.query.diferencias === '1',
+      conexion: String(req.query.conexion || '').split(',').filter((k) => clinicService.BUCKETS.some((b) => b.key === k)).join(',') };
+    const [items, skus, cfg, areas, [openReq], activityNote] = await Promise.all([
       m365Service.list(filters), m365Service.skuList(), m365Service.config(), catalogService.getActive('area'),
       pool.query("SELECT COUNT(*) AS n FROM service_requests WHERE module = 'm365' AND status IN ('pendiente', 'aprobada', 'en_proceso')"),
+      settingsService.get('m365_activity_note'),
     ]);
     res.render('m365/list', {
       title: 'Cuentas de Microsoft 365', items, skus, filters, areas, STATUS: m365Service.STATUS, ACCOUNT_TYPES: m365Service.ACCOUNT_TYPES,
       configured: !!(cfg.tenant && cfg.clientId && cfg.secret), lastSync: cfg.lastSync, lastResult: cfg.lastResult, openRequests: openReq[0].n,
       diffCount: filters.diff ? items.length : items.filter((a) => a.diffs.length).length,
+      BUCKETS: clinicService.BUCKETS, activityNote: activityNote || '', activityRead: items.some((a) => a.activity_read_at),
     });
   } catch (err) {
     next(err);
@@ -37,15 +41,17 @@ router.get('/', async (req, res, next) => {
 
 router.get('/exportar.xlsx', async (req, res, next) => {
   try {
-    const items = await m365Service.list({ q: req.query.q, status: req.query.estado, area: req.query.area });
+    const items = await m365Service.list({ q: req.query.q, status: req.query.estado, area: req.query.area, conexion: req.query.conexion });
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Cuentas M365');
     ws.addRow(['Correo', 'Nombre', 'Cargo', 'Área', 'Sede', 'Tipo', 'Estado', 'Jefatura', 'Licencias (registradas)', 'Licencias (tenant)',
-      'Habilitada en el tenant', 'Diferencias']);
+      'Habilitada en el tenant', 'Diferencias', 'Última conexión', 'Antigüedad de conexión', 'Último inicio de sesión', 'Correo (última actividad)',
+      'Teams (última actividad)', 'OneDrive (última actividad)', 'SharePoint (última actividad)']);
     for (const a of items) {
       ws.addRow([a.upn, a.display_name, a.cargo || '', a.area || '', a.sede || '', m365Service.ACCOUNT_TYPES[a.account_type] || a.account_type,
         m365Service.STATUS[a.status].label, a.is_manager ? 'Sí' : 'No', a.licenses || '', a.tenant_licenses || '',
-        a.tenant_enabled === null ? '' : (a.tenant_enabled ? 'Sí' : 'No'), a.diffs.join('; ')]);
+        a.tenant_enabled === null ? '' : (a.tenant_enabled ? 'Sí' : 'No'), a.diffs.join('; '), a.last_seen || '', a.conexion_label,
+        a.last_signin_at || '', a.exchange_date || '', a.teams_date || '', a.onedrive_date || '', a.sharepoint_date || '']);
     }
     ws.getRow(1).font = { bold: true };
     ws.columns.forEach((c) => { c.width = 22; });

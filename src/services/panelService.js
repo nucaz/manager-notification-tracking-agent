@@ -31,17 +31,17 @@ async function m365() {
   const [[sku]] = await pool.query('SELECT COALESCE(SUM(prepaid), 0) AS compradas, COALESCE(SUM(consumed), 0) AS asignadas FROM m365_skus');
   const [[open]] = await pool.query("SELECT COUNT(*) AS n FROM service_requests WHERE module = 'm365' AND status IN ('pendiente', 'aprobada', 'en_proceso')");
   const lastSync = await settingsService.get('m365_last_sync');
-  let diferencias = 0;
-  if (lastSync) {
-    const [rows] = await pool.query('SELECT * FROM m365_accounts');
-    const m365Service = require('./m365Service'); // eslint-disable-line global-require
-    diferencias = rows.filter((r) => m365Service.differences(r, lastSync).length).length;
-  }
+  const m365Service = require('./m365Service'); // eslint-disable-line global-require
+  const accounts = await m365Service.list({});
+  const diferencias = lastSync ? accounts.filter((r) => r.diffs.length).length : 0;
+  const IDLE = ['d180', 'd365', 'mas365', 'nunca'];
+  const sinConexion = accounts.filter((r) => r.status === 'activa' && r.account_type === 'usuario' && IDLE.includes(r.conexion)).length;
+  const conexionLeida = accounts.some((r) => r.activity_read_at);
   const n = (v) => Number(v || 0);
   return {
     usuarios: n(a.usuarios), compartidos: n(a.compartidos), suspendidas: n(a.suspendidas), eliminadas: n(a.eliminadas), total: n(a.total),
     sinLicencia: n(a.sin_licencia), compradas: n(sku.compradas), asignadas: n(sku.asignadas), libres: n(sku.compradas) - n(sku.asignadas),
-    solicitudesAbiertas: n(open.n), diferencias, ultimaLectura: lastSync ? String(lastSync).replace('T', ' ').slice(0, 16) : null,
+    solicitudesAbiertas: n(open.n), diferencias, sinConexion, conexionLeida, ultimaLectura: lastSync ? String(lastSync).replace('T', ' ').slice(0, 16) : null,
   };
 }
 

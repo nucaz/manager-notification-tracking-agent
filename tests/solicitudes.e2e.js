@@ -14,6 +14,7 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const flash = require('connect-flash');
+const ExcelJS = require('exceljs');
 
 if (process.env.E2E_PERMITIR !== '1') {
   console.error('Esta prueba escribe (y luego borra) datos marcados en la base configurada. Ejecútela con E2E_PERMITIR=1.');
@@ -27,7 +28,10 @@ const results = [];
 const check = (name, cond) => results.push([!!cond, name]);
 
 // --- Microsoft Graph simulado: token, licencias y usuarios (2 paginas)
-const graph = { users: [], tokens: 0, lastAuth: '' };
+// premium: el tenant tiene Entra ID P1 (signInActivity); report: CSV del
+// informe de uso (null = 403 sin Reports.Read.All); concealed: nombres ocultos.
+const graph = { users: [], tokens: 0, lastAuth: '', premium: false, report: [], concealed: false, reportCalls: 0 };
+const daysAgo = (n, time = false) => { const d = new Date(Date.now() - n * 86400000).toISOString(); return time ? d : d.slice(0, 10); };
 function fakeGraph() {
   const g = express();
   g.use(express.urlencoded({ extended: false }));
@@ -43,8 +47,27 @@ function fakeGraph() {
     { skuId: '11111111-1111-1111-1111-111111111111', skuPartNumber: 'O365_BUSINESS_PREMIUM', prepaidUnits: { enabled: 10 }, consumedUnits: 7 },
     { skuId: '22222222-2222-2222-2222-222222222222', skuPartNumber: 'PRUEBA_SKU_RARO', prepaidUnits: { enabled: 2 }, consumedUnits: 2 },
   ] }));
+  // Informe de uso: Graph responde 302 a una URL de descarga ya firmada (sin token).
+  g.get(/^\/v1\.0\/reports\/getOffice365ActiveUserDetail/, (req, res) => {
+    graph.reportCalls += 1;
+    if (!graph.report) return res.status(403).json({ error: { code: 'UnknownError', message: 'Forbidden' } });
+    res.redirect(302, `http://127.0.0.1:${req.socket.localPort}/descarga/informe.csv`);
+  });
+  g.get('/descarga/informe.csv', (req, res) => {
+    const head = 'Report Refresh Date,User Principal Name,Display Name,Is Deleted,Exchange Last Activity Date,OneDrive Last Activity Date,'
+      + 'SharePoint Last Activity Date,Teams Last Activity Date';
+    const rows = graph.report.map((r) => [daysAgo(2), graph.concealed ? 'A1B2C3D4E5F6' : r.upn, `"${r.name}, prueba"`, 'False',
+      r.exchange || '', r.onedrive || '', '', r.teams || ''].join(','));
+    res.type('text/csv').send(`\uFEFF${[head, ...rows].join('\r\n')}\r\n`);
+  });
   g.get('/v1.0/users', (req, res) => {
     const port = req.socket.localPort;
+    if (String(req.query.$select || '').includes('signInActivity')) {
+      if (!graph.premium) {
+        return res.status(403).json({ error: { code: 'Authentication_RequestFromNonPremiumTenantOrB2CTenant', message: 'Neither tenant is B2C or tenant doesn\'t have premium license' } });
+      }
+      return res.json({ value: graph.users.map((u) => ({ id: u.id, userPrincipalName: u.userPrincipalName, signInActivity: u.signIn || null })) });
+    }
     if (req.query.page === '2') return res.json({ value: graph.users.slice(1) });
     res.json({ value: graph.users.slice(0, 1), '@odata.nextLink': `http://127.0.0.1:${port}/v1.0/users?page=2` });
   });
@@ -182,6 +205,55 @@ async function main() {
       && ger.is_manager === 1 && ger.licenses === 'Microsoft 365 Business Standard' && ger.tenant_enabled === 1 && cfg.m365_last_sync);
     const [[sku]] = await pool.query("SELECT * FROM m365_skus WHERE sku_id = '11111111-1111-1111-1111-111111111111'");
     check('M365: licencias compradas/usadas con nombre comercial', sku.friendly_name === 'Microsoft 365 Business Standard' && sku.prepaid === 10 && sku.consumed === 7);
+    // ---- Ultima conexion: sin Entra ID P1 se usa el informe de uso.
+    const act = async () => (await pool.query(
+      'SELECT a.upn, x.* FROM m365_account_activity x JOIN m365_accounts a ON a.id = x.account_id WHERE a.upn LIKE ? ORDER BY a.upn', [`%${DOM}`]))[0];
+    graph.report = [{ upn: `Gerente${DOM}`, name: 'PRUEBA Gerente', exchange: daysAgo(3), teams: daysAgo(10) }];
+    await form('/m365/sincronizar', {});
+    let rowsAct = await act();
+    let gerAct = rowsAct.find((x) => x.upn === `gerente${DOM}`);
+    let venAct = rowsAct.find((x) => x.upn === `vendedora${DOM}`);
+    check('M365 última conexión sin Entra ID P1: se usa el informe de uso (correo, Teams) y lo explica', gerAct && String(gerAct.last_activity_date).slice(0, 10) === daysAgo(3)
+      && String(gerAct.teams_date).slice(0, 10) === daysAgo(10) && gerAct.source === 'informe' && !gerAct.last_signin_at
+      && venAct && !venAct.last_activity_date && venAct.read_at && /Entra ID P1/.test(cfg.m365_activity_note || ''));
+    page = await get('/m365');
+    check('M365: columnas "Última conexión" y "Antigüedad" (con quien no tiene actividad)', page.text.includes('<th>Última conexión</th>')
+      && page.text.includes(daysAgo(3)) && page.text.includes('Hasta 30 días') && page.text.includes('Nunca entró') && page.text.includes('no tiene Microsoft Entra ID P1'));
+    page = await get('/m365?conexion=nunca');
+    check('M365: filtro por antigüedad de conexión', page.text.includes('PRUEBA Vendedora') && !page.text.includes('>PRUEBA Gerente<'));
+    // ---- Con Entra ID P1: el inicio de sesion exacto (y se mantiene el informe).
+    graph.premium = true;
+    graph.users[0].signIn = { lastSignInDateTime: daysAgo(1, true), lastNonInteractiveSignInDateTime: daysAgo(0.5, true) };
+    graph.users[1].signIn = { lastSignInDateTime: daysAgo(200, true) };
+    await form('/m365/sincronizar', {});
+    rowsAct = await act();
+    gerAct = rowsAct.find((x) => x.upn === `gerente${DOM}`);
+    venAct = rowsAct.find((x) => x.upn === `vendedora${DOM}`);
+    check('M365 con Entra ID P1: inicio de sesión exacto (el más reciente) además del informe', gerAct.source === 'ambos'
+      && String(gerAct.last_signin_at).slice(0, 10) === daysAgo(0.5) && String(gerAct.exchange_date).slice(0, 10) === daysAgo(3)
+      && String(venAct.last_signin_at).slice(0, 10) === daysAgo(200) && !cfg.m365_activity_note);
+    page = await get(`/m365/cuentas/${ger.id}`);
+    check('M365: la ficha muestra inicio de sesión y actividad por servicio', page.text.includes('Inicio de sesión:') && page.text.includes('Correo:')
+      && page.text.includes('Teams:'));
+    page = await get('/m365?conexion=d365');
+    check('M365: la vendedora (200 días) cae en "181 días a 1 año"', page.text.includes('PRUEBA Vendedora') && !page.text.includes('>PRUEBA Gerente<'));
+    // ---- Problemas que se explican: nombres ocultos y falta de permiso.
+    graph.premium = false;
+    graph.concealed = true;
+    await form('/m365/sincronizar', {});
+    check('M365: informe con nombres ocultos -> explica cómo mostrarlos y conserva lo leído', /nombres ocultos/.test(cfg.m365_activity_note || '')
+      && String((await act()).find((x) => x.upn === `gerente${DOM}`).last_signin_at).slice(0, 10) === daysAgo(0.5));
+    graph.concealed = false;
+    graph.report = null;
+    await form('/m365/sincronizar', {});
+    check('M365: sin Reports.Read.All -> lo dice y la lectura del tenant no falla', /Reports\.Read\.All/.test(cfg.m365_activity_note || '')
+      && /usuario\(s\) leídos/.test(cfg.m365_last_sync_result || ''));
+    graph.report = [{ upn: `Gerente${DOM}`, name: 'PRUEBA Gerente', exchange: daysAgo(3), teams: daysAgo(10) }];
+    const xl = await fetch(`${base}/m365/exportar.xlsx`, { headers: { cookie } });
+    const xwb = new ExcelJS.Workbook();
+    await xwb.xlsx.load(Buffer.from(await xl.arrayBuffer()));
+    check('M365: el Excel lleva la última conexión y su antigüedad', xwb.worksheets[0].getRow(1).values.includes('Última conexión')
+      && xwb.worksheets[0].getRow(1).values.includes('Antigüedad de conexión'));
     page = await get('/m365');
     check('M365: listado con licencias disponibles y cuentas detectadas', page.status === 200 && page.text.includes('Microsoft 365 Business Standard') && page.text.includes('PRUEBA Vendedora'));
 
