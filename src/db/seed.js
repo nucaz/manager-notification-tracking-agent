@@ -11,13 +11,13 @@ async function seed() {
 
   if (existing.length > 0) {
     await pool.query(
-      'UPDATE users SET full_name = ?, password_hash = ?, role = "admin", active = 1 WHERE email = ?',
+      'UPDATE users SET full_name = ?, password_hash = ?, role = "superadmin", active = 1 WHERE email = ?',
       [env.admin.name, passwordHash, env.admin.email]
     );
     console.log(`Usuario administrador actualizado: ${env.admin.email}`);
   } else {
     await pool.query(
-      'INSERT INTO users (full_name, email, password_hash, role, active) VALUES (?, ?, ?, "admin", 1)',
+      'INSERT INTO users (full_name, email, password_hash, role, active) VALUES (?, ?, ?, "superadmin", 1)',
       [env.admin.name, env.admin.email, passwordHash]
     );
     console.log(`Usuario administrador creado: ${env.admin.email}`);

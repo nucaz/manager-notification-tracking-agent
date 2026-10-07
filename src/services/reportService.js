@@ -434,7 +434,7 @@ const REPORTS = {
 // habilitado el modulo de donde salen los datos.
 function available(user, enabledModules) {
   return Object.fromEntries(Object.entries(REPORTS).filter(([, r]) => {
-    if (r.adminOnly) return user && user.role === 'admin';
+    if (r.adminOnly) return user && ['superadmin', 'admin'].includes(user.role);
     return !r.module || !!(enabledModules || {})[r.module];
   }));
 }

@@ -70,7 +70,7 @@ async function main() {
     await pool.query("DELETE FROM audit_log WHERE target LIKE 'Clinic%PRUEBA%' OR target LIKE 'prueba_e2e%' OR target LIKE 'area: PRUEBA-E2E%' OR detail LIKE '%PRUEBA Gerente%'");
   };
   await cleanup();
-  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   await pool.query("INSERT INTO employees (dni, first_name, last_name, area, sede, cargo) VALUES ('99000011', 'Supervisora', 'PRUEBA', 'Ventas', 'SURCO', 'Supervisora'), ('99000019', 'Gerente', 'PRUEBA', 'Ventas', 'SURCO', 'Gerente')");
   await pool.query("INSERT INTO catalog_items (catalog_type, value) VALUES ('area', ?), ('area', ?)", [AREA, AREA2]);
 

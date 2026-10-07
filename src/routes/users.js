@@ -1,12 +1,12 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const pool = require('../db/pool');
-const { requireAuth, isAdmin } = require('../middleware/auth');
+const { requireAuth, isSuperAdmin, ROLES } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const auditService = require('../services/auditService');
 
 const router = express.Router();
-router.use(requireAuth, isAdmin, verifyCsrfToken);
+router.use(requireAuth, isSuperAdmin, verifyCsrfToken);
 
 function duplicateFieldMessage(err) {
   const msg = err.sqlMessage || '';
@@ -35,6 +35,10 @@ router.post('/nuevo', async (req, res, next) => {
     const { full_name, email, password, role, whatsapp_number, telegram_chat_id } = req.body;
     if (!full_name || !email || !password) {
       req.flash('error', 'Nombre, correo y contraseña son obligatorios.');
+      return res.redirect('/usuarios/nuevo');
+    }
+    if (!ROLES[role || 'lector']) {
+      req.flash('error', 'Rol no válido.');
       return res.redirect('/usuarios/nuevo');
     }
     const hash = await bcrypt.hash(password, 12);
@@ -70,6 +74,19 @@ router.get('/:id/editar', async (req, res, next) => {
 router.post('/:id/editar', async (req, res, next) => {
   try {
     const { full_name, email, password, role, active, whatsapp_number, telegram_chat_id } = req.body;
+    if (!ROLES[role]) {
+      req.flash('error', 'Rol no válido.');
+      return res.redirect(`/usuarios/${req.params.id}/editar`);
+    }
+    // Siempre debe quedar al menos un superadministrador activo.
+    const [[before]] = await pool.query('SELECT role, active FROM users WHERE id = ?', [req.params.id]);
+    if (before && before.role === 'superadmin' && before.active && (role !== 'superadmin' || !active)) {
+      const [[others]] = await pool.query("SELECT COUNT(*) AS n FROM users WHERE role = 'superadmin' AND active = 1 AND id <> ?", [req.params.id]);
+      if (!Number(others.n)) {
+        req.flash('error', 'Es el único superadministrador activo: nombre a otro superadministrador antes de cambiarle el rol o desactivarlo.');
+        return res.redirect(`/usuarios/${req.params.id}/editar`);
+      }
+    }
     if (password) {
       const hash = await bcrypt.hash(password, 12);
       await pool.query(

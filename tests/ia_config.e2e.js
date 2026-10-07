@@ -86,7 +86,7 @@ async function main() {
     await pool.query('DELETE FROM mobile_devices WHERE imei IN (?)', [IMEI]);
     await pool.query("DELETE FROM audit_log WHERE action LIKE 'ia_%' AND (target LIKE 'PRUEBA-IA%' OR detail LIKE '%asistente=%')");
   };
-  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   const [[logStart]] = await pool.query('SELECT COALESCE(MAX(id), 0) AS id FROM agent_message_log');
   // Los proveedores reales que ya existan se desactivan solo durante la prueba (para que no los elija).
   const [realActive] = await pool.query("SELECT id FROM ai_providers WHERE active = 1 AND label NOT LIKE 'PRUEBA-IA%'");

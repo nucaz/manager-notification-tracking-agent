@@ -127,7 +127,7 @@ app.use(async (req, res, next) => {
   res.locals.enabledModules = {};
   if (req.session.user) {
     const { MODULES, moduleEnabled } = require('./middleware/modules');
-    if (req.session.user.role === 'admin') {
+    if (req.session.user.role === 'superadmin') {
       for (const key of Object.keys(MODULES)) res.locals.enabledModules[key] = true;
     } else {
       try {

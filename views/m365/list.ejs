@@ -22,7 +22,7 @@
       <strong>Sin conexión de lectura al tenant</strong>: no se comparan cuentas ni licencias.
     <% } %>
   </div>
-  <% if (currentUser.role === 'admin') { %>
+  <% if (currentUser.role === 'superadmin') { %>
     <div class="d-flex gap-2">
       <% if (configured) { %>
         <form method="post" action="/m365/sincronizar"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -53,7 +53,7 @@
 
 <% if (activityNote) { %>
   <div class="alert alert-warning small py-2" data-aviso="m365-ultima-conexion"><i class="bi bi-info-circle"></i> <strong>Última conexión:</strong> <%= activityNote %>
-    <% if (currentUser.role === 'admin') { %><a href="/m365/configuracion">Ver permisos</a><% } %></div>
+    <% if (currentUser.role === 'superadmin') { %><a href="/m365/configuracion">Ver permisos</a><% } %></div>
 <% } else if (configured && !activityRead) { %>
   <div class="alert alert-light border small py-2" data-aviso="m365-ultima-conexion-permiso"><i class="bi bi-info-circle"></i> La última conexión se llena al leer el tenant con el permiso
     <code>Reports.Read.All</code> (y, con Microsoft Entra ID P1, <code>AuditLog.Read.All</code> para el inicio de sesión exacto).</div>

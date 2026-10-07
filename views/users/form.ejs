@@ -35,7 +35,8 @@
     <select name="role" class="form-select">
       <option value="lector" <%= item.role === 'lector' ? 'selected' : '' %>>Lector (solo ver)</option>
       <option value="editor" <%= item.role === 'editor' ? 'selected' : '' %>>Editor (crear/editar)</option>
-      <option value="admin" <%= item.role === 'admin' ? 'selected' : '' %>>Administrador</option>
+      <option value="superadmin" <%= item.role === 'superadmin' ? 'selected' : '' %>>Superadministrador (todo, incluidas credenciales y usuarios)</option>
+      <option value="admin" <%= item.role === 'admin' ? 'selected' : '' %>>Administrador (módulos; sin credenciales, usuarios ni respaldos)</option>
     </select>
   </div>
   <% if (item.id) { %>

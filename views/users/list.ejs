@@ -13,7 +13,7 @@
         <tr>
           <td><%= u.full_name %></td>
           <td><%= u.email %></td>
-          <td><span class="badge bg-secondary text-uppercase"><%= u.role %></span></td>
+          <td><span class="badge <%= u.role === 'superadmin' ? 'bg-danger' : 'bg-secondary' %>"><%= ({ superadmin: 'Superadministrador', admin: 'Administrador', editor: 'Editor', lector: 'Lector' })[u.role] || u.role %></span></td>
           <td><%= u.active ? 'Sí' : 'No' %></td>
           <td>
             <% if (u.otp_enabled) { %>

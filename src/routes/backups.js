@@ -8,7 +8,7 @@ const path = require('path');
 const { pipeline } = require('stream/promises');
 const express = require('express');
 const multer = require('multer');
-const { requireAuth, isAdmin } = require('../middleware/auth');
+const { requireAuth, isSuperAdmin } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const settingsService = require('../services/settingsService');
 const fullBackupService = require('../services/fullBackupService');
@@ -18,7 +18,7 @@ const ssoService = require('../services/ssoService');
 
 const CONFIRMATION = 'RESTAURAR TODO';
 const router = express.Router();
-router.use(requireAuth, isAdmin);
+router.use(requireAuth, isSuperAdmin);
 
 const archiveUploader = multer({
   storage: multer.diskStorage({ destination: os.tmpdir(), filename: (req, file, cb) => cb(null, `restaurar-${Date.now()}-${process.pid}.tar.gz`) }),

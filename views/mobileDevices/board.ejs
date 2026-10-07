@@ -52,7 +52,7 @@
         <h6 class="mb-0 me-auto"><%= w.config.title %></h6>
         <% if (!w.preset) { %>
           <span class="badge bg-light text-dark border"><%= w.shared ? 'Compartido' : 'Solo yo' %></span>
-          <% if (w.mine || (w.shared && currentUser.role === 'admin')) { %>
+          <% if (w.mine || (w.shared && ['superadmin', 'admin'].includes(currentUser.role))) { %>
           <form method="post" action="/celulares/tablero/widgets/<%= w.id %>/quitar" onsubmit="return confirm('¿Quitar este widget del tablero?');">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button class="btn btn-sm btn-link text-danger p-0" type="submit" title="Quitar widget"><i class="bi bi-x-lg"></i></button>

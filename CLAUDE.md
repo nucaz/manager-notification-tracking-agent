@@ -119,6 +119,13 @@ READMEs.
   las pantallas sueltas), en DevOps Sidecar (`templates/base.html`) y en
   los PDF de Reportes. Nunca se vuelve configurable ni se quita; toda
   pantalla nueva con `</body>` lo incluye. Lo vigila `tests/credito.test.js`.
+- **Roles** (`src/middleware/auth.js`): `lector` ve todo sin cambiar;
+  `editor` escribe en los módulos; `admin` gestiona los módulos, catálogos,
+  auditoría e historial de chat pero **no** lo crítico; `superadmin` todo.
+  Lo crítico (credenciales de conexión, usuarios, permisos, respaldos,
+  mantenimiento de la base, IA, conexión de M365, DevOps) va con
+  `isSuperAdmin`. Nunca queda la app sin un superadmin activo. Lo vigila
+  `tests/roles.e2e.js`.
 - **Tema claro / oscuro / del sistema**: `views/partials/tema.ejs` (en el
   `<head>` de toda página) pone `data-bs-theme`; el selector está en
   `partials/tema_selector.ejs`. Colores propios solo por variables

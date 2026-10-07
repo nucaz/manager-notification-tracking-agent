@@ -46,7 +46,9 @@ const DEFAULT_MODULE_ACCESS = Object.keys(MODULES).reduce((acc, key) => {
 DEFAULT_MODULE_ACCESS.devops = { editor: false, lector: false };
 
 async function moduleEnabled(role, moduleKey) {
-  if (role === 'admin') return true;
+  if (role === 'superadmin') return true;
+  // admin: todos los modulos menos DevOps Sidecar (dentro guarda credenciales y restaura).
+  if (role === 'admin') return moduleKey !== 'devops';
   if (!CONFIGURABLE_ROLES.includes(role)) return false;
   const [rows] = await pool.query(
     'SELECT enabled FROM role_modules WHERE role = ? AND module = ? LIMIT 1',
@@ -75,4 +77,6 @@ function moduleRequired(moduleKey) {
   };
 }
 
-module.exports = { MODULES, CONFIGURABLE_ROLES, DEFAULT_MODULE_ACCESS, moduleEnabled, moduleRequired };
+// realModuleEnabled: la misma funcion, para quien necesite la original aunque
+// otra parte (una prueba) reemplace moduleEnabled.
+module.exports = { MODULES, CONFIGURABLE_ROLES, DEFAULT_MODULE_ACCESS, moduleEnabled, moduleRequired, realModuleEnabled: moduleEnabled };

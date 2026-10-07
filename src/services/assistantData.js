@@ -260,7 +260,7 @@ for (const d of Object.values(DATASETS)) {
 function datasets(user, enabledModules) {
   const out = {};
   for (const [key, d] of Object.entries(DATASETS)) {
-    const ok = d.adminOnly ? !!(user && user.role === 'admin') : (!d.module || !!(enabledModules || {})[d.module]);
+    const ok = d.adminOnly ? !!(user && ['superadmin', 'admin'].includes(user.role)) : (!d.module || !!(enabledModules || {})[d.module]);
     if (ok) out[key] = { ...d, user };
   }
   return out;

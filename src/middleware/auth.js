@@ -18,8 +18,21 @@ function requireRole(...roles) {
   };
 }
 
-// El rol "lector" solo puede ver; "editor" y "admin" pueden crear/editar; solo "admin" administra usuarios/config
-const canWrite = requireRole('admin', 'editor');
-const isAdmin = requireRole('admin');
+// Roles de la aplicacion:
+//   lector     -> ve toda la aplicacion, no cambia nada
+//   editor     -> crea y edita en los modulos
+//   admin      -> gestiona los modulos (catalogos, auditoria, solicitudes...),
+//                 pero NO lo critico: credenciales de conexion, usuarios,
+//                 permisos, respaldos, mantenimiento de la base, DevOps
+//   superadmin -> todo el control de la aplicacion
+const ROLES = {
+  superadmin: 'Superadministrador', admin: 'Administrador', editor: 'Editor', lector: 'Lector',
+};
+const ADMIN_ROLES = ['superadmin', 'admin'];
+const isAdminRole = (role) => ADMIN_ROLES.includes(role);
+const isSuperRole = (role) => role === 'superadmin';
+const canWrite = requireRole('superadmin', 'admin', 'editor');
+const isAdmin = requireRole(...ADMIN_ROLES);
+const isSuperAdmin = requireRole('superadmin');
 
-module.exports = { requireAuth, requireRole, canWrite, isAdmin };
+module.exports = { requireAuth, requireRole, canWrite, isAdmin, isSuperAdmin, ROLES, ADMIN_ROLES, isAdminRole, isSuperRole };

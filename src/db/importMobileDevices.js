@@ -26,7 +26,7 @@ async function main() {
 
   let userId = userIdArg >= 0 ? parseInt(args[userIdArg + 1], 10) : null;
   if (!userId) {
-    const [[admin]] = await pool.query('SELECT id FROM users WHERE role = "admin" ORDER BY id LIMIT 1');
+    const [[admin]] = await pool.query('SELECT id FROM users WHERE role IN ("superadmin", "admin") ORDER BY role = "superadmin" DESC, id LIMIT 1');
     userId = admin ? admin.id : null;
   }
 

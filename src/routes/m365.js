@@ -4,7 +4,7 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
-const { requireAuth, canWrite, isAdmin } = require('../middleware/auth');
+const { requireAuth, canWrite, isAdmin, isSuperAdmin } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const catalogService = require('../services/catalogService');
@@ -64,7 +64,7 @@ router.get('/exportar.xlsx', async (req, res, next) => {
 });
 
 // ------------------------------ configuracion ------------------------------
-router.get('/configuracion', isAdmin, async (req, res, next) => {
+router.get('/configuracion', isSuperAdmin, async (req, res, next) => {
   try {
     const cfg = await m365Service.config();
     res.render('m365/config', { title: 'Microsoft 365: conexión de lectura', cfg: { ...cfg, secret: cfg.secret ? 'set' : '' } });
@@ -73,7 +73,7 @@ router.get('/configuracion', isAdmin, async (req, res, next) => {
   }
 });
 
-router.post('/configuracion', isAdmin, async (req, res, next) => {
+router.post('/configuracion', isSuperAdmin, async (req, res, next) => {
   try {
     const pairs = { m365_tenant_id: clean(req.body.m365_tenant_id, 100), m365_client_id: clean(req.body.m365_client_id, 100) };
     if (pairs.m365_tenant_id && !/^[A-Za-z0-9.-]+$/.test(pairs.m365_tenant_id)) throw new Error('Tenant no válido: el dominio (empresa.onmicrosoft.com) o el GUID.');

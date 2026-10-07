@@ -102,7 +102,7 @@ async function main() {
     await pool.query("DELETE FROM audit_log WHERE (target LIKE 'Clinic prueba.e2e%' OR target LIKE ? OR detail LIKE '%PRUEBA Gerente%' OR target = 'usuarios_clinic_prueba.xlsx')", [`%${DOM}`]);
   };
   await cleanup();
-  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   await pool.query(`INSERT INTO employees (dni, first_name, last_name, area, sede, cargo) VALUES
     ('99000001', 'Gerente', 'PRUEBA', 'PRUEBA-E2E Ventas', 'PUEBLO LIBRE', 'Gerente de Ventas'),
     ('99000002', 'Receptor', 'PRUEBA', 'PRUEBA-E2E Ventas', 'SURCO', 'Asistente'),

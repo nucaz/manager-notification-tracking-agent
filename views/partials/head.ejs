@@ -55,16 +55,21 @@
     <% if (enabledModules.reportes) { %>
     <li><a class="nav-link <%= currentPath.startsWith('/reportes') ? 'active' : '' %>" href="/reportes"><i class="bi bi-bar-chart"></i> <span>Reportes</span></a></li>
     <% } %>
-    <% if (currentUser.role === 'admin') { %>
+    <% if (['superadmin', 'admin'].includes(currentUser.role)) { %>
     <li class="sidebar-section">Administración</li>
+    <% if (currentUser.role === 'superadmin') { %>
     <li><a class="nav-link <%= currentPath.startsWith('/usuarios') ? 'active' : '' %>" href="/usuarios"><i class="bi bi-person-gear"></i> <span>Usuarios</span></a></li>
     <li><a class="nav-link <%= currentPath.startsWith('/permisos') ? 'active' : '' %>" href="/permisos"><i class="bi bi-shield-lock"></i> <span>Permisos</span></a></li>
+    <% } %>
     <li><a class="nav-link <%= currentPath.startsWith('/auditoria') ? 'active' : '' %>" href="/auditoria"><i class="bi bi-clock-history"></i> <span>Auditoría</span></a></li>
     <li><a class="nav-link <%= currentPath.startsWith('/historial-chat') ? 'active' : '' %>" href="/historial-chat"><i class="bi bi-chat-dots"></i> <span>Historial de chat</span></a></li>
+    <li><a class="nav-link <%= currentPath.startsWith('/configuracion/catalogos') ? 'active' : '' %>" href="/configuracion/catalogos"><i class="bi bi-tags"></i> <span>Catálogos</span></a></li>
+    <% if (currentUser.role === 'superadmin') { %>
     <li><a class="nav-link <%= currentPath.startsWith('/mantenimiento') ? 'active' : '' %>" href="/mantenimiento"><i class="bi bi-database-gear"></i> <span>Mantenimiento BD</span></a></li>
-    <li><a class="nav-link <%= currentPath.startsWith('/configuracion') ? 'active' : '' %>" href="/configuracion"><i class="bi bi-gear"></i> <span>Configuración</span></a></li>
+    <li><a class="nav-link <%= currentPath === '/configuracion' || (currentPath.startsWith('/configuracion') && !currentPath.startsWith('/configuracion/catalogos')) ? 'active' : '' %>" href="/configuracion"><i class="bi bi-gear"></i> <span>Configuración</span></a></li>
     <% } %>
-    <% if (currentUser.role === 'admin' || enabledModules.devops) { %>
+    <% } %>
+    <% if (currentUser.role === 'superadmin' || enabledModules.devops) { %>
     <%# Entra a DevOps Sidecar con este mismo usuario (acceso unico, ver src/routes/devops.js). %>
     <li>
       <a class="nav-link" href="/devops" target="_blank" rel="noopener">

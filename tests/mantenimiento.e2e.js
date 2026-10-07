@@ -42,7 +42,7 @@ async function cleanup() {
 }
 
 async function main() {
-  const [admin] = await q("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [admin] = await q("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   const [stored] = await q("SELECT `value` FROM settings WHERE `key` = 'history_retention_months'");
   await cleanup();
   await q("DELETE FROM settings WHERE `key` = 'history_retention_months'");

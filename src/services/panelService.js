@@ -84,7 +84,7 @@ async function summary(user, enabledModules = {}) {
     clinic: enabledModules.clinic ? clinic : null,
     m365: enabledModules.m365 ? m365 : null,
     solicitudes: enabledModules.solicitudes ? solicitudes : null,
-    devops: user && (user.role === 'admin' || enabledModules.devops) ? devops : null,
+    devops: user && (['superadmin', 'admin'].includes(user.role) || enabledModules.devops) ? devops : null,
   };
   const out = {};
   await Promise.all(Object.entries(wanted).map(async ([k, fn]) => {

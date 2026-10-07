@@ -78,7 +78,7 @@ async function main() {
     await pool.query('DELETE FROM mobile_lines WHERE phone_number IN (?)', [N]);
     await pool.query('DELETE FROM mobile_devices WHERE imei IN (?)', [IMEI]);
   };
-  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   const [[logStart]] = await pool.query('SELECT COALESCE(MAX(id), 0) AS id FROM agent_message_log');
   await cleanup();
 

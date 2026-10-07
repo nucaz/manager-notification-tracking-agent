@@ -50,7 +50,7 @@ async function cleanup() {
 }
 
 async function main() {
-  const [admin] = await q("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [admin] = await q("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   await cleanup();
   try {
     // --- Datos: A asignado con 2 chips; B en stock con 1 chip; C asignado con su chip y una nota con un 3.er numero

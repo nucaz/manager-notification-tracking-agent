@@ -1,12 +1,12 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireAuth, isAdmin } = require('../middleware/auth');
+const { requireAuth, isSuperAdmin } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const auditService = require('../services/auditService');
 const { MODULES, CONFIGURABLE_ROLES, DEFAULT_MODULE_ACCESS } = require('../middleware/modules');
 
 const router = express.Router();
-router.use(requireAuth, isAdmin, verifyCsrfToken);
+router.use(requireAuth, isSuperAdmin, verifyCsrfToken);
 
 router.get('/', async (req, res, next) => {
   try {

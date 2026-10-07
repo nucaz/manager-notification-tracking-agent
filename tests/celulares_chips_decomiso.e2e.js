@@ -39,7 +39,7 @@ async function cleanup() {
 }
 
 async function main() {
-  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   const [[peru]] = await pool.query("SELECT id FROM phone_country_codes WHERE calling_code = '51' LIMIT 1");
   const [[taken]] = await pool.query(
     'SELECT (SELECT COUNT(*) FROM mobile_lines WHERE phone_number IN (?)) + (SELECT COUNT(*) FROM mobile_devices WHERE imei IN (?) OR phone_number IN (?)) AS n',

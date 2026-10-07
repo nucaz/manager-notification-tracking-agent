@@ -33,7 +33,7 @@ const countsOld = (rows, key) => { const m = new Map(); rows.forEach((r) => { co
 const countsNew = (res) => new Map(res.rows.map((r) => [String(r[0]), r[1]]));
 
 async function main() {
-  const [admin] = await q("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [admin] = await q("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   const sets = data.datasets(admin, all);
   const run = (spec, opts) => data.runQuery(sets, spec, null, opts);
   const [glpiState] = await q("SELECT * FROM external_sync_state WHERE source = 'glpi_computadoras'");

@@ -3,13 +3,13 @@
 // Sidecar, y el respaldo. Solo administradores.
 const crypto = require('crypto');
 const express = require('express');
-const { requireAuth, isAdmin } = require('../middleware/auth');
+const { requireAuth, isSuperAdmin } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const aiService = require('../services/aiService');
 const auditService = require('../services/auditService');
 
 const router = express.Router();
-router.use(requireAuth, isAdmin);
+router.use(requireAuth, isSuperAdmin);
 
 router.get('/', async (req, res, next) => {
   try {

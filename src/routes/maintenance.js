@@ -1,14 +1,14 @@
 // Mantenimiento de la base de datos (solo administradores): estado de
 // tablas e indices, ANALYZE/OPTIMIZE y retencion de historicos.
 const express = require('express');
-const { requireAuth, isAdmin } = require('../middleware/auth');
+const { requireAuth, isSuperAdmin } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const auditService = require('../services/auditService');
 const backupService = require('../services/backupService');
 const maintenanceService = require('../services/maintenanceService');
 
 const router = express.Router();
-router.use(requireAuth, isAdmin, verifyCsrfToken);
+router.use(requireAuth, isSuperAdmin, verifyCsrfToken);
 
 // Borrar historial es irreversible: se pide escribir esta frase (no basta un clic).
 const PURGE_CONFIRMATION_PHRASE = 'BORRAR HISTORIAL';

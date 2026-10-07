@@ -1,5 +1,5 @@
 const express = require('express');
-const { requireAuth, isAdmin } = require('../middleware/auth');
+const { requireAuth, isSuperAdmin: isAdmin } = require('../middleware/auth'); // Configuracion = credenciales: solo superadmin
 const { verifyCsrfToken } = require('../middleware/csrf');
 const settingsService = require('../services/settingsService');
 const mailer = require('../services/mailer');

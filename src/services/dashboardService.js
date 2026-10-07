@@ -225,7 +225,7 @@ async function addWidget(user, raw, shared) {
 async function removeWidget(user, id) {
   const [res] = await pool.query(
     'DELETE FROM dashboard_widgets WHERE id = ? AND (user_id = ? OR (shared = 1 AND ? = 1))',
-    [id, user.id, user.role === 'admin' ? 1 : 0]
+    [id, user.id, ['superadmin', 'admin'].includes(user.role) ? 1 : 0]
   );
   return res.affectedRows > 0;
 }

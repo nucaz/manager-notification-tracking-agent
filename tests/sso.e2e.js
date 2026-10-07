@@ -42,7 +42,7 @@ function read(token, audience) {
 }
 
 async function main() {
-  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const [[admin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role IN ('superadmin', 'admin') ORDER BY role = 'superadmin' DESC, id LIMIT 1");
   const seen = { auth: [] };
   const sidecar = express();
   sidecar.get('/api/repos', (req, res) => {
@@ -57,7 +57,7 @@ async function main() {
 
   let user = admin;
   let allowed = {};
-  modules.moduleEnabled = async (role, key) => role === 'admin' || !!allowed[key];
+  modules.moduleEnabled = async (role, key) => role === 'superadmin' || !!allowed[key];
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', path.join(ROOT, 'views'));
@@ -66,7 +66,7 @@ async function main() {
   app.use((req, res, next) => {
     req.session.user = user;
     Object.assign(res.locals, { currentUser: user, csrfToken: 'x', successMessages: [], errorMessages: [], currentPath: req.path,
-      currentHost: req.hostname, appName: 'Prueba', enabledModules: new Proxy({}, { get: (t, k) => user.role === 'admin' || !!allowed[k] }) });
+      currentHost: req.hostname, appName: 'Prueba', enabledModules: new Proxy({}, { get: (t, k) => user.role === 'superadmin' || !!allowed[k] }) });
     next();
   });
   app.use('/devops', require(path.join(ROOT, 'src/routes/devops')));
@@ -94,7 +94,7 @@ async function main() {
     const pass = read(tokenOf(p.text), 'sidecar-sso');
     check('Menú DevOps: entrega al navegador un formulario que envía el pase al sidecar (POST, no en la URL)', p.status === 200
       && p.text.includes(`<form method="post" action="http://127.0.0.1:8091/sso"`) && p.cache === 'no-store' && !p.text.includes('?token='));
-    check('El pase identifica al usuario de esta aplicación, vence en un minuto y dice a dónde volver', pass && pass.sub === admin.email && pass.role === 'admin'
+    check('El pase identifica al usuario de esta aplicación, vence en un minuto y dice a dónde volver', pass && pass.sub === admin.email && pass.role === 'superadmin'
       && pass.name === admin.full_name && pass.app === base && pass.exp - Date.now() / 1000 <= 60 && pass.exp > Date.now() / 1000 && /^[0-9a-f]{32}$/.test(pass.jti));
     const p2 = await get('/devops');
     check('Cada entrada genera un pase distinto (de un solo uso)', read(tokenOf(p2.text), 'sidecar-sso').jti !== pass.jti);
@@ -121,6 +121,10 @@ async function main() {
       && modules.DEFAULT_MODULE_ACCESS.devops.lector === false && modules.DEFAULT_MODULE_ACCESS.reportes.editor === true);
     user = admin;
     allowed = {};
+    // Rol administrador (sin lo critico): DevOps guarda credenciales y restaura -> no entra.
+    const realModuleEnabled = require(path.join(ROOT, 'src/middleware/modules')).realModuleEnabled;
+    check('Un administrador (no superadmin) no tiene DevOps por defecto; el superadmin sí', realModuleEnabled
+      && !(await realModuleEnabled('admin', 'devops')) && (await realModuleEnabled('admin', 'reportes')) && (await realModuleEnabled('superadmin', 'devops')));
 
     // --- Llamadas de servicio
     const repos = await devopsSidecarClient.listRepos();

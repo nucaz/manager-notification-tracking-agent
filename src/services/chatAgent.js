@@ -387,7 +387,7 @@ function columnFor(channel) {
 async function findAuthorizedUser(channel, contact) {
   const column = columnFor(channel);
   const [rows] = await pool.query(
-    `SELECT * FROM users WHERE ${column} = ? AND active = 1 AND role IN ('admin','editor') LIMIT 1`,
+    `SELECT * FROM users WHERE ${column} = ? AND active = 1 AND role IN ('superadmin','admin','editor') LIMIT 1`,
     [contact]
   );
   return rows[0] || null;

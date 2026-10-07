@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   full_name VARCHAR(150) NOT NULL,
   email VARCHAR(150) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('admin','editor','lector') NOT NULL DEFAULT 'lector',
+  role ENUM('superadmin','admin','editor','lector') NOT NULL DEFAULT 'lector', -- superadmin: todo; admin: modulos sin lo critico
   active TINYINT(1) NOT NULL DEFAULT 1,
   otp_secret VARCHAR(64) NULL,                  -- secreto TOTP (base32), NULL hasta enrolar
   otp_enabled TINYINT(1) NOT NULL DEFAULT 0,     -- 1 una vez confirmado el enrolamiento 2FA
