@@ -16,11 +16,12 @@
         <input class="form-control" type="password" id="ad_bind_password" name="ad_bind_password" autocomplete="new-password"
           placeholder="<%= cfg.password ? 'Configurada - dejar vacío para mantenerla' : '' %>" <%= cfg.password ? '' : 'required' %>>
         <div class="form-text">Se guarda cifrada. Nunca se vuelve a mostrar.</div></div>
-      <div class="mb-3"><label class="form-label" for="ad_ca_pem">Certificado de la CA que emitió el certificado del DC (PEM) *</label>
+      <div class="mb-3"><label class="form-label" for="ad_ca_pem">Certificados de confianza (PEM) *</label>
         <textarea class="form-control font-monospace small" id="ad_ca_pem" name="ad_ca_pem" rows="6" required placeholder="-----BEGIN CERTIFICATE-----"><%= cfg.caPem %></textarea>
-        <div class="form-text">Exporte el certificado raíz de su CA interna en Base-64 (.cer) y pegue el texto. No hay opción de aceptar cualquier certificado.</div></div>
+        <div class="form-text">El certificado raíz de su CA interna o, si cada DC usa un certificado autofirmado, el de <strong>cada</strong> DC, uno debajo del otro.
+          Solo se confía en lo que pegue aquí: no hay opción de aceptar cualquier certificado.</div></div>
       <div class="mb-3"><label class="form-label" for="ad_base_dn">DN base (opcional)</label>
-        <input class="form-control font-monospace" id="ad_base_dn" name="ad_base_dn" placeholder="Se detecta solo (DC=depilzone,DC=local)" value="<%= cfg.baseDn %>"></div>
+        <input class="form-control font-monospace" id="ad_base_dn" name="ad_base_dn" placeholder="Se detecta solo (por ejemplo DC=ad,DC=depilzone,DC=com,DC=pe)" value="<%= cfg.baseDn %>"></div>
       <div class="form-check mb-3">
         <input class="form-check-input" type="checkbox" id="ad_all_dcs" name="ad_all_dcs" value="1" <%= cfg.allDcs ? 'checked' : '' %>>
         <label class="form-check-label" for="ad_all_dcs">Consultar todos los controladores de dominio para la última conexión exacta (<code>lastLogon</code> no se replica)</label></div>
