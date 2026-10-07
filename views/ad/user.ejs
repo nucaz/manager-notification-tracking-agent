@@ -27,17 +27,45 @@
     </div>
   </div>
   <div class="col-lg-5">
+    <% if (canChange && writes.ready && !item.removed_at) { %>
+      <% if (protectedReasons.length) { %>
+        <div class="card p-3 mb-3"><h6><i class="bi bi-shield-lock"></i> Cuenta protegida: solo lectura</h6>
+          <ul class="small mb-0"><% protectedReasons.forEach(function (r) { %><li><%= r %></li><% }); %></ul></div>
+      <% } else { const a = function (op, extra) { return '/ad/cambios/nuevo?op=' + op + '&id=' + item.id + (extra || ''); }; %>
+        <div class="card p-3 mb-3" id="ad_acciones"><h6>Acciones</h6>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-sm btn-outline-primary" href="<%= a('user_update') %>"><i class="bi bi-pencil"></i> Modificar datos</a>
+            <a class="btn btn-sm btn-outline-primary" href="<%= a('user_reset_password') %>"><i class="bi bi-key"></i> Restablecer contraseña</a>
+            <% if (item.locked) { %><a class="btn btn-sm btn-outline-primary" href="<%= a('user_unlock') %>"><i class="bi bi-unlock"></i> Desbloquear</a><% } %>
+            <% if (item.enabled) { %><a class="btn btn-sm btn-outline-warning" href="<%= a('user_disable') %>"><i class="bi bi-person-slash"></i> Deshabilitar</a>
+            <% } else { %><a class="btn btn-sm btn-outline-success" href="<%= a('user_enable') %>"><i class="bi bi-person-check"></i> Habilitar</a><% } %>
+            <a class="btn btn-sm btn-outline-secondary" href="<%= a('user_move') %>"><i class="bi bi-folder-symlink"></i> Mover</a>
+            <a class="btn btn-sm btn-outline-danger" href="<%= a('user_delete') %>"><i class="bi bi-trash"></i> Eliminar</a>
+          </div>
+          <% if (groupOptions.length) { %>
+            <form method="get" action="/ad/cambios/nuevo" class="d-flex gap-2 mt-3">
+              <input type="hidden" name="op" value="group_add_member"><input type="hidden" name="member" value="<%= item.sam %>">
+              <label class="visually-hidden" for="ad_grupo_add">Grupo</label>
+              <select class="form-select form-select-sm" id="ad_grupo_add" name="id" required><option value="">Agregar a un grupo…</option>
+                <% groupOptions.forEach(function (g) { %><option value="<%= g.id %>"><%= g.name %></option><% }); %></select>
+              <button class="btn btn-sm btn-outline-primary text-nowrap"><i class="bi bi-plus"></i> Agregar</button>
+            </form>
+          <% } %>
+        </div>
+      <% } %>
+    <% } %>
     <% if (item.privileged_groups) { %>
       <div class="card p-3 mb-3 border-danger">
         <h6 class="text-danger">Privilegios de administración</h6>
         <ul class="small mb-0"><% item.privileged_groups.split(',').forEach(function (k) { %><li><%= PRIVILEGED_LABEL[k] || k %></li><% }); %></ul>
-        <div class="form-text">Incluye los obtenidos por grupos anidados. En la fase de escritura estas cuentas quedan en solo lectura.</div>
+        <div class="form-text">Incluye los obtenidos por grupos anidados. Estas cuentas quedan en solo lectura en esta aplicación.</div>
       </div>
     <% } %>
     <div class="card p-3">
       <h6>Miembro de (<%= item.memberOf.length %>)</h6>
       <ul class="small mb-0"><% item.memberOf.forEach(function (g) { %><li><a href="/ad/grupos/<%= g.id %>"><%= g.name %></a><%= g.privileged ? ' ⚠' : '' %>
-        <span class="text-muted">· <%= g.kind %> <%= g.scope || '' %></span></li><% }); %>
+        <span class="text-muted">· <%= g.kind %> <%= g.scope || '' %></span>
+        <% if (canChange && writes.ready && !protectedReasons.length && !g.privileged) { %><a class="ms-1 text-danger small" href="/ad/cambios/nuevo?op=group_remove_member&id=<%= g.id %>&miembro=<%= memberHash %>">quitar</a><% } %></li><% }); %>
         <% if (!item.memberOf.length) { %><li class="text-muted">Solo el grupo primario (Domain Users).</li><% } %></ul>
     </div>
   </div>

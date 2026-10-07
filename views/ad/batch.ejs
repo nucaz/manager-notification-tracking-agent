@@ -1,0 +1,38 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const okItems = items.filter(function (i) { return !i.pre.length; }); const skip = items.length - okItems.length; %>
+<form method="post" action="/ad/cambios/lote" class="card p-4" autocomplete="off">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <input type="hidden" name="op" value="<%= op %>">
+  <input type="hidden" name="nonce" value="<%= nonce %>">
+  <h5 class="<%= def.danger ? 'text-danger' : '' %>"><i class="bi <%= def.icon %>"></i> <%= def.label %>: <%= okItems.length %> objeto(s)</h5>
+  <% if (skip) { %><div class="alert alert-warning small"><%= skip %> objeto(s) protegido(s) quedan fuera (ver la lista).</div><% } %>
+  <div class="table-responsive mb-3" style="max-height: 45vh">
+    <table class="table table-sm small align-middle mb-0" data-tabla="no">
+      <thead><tr><th>Objeto</th><th>Ubicación</th><th>Se incluye</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (i) { %>
+          <tr class="<%= i.pre.length ? 'text-muted' : '' %>">
+            <td class="font-monospace"><%= i.target.label %><% if (!i.pre.length) { %><input type="hidden" name="ids" value="<%= i.row.id %>"><% } %></td>
+            <td class="small font-monospace"><%= i.target.dn %></td>
+            <td><% if (i.pre.length) { %><span class="text-danger">No: <%= i.pre.join(' ') %></span><% } else { %>Sí<% } %></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+  <% if (!writes.ready) { %><div class="alert alert-secondary small"><%= writes.reason %></div><% } %>
+  <%- include('_modo') %>
+  <div class="mb-3"><label class="form-label" for="reason">Motivo <%= mode && mode.mode === 'aprobacion' ? '*' : '' %></label>
+    <textarea class="form-control" id="reason" name="reason" rows="2" maxlength="500" <%= mode && mode.mode === 'aprobacion' ? 'required' : '' %>
+      placeholder="Ej.: depuración de cuentas sin conexión hace más de 1 año"></textarea></div>
+  <% if (mode && mode.mode !== 'aprobacion' && writes.ready && okItems.length) { %><%- include('_reauth') %><% } %>
+  <div class="d-flex gap-2">
+    <% if (mode && writes.ready && okItems.length) { %>
+      <button class="btn <%= def.danger ? 'btn-danger' : 'btn-primary' %>"><i class="bi <%= mode.mode === 'aprobacion' ? 'bi-send' : def.icon %>"></i>
+        <%= mode.mode === 'aprobacion' ? 'Enviar ' + okItems.length + ' solicitud(es)' : (def.danger ? 'Eliminar ' : 'Ejecutar en ') + okItems.length + ' objeto(s) ahora' %></button>
+    <% } %>
+    <a href="javascript:history.back()" class="btn btn-outline-secondary">Volver</a>
+  </div>
+</form>
+<%- include('../partials/foot') %>

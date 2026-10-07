@@ -79,8 +79,9 @@ async function devops() {
 }
 
 async function directorio() {
-  const [ov, run] = await Promise.all([adService.overview(), adService.lastRun()]);
-  return { ...ov, domain: run.summary && run.summary.domain, lastRead: run.ok ? String(run.ok.finished_at || run.ok.started_at).slice(0, 16) : null,
+  const [ov, run, [[pend]]] = await Promise.all([adService.overview(), adService.lastRun(),
+    pool.query("SELECT COUNT(*) AS n FROM ad_change_requests WHERE status = 'pendiente' AND expires_at > NOW()")]);
+  return { ...ov, pendingChanges: Number(pend.n || 0), domain: run.summary && run.summary.domain, lastRead: run.ok ? String(run.ok.finished_at || run.ok.started_at).slice(0, 16) : null,
     lastError: run.last && run.last.status === 'error' ? run.last.error : null, recycleBin: run.summary ? run.summary.recycleBin : null };
 }
 

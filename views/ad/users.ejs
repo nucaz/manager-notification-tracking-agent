@@ -5,12 +5,18 @@
    const ouOf = function (dn) { return String(dn || '').split(/,(?=DC=)/i)[0].split(',').map(function (p) { return p.replace(/^(OU|CN)=/i, ''); }).reverse().join(' / '); };
    const estado = function (u) { return !u.enabled ? 'Deshabilitado' : (u.locked ? 'Bloqueado' : 'Habilitado'); }; %>
 
+<% const sel = canChange && writes.ready; %>
 <div class="card p-3">
-  <p class="small text-muted mb-2"><%= items.length %> usuarios. Clic en un encabezado para ordenar, <i class="bi bi-funnel"></i> para filtrar
-    (por ejemplo, Estado = Habilitado y Antigüedad = Más de 1 año para encontrar cuentas a deshabilitar). Solo lectura.</p>
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <p class="small text-muted mb-2"><%= items.length %> usuarios. Clic en un encabezado para ordenar, <i class="bi bi-funnel"></i> para filtrar
+      (por ejemplo, Estado = Habilitado y Antigüedad = Más de 1 año para encontrar cuentas a deshabilitar)<%= sel ? '; marque las filas para actuar en lote.' : '.' %></p>
+    <% if (sel) { %><a href="/ad/cambios/nuevo?op=user_create" class="btn btn-sm btn-primary"><i class="bi bi-person-plus"></i> Nuevo usuario</a><% } %>
+  </div>
+  <%- include('_seleccion', { loteOps: ['user_disable', 'user_enable', 'user_unlock', 'user_delete'] }) %>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small">
       <thead><tr>
+        <% if (sel) { %><th><input type="checkbox" class="form-check-input" id="adSelTodos" aria-label="Marcar visibles"></th><% } %>
         <th>Usuario</th><th>Nombre</th><th>Estado</th><th>Privilegiado</th><th>Última conexión</th><th>Antigüedad</th><th>Unidad organizativa</th>
         <th data-oculta>UPN</th><th data-oculta>Correo</th><th data-oculta>Cargo</th><th data-oculta>Área</th><th data-oculta>Descripción</th>
         <th data-oculta>Contraseña cambiada</th><th data-oculta>Contraseña no vence</th><th data-oculta>Creado</th><th data-oculta>Grupos</th><th data-oculta>Empleado</th>
@@ -18,6 +24,9 @@
       <tbody>
         <% items.forEach(function (u) { const b = bucket(u.last_seen); const idle = u.enabled && /año|Nunca/.test(b); %>
           <tr>
+            <% if (sel) { const prot = u.privileged_groups || u.admin_count || !writes.managedOus.some(function (o) { return u.dn.toLowerCase().endsWith(',' + o.toLowerCase()); }); %>
+              <td><input type="checkbox" class="form-check-input ad-sel" name="ids" value="<%= u.id %>" form="adLote" <%= prot ? 'disabled' : '' %>
+                aria-label="Marcar <%= u.sam %>" title="<%= prot ? 'Protegida o fuera de las unidades organizativas gestionadas' : '' %>"></td><% } %>
             <td class="font-monospace text-nowrap"><a href="/ad/usuarios/<%= u.id %>"><%= u.sam %></a></td>
             <td><%= u.display_name || '—' %></td>
             <td><span class="badge <%= !u.enabled ? 'text-bg-secondary' : (u.locked ? 'text-bg-warning' : 'text-bg-success') %>"><%= estado(u) %></span></td>
@@ -37,7 +46,7 @@
             <td><%= u.employee_id ? [u.first_name, u.last_name].join(' ') : 'Sin vincular' %></td>
           </tr>
         <% }); %>
-        <% if (!items.length) { %><tr><td colspan="17" class="text-center text-muted py-4">Sin usuarios: lea el dominio.</td></tr><% } %>
+        <% if (!items.length) { %><tr><td colspan="<%= sel ? 18 : 17 %>" class="text-center text-muted py-4">Sin usuarios: lea el dominio.</td></tr><% } %>
       </tbody>
     </table>
   </div>

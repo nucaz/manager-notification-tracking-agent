@@ -151,6 +151,7 @@
           <%- linea('Nunca se conectaron', a.users.neverLogged, '/ad/usuarios', 'warning') %>
           <%- linea('Contraseña que no vence', a.users.neverExpires, '/ad/usuarios', 'warning') %>
           <%- linea('Deshabilitados / bloqueados', a.users.disabled + ' / ' + a.users.locked) %>
+          <% if (a.pendingChanges) { %><%- linea('Cambios pendientes de aprobar', a.pendingChanges, '/ad/cambios?estado=pendiente', 'warning') %><% } %>
         </ul>
         <div class="small text-muted mt-auto"><%= a.lastRead ? 'Última lectura: ' + a.lastRead : 'Aún no se lee el dominio.' %><%= a.lastError ? ' · la última lectura falló' : '' %></div>
       <% } %>

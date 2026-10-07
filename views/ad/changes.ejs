@@ -1,0 +1,73 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const isSuper = currentUser.role === 'superadmin';
+   const pend = items.filter(function (i) { return i.status === 'pendiente'; });
+   const badge = { pendiente: 'text-bg-warning', ejecutada: 'text-bg-success', rechazada: 'text-bg-secondary', fallida: 'text-bg-danger', cancelada: 'text-bg-light border', vencida: 'text-bg-light border' };
+   const d16 = function (v) { return v ? String(v).slice(0, 16) : ''; }; %>
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <div class="btn-group btn-group-sm" role="group" aria-label="Estado">
+    <a href="/ad/cambios" class="btn btn-outline-secondary <%= !estado ? 'active' : '' %>">Todos</a>
+    <% Object.keys(STATUS).forEach(function (k) { %><a href="/ad/cambios?estado=<%= k %>" class="btn btn-outline-secondary <%= estado === k ? 'active' : '' %>"><%= STATUS[k] %></a><% }); %>
+  </div>
+  <% if (isSuper) { %><a href="/ad/permisos" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-hourglass-split"></i> Permisos temporales</a><% } %>
+</div>
+<% if (!isSuper && grants.length) { %>
+  <div class="alert alert-info small"><i class="bi bi-hourglass-split"></i> Tiene permiso temporal para:
+    <% grants.forEach(function (g) { %><span class="d-block"><%= g.operations.split(',').map(function (k) { return GROUPS[k] || k; }).join(', ') %> — vence <%= d16(g.expires_at) %></span><% }); %></div>
+<% } %>
+<% if (!isSuper) { %>
+  <p class="small text-muted">Para pedir un cambio, abra el usuario, grupo o equipo en su pestaña y elija la acción; también puede marcar varios en las tablas.
+    <%= currentUser.role === 'editor' ? 'Aquí ve sus propias solicitudes.' : '' %></p>
+<% } %>
+
+<% if (isSuper && pend.length) { %>
+<form id="adDecidir" method="post" action="/ad/cambios/aprobar" class="card p-3 mb-3 border-warning" autocomplete="off">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <h6><i class="bi bi-inbox"></i> <%= pend.length %> solicitud(es) pendiente(s): marque en la tabla y decida</h6>
+  <div class="mb-2"><label class="form-label" for="note">Nota para quien lo pidió (obligatoria para rechazar)</label>
+    <input class="form-control" id="note" name="note" maxlength="500"></div>
+  <%- include('_reauth') %>
+  <div class="d-flex gap-2">
+    <button class="btn btn-success"><i class="bi bi-check2-circle"></i> Aprobar y ejecutar marcadas</button>
+    <button class="btn btn-outline-danger" formaction="/ad/cambios/rechazar" formnovalidate><i class="bi bi-x-circle"></i> Rechazar marcadas</button>
+  </div>
+  <div class="form-text">Al aprobar se ejecutan con la cuenta de escritura y se vuelven a comprobar en vivo las protecciones.</div>
+</form>
+<% } %>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr>
+        <% if (isSuper && pend.length) { %><th><input type="checkbox" class="form-check-input" id="adPendTodos" aria-label="Marcar pendientes visibles"></th><% } %>
+        <th>N.º</th><th>Fecha</th><th>Operación</th><th>Objeto</th><th>Pedido por</th><th>Vía</th><th>Estado</th><th>Decidió</th><th>Resultado</th>
+        <th data-oculta>Motivo</th><th data-oculta>Ejecutada</th>
+      </tr></thead>
+      <tbody>
+        <% items.forEach(function (r) { %>
+          <tr>
+            <% if (isSuper && pend.length) { %><td><% if (r.status === 'pendiente') { %><input type="checkbox" class="form-check-input ad-pend" name="ids" value="<%= r.id %>" form="adDecidir" aria-label="Marcar #<%= r.id %>"><% } %></td><% } %>
+            <td><a href="/ad/cambios/<%= r.id %>">#<%= r.id %></a></td>
+            <td class="text-nowrap" data-valor="<%= r.requested_at %>"><%= d16(r.requested_at) %></td>
+            <td><i class="bi <%= (OPS[r.operation] || {}).icon %>"></i> <%= (OPS[r.operation] || {}).label || r.operation %></td>
+            <td><%= r.target_label %></td>
+            <td><%= r.requested_name || r.requested_email || '—' %></td>
+            <td><%= VIA[r.via] %></td>
+            <td><span class="badge <%= badge[r.status] %>"><%= STATUS[r.status] %></span></td>
+            <td><%= r.decided_name || '—' %></td>
+            <td class="small"><%= r.result || r.decision_note || '' %></td>
+            <td><%= r.reason || '' %></td>
+            <td data-valor="<%= r.executed_at || '' %>"><%= d16(r.executed_at) %></td>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="12" class="text-center text-muted py-4">Sin cambios registrados.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>
+document.addEventListener('change', function (ev) {
+  if (ev.target.id === 'adPendTodos') document.querySelectorAll('tr:not([hidden]) .ad-pend').forEach(function (cb) { cb.checked = ev.target.checked; });
+});
+</script>
+<%- include('../partials/foot') %>

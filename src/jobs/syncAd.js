@@ -2,8 +2,11 @@
 // foto (ad_*). Si no esta configurado, no hace nada. Ver src/services/adService.js.
 const cron = require('node-cron');
 const adService = require('../services/adService');
+const adChangeService = require('../services/adChangeService');
 
 async function run() {
+  // Solicitudes de cambio pendientes de mas de 7 dias y contrasenas no vistas de mas de 24 h.
+  await adChangeService.expire().catch((err) => console.error('[ad] Error al vencer solicitudes:', err.message));
   const cfg = await adService.config();
   if (!cfg.url || !cfg.bindUser || !cfg.password || !cfg.caPem) return null;
   return adService.sync();

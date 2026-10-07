@@ -1,7 +1,10 @@
 <%- include('../partials/head', { title: title }) %>
 <%- include('_tabs') %>
 <div class="card p-3">
-  <p class="small text-muted mb-2"><%= items.length %> grupos. Los privilegiados (por SID) van primero, con sus miembros efectivos incluidos los anidados.</p>
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <p class="small text-muted mb-2"><%= items.length %> grupos. Los privilegiados (por SID) van primero, con sus miembros efectivos incluidos los anidados.</p>
+    <% if (canChange && writes.ready) { %><a href="/ad/cambios/nuevo?op=group_create" class="btn btn-sm btn-primary"><i class="bi bi-people"></i> Nuevo grupo</a><% } %>
+  </div>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small">
       <thead><tr><th>Grupo</th><th>Privilegiado</th><th>Tipo</th><th>Ámbito</th><th class="text-end">Miembros directos</th><th class="text-end">Usuarios efectivos</th>

@@ -13,10 +13,10 @@
     <code>dsacls "CN=Deleted Objects,<%= sum.baseDn %>" /g "DOMINIO\cuenta-servicio:LCRP"</code> (listar y leer, nada más).</div>
 <% } %>
 <div class="card p-3">
-  <p class="small text-muted mb-2"><%= items.length %> objetos en CN=Deleted Objects. Restaurar será parte de la fase de escritura (con aprobación).</p>
+  <p class="small text-muted mb-2"><%= items.length %> objetos en CN=Deleted Objects. Se restaura lo que estaba en una unidad organizativa gestionada.</p>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small">
-      <thead><tr><th>Nombre</th><th>Tipo</th><th>Cuenta</th><th>Estaba en</th><th>Eliminado</th><th data-oculta>GUID</th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Tipo</th><th>Cuenta</th><th>Estaba en</th><th>Eliminado</th><th data-oculta>GUID</th><% if (canChange && writes.ready) { %><th data-orden="no"></th><% } %></tr></thead>
       <tbody>
         <% items.forEach(function (d) { %>
           <tr>
@@ -26,9 +26,11 @@
             <td class="font-monospace"><%= d.last_known_parent || '—' %></td>
             <td class="text-nowrap" data-valor="<%= d.deleted_at || '' %>"><%= d.deleted_at ? String(d.deleted_at).slice(0, 16) : '—' %></td>
             <td class="font-monospace"><%= d.object_guid %></td>
+            <% if (canChange && writes.ready) { %><td><% if (d.last_known_parent && writes.managedOus.some(function (m) { const p = d.last_known_parent.toLowerCase(), x = m.toLowerCase(); return p === x || p.endsWith(',' + x); })) { %>
+              <a class="btn btn-sm btn-outline-primary text-nowrap" href="/ad/cambios/nuevo?op=object_restore&id=<%= d.id %>"><i class="bi bi-arrow-counterclockwise"></i> Restaurar</a><% } %></td><% } %>
           </tr>
         <% }); %>
-        <% if (!items.length) { %><tr><td colspan="6" class="text-center text-muted py-4">La papelera está vacía (o no hay permiso para verla).</td></tr><% } %>
+        <% if (!items.length) { %><tr><td colspan="<%= canChange && writes.ready ? 7 : 6 %>" class="text-center text-muted py-4">La papelera está vacía (o no hay permiso para verla).</td></tr><% } %>
       </tbody>
     </table>
   </div>

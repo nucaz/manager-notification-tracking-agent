@@ -1,0 +1,41 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const ok = results.filter(function (r) { return r.ok; }).length; const withSecret = results.filter(function (r) { return r.secret; }); %>
+<div class="card p-4">
+  <h5><%= ok === results.length ? '✓' : '⚠' %> <%= ok %> de <%= results.length %> cambio(s) aplicados en el dominio</h5>
+  <% if (withSecret.length) { %>
+    <div class="alert alert-warning">
+      <strong><i class="bi bi-key"></i> Contraseña generada: se muestra solo esta vez.</strong> Entréguela por un canal seguro (en persona o por teléfono, no por
+      correo ni chat). No queda guardada en la aplicación.
+      <% withSecret.forEach(function (r) { %>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+          <span class="small"><%= r.label %>:</span>
+          <code class="fs-5 px-2 py-1 border rounded bg-body user-select-all" id="secreto_<%= r.id %>"><%= r.secret %></code>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-copiar="secreto_<%= r.id %>"><i class="bi bi-clipboard"></i> Copiar</button>
+        </div>
+      <% }); %>
+    </div>
+  <% } %>
+  <div class="table-responsive">
+    <table class="table table-sm small align-middle" data-tabla="no">
+      <thead><tr><th>Solicitud</th><th>Objeto</th><th>Resultado</th></tr></thead>
+      <tbody>
+        <% results.forEach(function (r) { %>
+          <tr><td><a href="/ad/cambios/<%= r.id %>">#<%= r.id %></a></td><td><%= r.label %></td>
+            <td class="<%= r.ok ? (r.warning ? 'text-warning-emphasis' : 'text-success') : 'text-danger' %>"><%= r.ok ? '' : 'Falló: ' %><%= r.message %></td></tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+  <p class="small text-muted mb-0">Las tablas del módulo se actualizan solas en unos segundos (se vuelve a leer el dominio).</p>
+  <div class="mt-3"><a href="/ad/cambios" class="btn btn-outline-secondary">Ver todos los cambios</a></div>
+</div>
+<script>
+document.querySelectorAll('[data-copiar]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = document.getElementById(b.getAttribute('data-copiar')).textContent;
+    if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { b.innerHTML = '<i class="bi bi-check2"></i> Copiada'; });
+  });
+});
+</script>
+<%- include('../partials/foot') %>

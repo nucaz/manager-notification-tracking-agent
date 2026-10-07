@@ -2,15 +2,24 @@
 <%- include('_tabs') %>
 <% const d10 = function (v) { return v ? String(v).slice(0, 10) : ''; };
    const ouOf = function (dn) { return String(dn || '').split(/,(?=DC=)/i)[0].split(',').map(function (p) { return p.replace(/^(OU|CN)=/i, ''); }).reverse().join(' / '); }; %>
+<% const sel = canChange && writes.ready; %>
 <div class="card p-3">
-  <p class="small text-muted mb-2"><%= items.length %> equipos. Las IP salen de los registros DNS integrados en AD con el mismo nombre.</p>
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <p class="small text-muted mb-2"><%= items.length %> equipos. Las IP salen de los registros DNS integrados en AD con el mismo nombre.
+      <%= sel ? 'Eliminar un equipo borra también sus registros DNS (A y PTR).' : '' %></p>
+    <% if (sel) { %><a href="/ad/cambios/nuevo?op=computer_create" class="btn btn-sm btn-primary"><i class="bi bi-pc-display"></i> Nuevo equipo</a><% } %>
+  </div>
+  <%- include('_seleccion', { loteOps: ['computer_disable', 'computer_enable', 'computer_delete'] }) %>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small">
-      <thead><tr><th>Equipo</th><th>Sistema operativo</th><th>Estado</th><th>Última conexión</th><th>Antigüedad</th><th>IP (DNS)</th><th>Unidad organizativa</th>
+      <thead><tr><% if (sel) { %><th><input type="checkbox" class="form-check-input" id="adSelTodos" aria-label="Marcar visibles"></th><% } %><th>Equipo</th><th>Sistema operativo</th><th>Estado</th><th>Última conexión</th><th>Antigüedad</th><th>IP (DNS)</th><th>Unidad organizativa</th>
         <th data-oculta>Nombre DNS</th><th data-oculta>Versión</th><th data-oculta>Descripción</th><th data-oculta>Contraseña de equipo</th><th data-oculta>Creado</th></tr></thead>
       <tbody>
         <% items.forEach(function (c) { const b = bucket(c.last_seen); %>
           <tr>
+            <% if (sel) { const prot = c.is_dc || !writes.managedOus.some(function (o) { return c.dn.toLowerCase().endsWith(',' + o.toLowerCase()); }); %>
+              <td><input type="checkbox" class="form-check-input ad-sel" name="ids" value="<%= c.id %>" form="adLote" <%= prot ? 'disabled' : '' %>
+                aria-label="Marcar <%= c.name %>" title="<%= prot ? 'Controlador de dominio o fuera de las unidades organizativas gestionadas' : '' %>"></td><% } %>
             <td class="font-monospace text-nowrap"><%= c.name %> <% if (c.is_dc) { %><span class="badge text-bg-primary">DC</span><% } %></td>
             <td><%= c.os || '—' %></td>
             <td><%= c.enabled ? 'Habilitado' : 'Deshabilitado' %></td>
@@ -25,7 +34,7 @@
             <td data-valor="<%= c.when_created || '' %>"><%= d10(c.when_created) %></td>
           </tr>
         <% }); %>
-        <% if (!items.length) { %><tr><td colspan="12" class="text-center text-muted py-4">Sin equipos: lea el dominio.</td></tr><% } %>
+        <% if (!items.length) { %><tr><td colspan="<%= sel ? 13 : 12 %>" class="text-center text-muted py-4">Sin equipos: lea el dominio.</td></tr><% } %>
       </tbody>
     </table>
   </div>

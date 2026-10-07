@@ -1,0 +1,69 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const d16 = function (v) { return v ? String(v).slice(0, 16) : '—'; };
+   const p = item.params || {};
+   const LABEL = { givenName: 'Nombres', sn: 'Apellidos', sam: 'Usuario', displayName: 'Nombre para mostrar', mail: 'Correo', title: 'Cargo', department: 'Área',
+     description: 'Descripción', employeeID: 'DNI', mustChange: 'Cambiar contraseña al entrar', unlock: 'Desbloquear', toOuDn: 'Mover a', name: 'Nombre', scope: 'Ámbito',
+     kind: 'Tipo', memberLabel: 'Miembro' };
+   const isSuper = currentUser.role === 'superadmin';
+   const mine = item.requested_by === currentUser.id; %>
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <h4 class="mb-0">Solicitud #<%= item.id %></h4>
+  <span class="badge <%= ({ pendiente: 'text-bg-warning', ejecutada: 'text-bg-success', fallida: 'text-bg-danger' })[item.status] || 'text-bg-secondary' %>"><%= STATUS[item.status] %></span>
+  <a href="/ad/cambios" class="btn btn-sm btn-outline-secondary ms-auto">Volver</a>
+</div>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-3">
+      <table class="table table-sm mb-0" data-tabla="no">
+        <tr><th style="width: 190px">Operación</th><td><i class="bi <%= (OPS[item.operation] || {}).icon %>"></i> <%= (OPS[item.operation] || {}).label || item.operation %></td></tr>
+        <tr><th>Objeto</th><td><%= item.target_label %><div class="small font-monospace text-muted"><%= item.target_dn || '' %></div></td></tr>
+        <% if (p.changes) { %>
+          <tr><th>Cambios</th><td><ul class="small mb-0"><% Object.keys(p.changes).forEach(function (k) { %>
+            <li><strong><%= USER_FIELDS[k] || k %>:</strong> <span class="text-decoration-line-through text-muted"><%= p.changes[k].from || '(vacío)' %></span> → <%= p.changes[k].to || '(vacío)' %></li>
+          <% }); %></ul></td></tr>
+        <% } %>
+        <% Object.keys(p).filter(function (k) { return LABEL[k]; }).forEach(function (k) { %>
+          <tr><th><%= LABEL[k] %></th><td><%= typeof p[k] === 'boolean' ? (p[k] ? 'Sí' : 'No') : p[k] %></td></tr>
+        <% }); %>
+        <tr><th>Motivo</th><td><%= item.reason || '—' %></td></tr>
+        <tr><th>Pedido por</th><td><%= item.requested_name || item.requested_email || '—' %> · <%= d16(item.requested_at) %> · <%= VIA[item.via] %></td></tr>
+        <% if (item.status === 'pendiente') { %><tr><th>Vence</th><td><%= d16(item.expires_at) %> (si nadie la decide)</td></tr><% } %>
+        <% if (item.decided_by) { %><tr><th>Decidió</th><td><%= item.decided_name %> · <%= d16(item.decided_at) %><%= item.decision_note ? ' · ' + item.decision_note : '' %></td></tr><% } %>
+        <% if (item.executed_at) { %><tr><th>Resultado</th><td class="<%= item.status === 'ejecutada' ? '' : 'text-danger' %>"><%= d16(item.executed_at) %> · <%= item.result %></td></tr><% } %>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <% if (item.hasSecret && mine) { %>
+      <form method="post" action="/ad/cambios/<%= item.id %>/contrasena" class="card p-3 mb-3 border-warning" autocomplete="off">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <h6><i class="bi bi-key"></i> Contraseña generada</h6>
+        <p class="small">Se muestra <strong>una sola vez</strong> y luego se borra (también se borra sola a las 24 horas de ejecutado el cambio).</p>
+        <%- include('_reauth') %>
+        <div><button class="btn btn-warning">Ver la contraseña</button></div>
+      </form>
+    <% } %>
+    <% if (item.status === 'pendiente' && isSuper && !mine) { %>
+      <form method="post" action="/ad/cambios/aprobar" class="card p-3 mb-3 border-warning" autocomplete="off">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="ids" value="<%= item.id %>">
+        <h6>Decidir</h6>
+        <div class="mb-2"><label class="form-label" for="note">Nota (obligatoria para rechazar)</label><input class="form-control" id="note" name="note" maxlength="500"></div>
+        <%- include('_reauth') %>
+        <div class="d-flex gap-2">
+          <button class="btn btn-success"><i class="bi bi-check2-circle"></i> Aprobar y ejecutar</button>
+          <button class="btn btn-outline-danger" formaction="/ad/cambios/rechazar" formnovalidate><i class="bi bi-x-circle"></i> Rechazar</button>
+        </div>
+      </form>
+    <% } %>
+    <% if (item.status === 'pendiente' && mine) { %>
+      <form method="post" action="/ad/cambios/<%= item.id %>/cancelar" class="card p-3">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <p class="small mb-2">Pendiente de aprobación por un superadministrador. Mientras tanto no cambia nada en el dominio.</p>
+        <div><button class="btn btn-sm btn-outline-secondary">Cancelar mi solicitud</button></div>
+      </form>
+    <% } %>
+  </div>
+</div>
+<%- include('../partials/foot') %>

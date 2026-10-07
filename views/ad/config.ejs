@@ -26,10 +26,35 @@
         <label class="form-check-label" for="ad_all_dcs">Consultar todos los controladores de dominio para la última conexión exacta (<code>lastLogon</code> no se replica)</label></div>
       <div><button class="btn btn-primary"><i class="bi bi-shield-check"></i> Probar y guardar</button></div>
     </form>
+
+    <form method="post" action="/ad/configuracion/escritura" class="card p-4 mt-3 <%= wcfg.enabled ? 'border-warning' : '' %>" autocomplete="off" id="ad_escritura">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h5>Cambios en el dominio</h5>
+      <p class="small text-muted">Crear, modificar, deshabilitar, desbloquear, restablecer contraseñas, grupos, equipos con su DNS y restaurar de la papelera.
+        Un superadministrador ejecuta directo; los demás piden aprobación o usan un permiso temporal. Al guardar encendido se <strong>prueba</strong> la cuenta y
+        que existan las unidades organizativas.</p>
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" role="switch" id="ad_writes_enabled" name="ad_writes_enabled" value="1" <%= wcfg.enabled ? 'checked' : '' %>>
+        <label class="form-check-label" for="ad_writes_enabled"><strong>Permitir cambios en el dominio</strong></label></div>
+      <div class="mb-3"><label class="form-label" for="ad_managed_ous">Unidades organizativas gestionadas (una por línea) *</label>
+        <textarea class="form-control font-monospace small" id="ad_managed_ous" name="ad_managed_ous" rows="4" list="ad_ou_lista"
+          placeholder="OU=Depilzone,DC=depilzone,DC=local"><%= wcfg.managedOus.join(String.fromCharCode(10)) %></textarea>
+        <div class="form-text">Solo se cambia lo que está dentro de estas unidades (y sus sub-unidades). Las cuentas privilegiadas nunca, estén donde estén.
+          <% if (ouList.length) { %>Disponibles: <% ouList.filter(function (o) { return o.kind === 'ou'; }).slice(0, 40).forEach(function (o, i) { %><%= i ? ' · ' : '' %><code><%= o.dn %></code><% }); %><% } %></div></div>
+      <div class="mb-3"><label class="form-label" for="ad_write_user">Cuenta de escritura (recomendado: distinta de la de lectura)</label>
+        <input class="form-control font-monospace" id="ad_write_user" name="ad_write_user" placeholder="svc-gestor-escritura@depilzone.local" value="<%= wcfg.writeUser %>">
+        <div class="form-text">Vacío = usa la cuenta de lectura (que entonces necesita la delegación de escritura).</div></div>
+      <div class="mb-3"><label class="form-label" for="ad_write_password">Contraseña de la cuenta de escritura</label>
+        <input class="form-control" type="password" id="ad_write_password" name="ad_write_password" autocomplete="new-password"
+          placeholder="<%= wcfg.hasWritePassword ? 'Configurada - dejar vacío para mantenerla' : '' %>">
+        <div class="form-text">Se guarda cifrada. Nunca se vuelve a mostrar.</div></div>
+      <%- include('_reauth') %>
+      <div><button class="btn btn-warning"><i class="bi bi-shield-check"></i> Probar y guardar</button></div>
+    </form>
   </div>
   <div class="col-lg-5">
     <div class="card p-3">
-      <h6>Cuenta de servicio recomendada (fase 1, solo lectura)</h6>
+      <h6>Cuenta de servicio de lectura</h6>
       <ol class="small mb-2">
         <li>Un usuario propio (ej. <code>svc-gestor</code>), <strong>sin</strong> ser administrador del dominio, con contraseña larga y aleatoria.</li>
         <li>Para leer el directorio basta con ser usuario del dominio. Para ver la <strong>papelera</strong>:
@@ -38,8 +63,21 @@
         <li>En el firewall, permita solo desde el servidor de la aplicación hacia los DC por el puerto <strong>636</strong>.</li>
         <li>Revise en el DC los eventos de inicio de sesión de esta cuenta: solo debe entrar desde la IP del servidor de la aplicación.</li>
       </ol>
-      <div class="small text-muted">La fase 2 (crear, bloquear, resetear contraseñas, grupos, equipos y DNS) usará una delegación adicional solo sobre las OU que se gestionen,
-        con aprobación del superadministrador o permisos temporales. Las cuentas privilegiadas quedarán en solo lectura.</div>
+    </div>
+    <div class="card p-3 mt-3">
+      <h6>Cuenta de escritura (cambios en el dominio)</h6>
+      <ol class="small mb-2">
+        <li>Otro usuario propio (ej. <code>svc-gestor-escritura</code>), <strong>sin</strong> ser administrador del dominio ni de ningún grupo privilegiado.</li>
+        <li>En cada OU gestionada, con <em>Delegar control</em>: crear, eliminar y administrar cuentas de usuario, restablecer contraseñas y leer/escribir
+          <code>lockoutTime</code> y <code>pwdLastSet</code>, modificar la pertenencia a grupos, crear y eliminar objetos de equipo, crear unidades organizativas.</li>
+        <li>Para borrar el DNS de un equipo eliminado: control sobre la zona del dominio (y las inversas) en
+          <code>CN=MicrosoftDNS,DC=DomainDnsZones,…</code>, no el grupo DnsAdmins.</li>
+        <li>Para restaurar de la papelera: <code>dsacls "DC=…" /G "DOMINIO\svc-gestor-escritura:CA;Reanimate Tombstones"</code> y listar/leer/escribir en
+          <code>CN=Deleted Objects</code> (tomando antes la propiedad).</li>
+        <li>Como la de lectura: "La cuenta es importante y no se puede delegar", contraseña larga, solo desde la IP del servidor por el puerto 636.</li>
+      </ol>
+      <div class="small text-muted">AD también protege a los administradores (AdminSDHolder): aunque la delegación sea amplia, el dominio no deja a esta cuenta tocarlos.
+        La aplicación, además, los bloquea antes de intentarlo.</div>
     </div>
   </div>
 </div>

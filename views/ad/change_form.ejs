@@ -1,0 +1,171 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const val = function (k, d) { return form[k] !== undefined ? form[k] : (d === undefined ? '' : d); };
+   const checked = function (k) { return form.op ? form[k] === '1' : true; };
+   const blocked = !writes.ready || pre.length > 0 || !mode;
+   const back = row ? ({ usuario: '/ad/usuarios/', grupo: '/ad/grupos/', equipo: '/ad/equipos', ou: '/ad/unidades', eliminado: '/ad/papelera' })[kind] + (['usuario', 'grupo'].includes(kind) ? row.id : '') : '/ad'; %>
+<div class="row g-3">
+  <div class="col-lg-8">
+    <form method="post" action="/ad/cambios" class="card p-4" autocomplete="off">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="op" value="<%= op %>">
+      <input type="hidden" name="nonce" value="<%= nonce %>">
+      <% if (row && kind !== 'ou') { %><input type="hidden" name="id" value="<%= row.id %>"><% } %>
+      <% if (op === 'group_remove_member') { %><input type="hidden" name="member_hash" value="<%= locals.memberHash || form.member_hash || '' %>"><% } %>
+      <h5 class="<%= def.danger ? 'text-danger' : '' %>"><i class="bi <%= def.icon %>"></i> <%= def.label %></h5>
+
+      <% if (row && kind !== 'ou') { %>
+        <div class="mb-3 small">
+          <div><strong><%= kind === 'usuario' ? (row.display_name || row.sam) + ' · ' + row.sam : (row.name || row.sam) %></strong></div>
+          <div class="font-monospace text-muted"><%= kind === 'eliminado' ? 'Estaba en ' + (row.last_known_parent || '—') : row.dn %></div>
+        </div>
+      <% } %>
+
+      <% if (!writes.ready) { %><div class="alert alert-secondary small"><i class="bi bi-lock"></i> <%= writes.reason %></div><% } %>
+      <% if (pre.length) { %>
+        <div class="alert alert-danger small"><i class="bi bi-shield-x"></i> <strong>Objeto protegido: no se puede cambiar desde aquí.</strong>
+          <ul class="mb-0"><% pre.forEach(function (p) { %><li><%= p %></li><% }); %></ul></div>
+      <% } %>
+
+      <%# ---------------- campos por operacion ---------------- %>
+      <% if (kind === 'ou' || op === 'user_move') { const sel = op === 'user_move' ? val('to_ou_id') : val('ou_id', row ? String(row.id) : ''); %>
+        <div class="mb-3"><label class="form-label" for="ou_sel"><%= op === 'user_move' ? 'Mover a' : (op === 'ou_create' ? 'Crear dentro de' : 'Unidad organizativa') %> *</label>
+          <select class="form-select" id="ou_sel" name="<%= op === 'user_move' ? 'to_ou_id' : 'ou_id' %>" required>
+            <option value="">Elija…</option>
+            <% (locals.ouOptions || []).forEach(function (o) { %>
+              <option value="<%= o.id %>" <%= String(o.id) === String(sel) ? 'selected' : '' %>><%= o.dn %></option>
+            <% }); %>
+          </select>
+          <div class="form-text">Solo las unidades organizativas gestionadas (y las que están dentro).</div></div>
+      <% } %>
+
+      <% if (op === 'user_create') { %>
+        <div class="row g-2">
+          <div class="col-md-6 mb-2"><label class="form-label" for="givenName">Nombres *</label><input class="form-control" id="givenName" name="givenName" required maxlength="64" value="<%= val('givenName') %>"></div>
+          <div class="col-md-6 mb-2"><label class="form-label" for="sn">Apellidos *</label><input class="form-control" id="sn" name="sn" required maxlength="64" value="<%= val('sn') %>"></div>
+          <div class="col-md-6 mb-2"><label class="form-label" for="sam">Usuario (inicio de sesión) *</label>
+            <input class="form-control font-monospace" id="sam" name="sam" required maxlength="20" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,19}" value="<%= val('sam') %>">
+            <div class="form-text">Hasta 20 caracteres; el correo de inicio será usuario@<%= run && run.summary ? run.summary.domain : 'dominio' %>.</div></div>
+          <div class="col-md-6 mb-2"><label class="form-label" for="displayName">Nombre para mostrar</label><input class="form-control" id="displayName" name="displayName" maxlength="255" value="<%= val('displayName') %>"></div>
+          <div class="col-md-6 mb-2"><label class="form-label" for="mail">Correo</label><input class="form-control" type="email" id="mail" name="mail" maxlength="150" value="<%= val('mail') %>"></div>
+          <div class="col-md-6 mb-2"><label class="form-label" for="employeeID">DNI (employeeID)</label><input class="form-control font-monospace" id="employeeID" name="employeeID" maxlength="20" value="<%= val('employeeID') %>">
+            <div class="form-text">Vincula la cuenta con el empleado de la planilla.</div></div>
+          <div class="col-md-6 mb-2"><label class="form-label" for="title">Cargo</label><input class="form-control" id="title" name="title" maxlength="150" value="<%= val('title') %>"></div>
+          <div class="col-md-6 mb-2"><label class="form-label" for="department">Área</label><input class="form-control" id="department" name="department" maxlength="150" value="<%= val('department') %>"></div>
+          <div class="col-12 mb-2"><label class="form-label" for="description">Descripción</label><input class="form-control" id="description" name="description" maxlength="500" value="<%= val('description') %>"></div>
+        </div>
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="mustChange" name="mustChange" value="1" <%= checked('mustChange') ? 'checked' : '' %>>
+          <label class="form-check-label" for="mustChange">Debe cambiar la contraseña al iniciar sesión (recomendado)</label></div>
+        <p class="small text-muted">La contraseña inicial la genera la aplicación (16 caracteres, cumple la complejidad de AD) y se muestra <strong>una sola vez</strong>
+          a quien pidió el cambio.</p>
+        <script>
+        (function () {
+          var g = document.getElementById('givenName'), s = document.getElementById('sn'), u = document.getElementById('sam'), d = document.getElementById('displayName');
+          var touched = !!u.value, touchedD = !!d.value;
+          var plain = function (t) { return String(t || '').trim().split(/\s+/)[0].normalize('NFD').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+          function fill() {
+            if (!touched) u.value = [plain(g.value), plain(s.value)].filter(Boolean).join('.').slice(0, 20);
+            if (!touchedD) d.value = [g.value.trim(), s.value.trim()].filter(Boolean).join(' ');
+          }
+          g.addEventListener('input', fill); s.addEventListener('input', fill);
+          u.addEventListener('input', function () { touched = true; }); d.addEventListener('input', function () { touchedD = true; });
+        })();
+        </script>
+      <% } %>
+
+      <% if (op === 'user_update') { %>
+        <% if (locals.liveError) { %><div class="alert alert-danger small">No se pudieron leer los datos actuales: <%= liveError %></div>
+        <% } else if (locals.live) { %>
+          <p class="small text-muted">Datos actuales leídos ahora del dominio. Solo se cambia lo que modifique.</p>
+          <div class="row g-2">
+            <% Object.keys(USER_FIELDS).forEach(function (k) { %>
+              <div class="<%= k === 'description' ? 'col-12' : 'col-md-6' %> mb-2"><label class="form-label" for="f_<%= k %>"><%= USER_FIELDS[k] %></label>
+                <input class="form-control" id="f_<%= k %>" name="f_<%= k %>" maxlength="<%= k === 'description' ? 500 : 255 %>" value="<%= val('f_' + k, live[k]) %>"></div>
+            <% }); %>
+          </div>
+        <% } %>
+      <% } %>
+
+      <% if (op === 'user_reset_password') { %>
+        <div class="form-check"><input class="form-check-input" type="checkbox" id="mustChange" name="mustChange" value="1" <%= checked('mustChange') ? 'checked' : '' %>>
+          <label class="form-check-label" for="mustChange">Debe cambiarla al iniciar sesión (recomendado)</label></div>
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="unlock" name="unlock" value="1" <%= checked('unlock') ? 'checked' : '' %>>
+          <label class="form-check-label" for="unlock">Desbloquear la cuenta si está bloqueada</label></div>
+        <p class="small text-muted">La aplicación genera la contraseña nueva (16 caracteres). Se muestra <strong>una sola vez</strong> a quien pidió el cambio:
+          si lo ejecuta usted, al terminar; si requiere aprobación, cuando se apruebe (queda guardada cifrada hasta 24 horas).</p>
+      <% } %>
+
+      <% if (op === 'group_create') { %>
+        <div class="mb-2"><label class="form-label" for="name">Nombre del grupo *</label><input class="form-control" id="name" name="name" required maxlength="64" value="<%= val('name') %>"></div>
+        <div class="row g-2">
+          <div class="col-md-6 mb-2"><label class="form-label" for="kind">Tipo</label><select class="form-select" id="kind" name="kind">
+            <option value="seguridad" <%= val('kind') !== 'distribucion' ? 'selected' : '' %>>Seguridad</option>
+            <option value="distribucion" <%= val('kind') === 'distribucion' ? 'selected' : '' %>>Distribución (correo)</option></select></div>
+          <div class="col-md-6 mb-2"><label class="form-label" for="scope">Ámbito</label><select class="form-select" id="scope" name="scope">
+            <option value="global" <%= !['local', 'universal'].includes(val('scope')) ? 'selected' : '' %>>Global</option>
+            <option value="local" <%= val('scope') === 'local' ? 'selected' : '' %>>Dominio local</option>
+            <option value="universal" <%= val('scope') === 'universal' ? 'selected' : '' %>>Universal</option></select></div>
+        </div>
+        <div class="mb-3"><label class="form-label" for="description">Descripción</label><input class="form-control" id="description" name="description" maxlength="500" value="<%= val('description') %>"></div>
+      <% } %>
+
+      <% if (op === 'computer_create' || op === 'ou_create') { %>
+        <div class="mb-2"><label class="form-label" for="name"><%= op === 'ou_create' ? 'Nombre de la unidad organizativa' : 'Nombre del equipo' %> *</label>
+          <input class="form-control <%= op === 'computer_create' ? 'font-monospace text-uppercase' : '' %>" id="name" name="name" required maxlength="<%= op === 'computer_create' ? 15 : 64 %>" value="<%= val('name') %>">
+          <% if (op === 'computer_create') { %><div class="form-text">Hasta 15 caracteres (nombre NetBIOS): letras, números y guion. Así podrá unirse al dominio con ese nombre.</div><% } %></div>
+        <div class="mb-3"><label class="form-label" for="description">Descripción</label><input class="form-control" id="description" name="description" maxlength="500" value="<%= val('description') %>"></div>
+      <% } %>
+
+      <% if (op === 'group_add_member') { %>
+        <div class="mb-3"><label class="form-label" for="member">Usuario o equipo a agregar *</label>
+          <input class="form-control font-monospace" id="member" name="member" list="adCandidatos" required value="<%= val('member') %>" placeholder="usuario o NOMBRE-EQUIPO">
+          <datalist id="adCandidatos"><% (locals.candidates || []).forEach(function (c) { %><option value="<%= c.sam %>"><%= c.display_name || '' %></option><% }); %></datalist>
+          <div class="form-text">No se agregan cuentas privilegiadas ni grupos (sin anidar grupos desde aquí).</div></div>
+      <% } %>
+
+      <% if (op === 'group_remove_member') { %>
+        <% if (locals.member) { %><p>Quitar a <strong class="font-monospace"><%= member.label %></strong> del grupo.</p>
+        <% } else { %><div class="alert alert-secondary small">Ese miembro ya no figura en el grupo.</div><% } %>
+      <% } %>
+
+      <% if (op === 'computer_delete') { %>
+        <div class="mb-3"><h6 class="small fw-semibold">Se elimina el equipo de su unidad organizativa y estos registros DNS (según la última lectura):</h6>
+          <% if (locals.dns && dns.length) { %><ul class="small font-monospace mb-1"><% dns.forEach(function (r) { %><li><%= r.name %>.<%= r.zone %> · <%= r.rtype %> <%= r.data || '' %></li><% }); %></ul>
+          <% } else { %><p class="small text-muted mb-1">No tiene registros DNS en la última lectura.</p><% } %>
+          <div class="form-text">Al ejecutar se vuelven a buscar en vivo (incluidos los PTR de las zonas inversas). Un nombre con otros registros además del equipo no se borra: se avisa.</div></div>
+      <% } %>
+      <% if (['user_delete', 'group_delete'].includes(op)) { %>
+        <p class="small">Queda en la <strong>papelera de AD</strong> (si está habilitada) y se puede restaurar desde la pestaña Papelera.</p>
+      <% } %>
+      <% if (op === 'object_restore') { %>
+        <p class="small">Se restaura en <span class="font-monospace"><%= row.last_known_parent %></span> con su nombre original.</p>
+      <% } %>
+
+      <%# ---------------- como se aplica ---------------- %>
+      <%- include('_modo') %>
+      <div class="mb-3"><label class="form-label" for="reason">Motivo <%= mode && mode.mode === 'aprobacion' ? '*' : '' %></label>
+        <textarea class="form-control" id="reason" name="reason" rows="2" maxlength="500" <%= mode && mode.mode === 'aprobacion' ? 'required' : '' %>
+          placeholder="Ticket, pedido del área, baja del colaborador…"><%= val('reason') %></textarea></div>
+      <% if (mode && mode.mode !== 'aprobacion' && !blocked) { %><%- include('_reauth') %><% } %>
+      <div class="d-flex gap-2">
+        <% if (!blocked && !(op === 'group_remove_member' && !locals.member) && !(op === 'user_update' && !locals.live)) { %>
+          <button class="btn <%= def.danger ? 'btn-danger' : 'btn-primary' %>"><i class="bi <%= mode.mode === 'aprobacion' ? 'bi-send' : def.icon %>"></i>
+            <%= mode.mode === 'aprobacion' ? 'Enviar solicitud' : (def.danger ? 'Eliminar ahora' : 'Ejecutar ahora') %></button>
+        <% } %>
+        <a href="<%= back %>" class="btn btn-outline-secondary">Volver</a>
+      </div>
+    </form>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-3 small">
+      <h6>Protecciones</h6>
+      <ul class="mb-0">
+        <li>Solo dentro de las unidades organizativas gestionadas.</li>
+        <li>Nunca cuentas o grupos privilegiados (por SID, incluidos los anidados), integrados, críticos del sistema, controladores de dominio ni las cuentas de esta aplicación.</li>
+        <li>Al ejecutar se vuelve a leer el objeto <strong>en vivo</strong> y se repiten estas comprobaciones, aunque la solicitud sea de días atrás.</li>
+        <li>Todo queda en Auditoría y en la pestaña Cambios.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<%- include('../partials/foot') %>

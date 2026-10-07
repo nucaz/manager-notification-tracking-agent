@@ -11,7 +11,8 @@
 //     papelera necesita "Listar contenido" delegado en CN=Deleted Objects).
 //   - La contrasena se guarda cifrada (settings, ad_bind_password) y solo la
 //     configura un superadministrador.
-//   - Esta fase no escribe nada en el dominio.
+//   - Este servicio no escribe nada en el dominio. Los cambios (fase 2) viven
+//     aparte, en adWriteService.js, con su propia cuenta y sus protecciones.
 const crypto = require('crypto');
 const tls = require('tls');
 const { Client, Control } = require('ldapts');
@@ -534,7 +535,7 @@ async function group(id) {
   const [[g]] = await pool.query('SELECT * FROM ad_groups WHERE id = ? AND removed_at IS NULL', [id]);
   if (!g) return null;
   const [members] = await pool.query(
-    `SELECT m.member_dn, m.member_kind, u.id AS user_id, u.sam, u.display_name, u.enabled, ${LAST_SQL('u')} AS last_seen
+    `SELECT m.member_dn, m.member_kind, m.member_hash, u.id AS user_id, u.sam, u.display_name, u.enabled, ${LAST_SQL('u')} AS last_seen
      FROM ad_group_members m LEFT JOIN ad_users u ON u.id = m.user_id WHERE m.group_id = ? ORDER BY m.member_kind, u.sam, m.member_dn`, [id]
   );
   let effective = [];
@@ -622,5 +623,5 @@ function escapeDn(dn) {
 module.exports = {
   PRIVILEGED, PRIVILEGED_LABEL, IDLE_DAYS, config, validateConfig, test, sync, peerCertificate,
   lastRun, users, user, computers, groups, group, ous, deleted, dns, overview,
-  _: { fileTime, genTime, guidOf, sidOf, parseDnsRecord, parentDn, rdnValue, escapeDn, hostOf },
+  _: { fileTime, genTime, guidOf, sidOf, parseDnsRecord, parentDn, rdnValue, escapeDn, hostOf, connect, search, explain, str, list, UAC, IN_CHAIN, SHOW_DELETED },
 };

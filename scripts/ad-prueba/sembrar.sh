@@ -32,6 +32,7 @@ st user delete borrado.temp
 st computer create PC-VENTAS-01 --computerou="OU=Equipos,OU=Depilzone" --description="Caja 1"
 st computer create PC-ANTIGUA --computerou="OU=Equipos,OU=Depilzone"
 st computer create SRV-ARCHIVOS --computerou="OU=Equipos,OU=Depilzone"
+st computer create PC-SIN-DNS --computerou="OU=Equipos,OU=Depilzone" --description="Equipo sin registro DNS"
 
 # DNS integrado: A del equipo, A huerfano (equipo que ya no existe) y un CNAME.
 DNS() { samba-tool dns add 127.0.0.1 prueba.local "$@" -U Administrator --password="$PW" 2>&1 | grep -v -i warning || true; }
@@ -39,4 +40,20 @@ DNS pc-ventas-01 A 10.10.0.21
 DNS srv-archivos A 10.10.0.5
 DNS pc-fantasma A 10.10.0.99
 DNS intranet CNAME srv-archivos.prueba.local
+DNS pc-antigua A 10.10.0.30
+# Zona inversa con el PTR de pc-antigua (al eliminar el equipo se borran A y PTR).
+samba-tool dns zonecreate 127.0.0.1 0.10.10.in-addr.arpa -U Administrator --password="$PW" 2>&1 | grep -v -i warning || true
+samba-tool dns add 127.0.0.1 0.10.10.in-addr.arpa 30 PTR pc-antigua.prueba.local -U Administrator --password="$PW" 2>&1 | grep -v -i warning || true
+
+# Fase 2: cuenta de ESCRITURA delegada solo sobre OU=Depilzone (control total
+# heredado en esa OU), la zona DNS del dominio (para borrar los registros de
+# un equipo) y "Reanimar desechados" en la raiz (restaurar de la papelera).
+st user create svc-escritor "$UPW" --userou="OU=Servicios" --description="Cuenta de servicio de escritura del Gestor (delegada)"
+SID=$(samba-tool user show svc-escritor --attributes=objectSid -H ldap://127.0.0.1 -U Administrator --password="$PW" 2>/dev/null | sed -n 's/^objectSid: //p')
+acl() { samba-tool dsacl set --objectdn="$1" --sddl="$2" -H ldap://127.0.0.1 -U Administrator --password="$PW" >/dev/null 2>&1 || true; }
+acl "OU=Depilzone,$B" "(A;CI;GA;;;$SID)"
+acl "DC=prueba.local,CN=MicrosoftDNS,DC=DomainDnsZones,$B" "(A;CI;GA;;;$SID)"
+acl "DC=0.10.10.in-addr.arpa,CN=MicrosoftDNS,DC=DomainDnsZones,$B" "(A;CI;GA;;;$SID)" 2>/dev/null || true
+acl "$B" "(OA;;CR;45ec5156-db7e-47bb-b53f-dbeb2d03c40f;;$SID)"
+acl "CN=Deleted Objects,$B" "(A;;LCRPWP;;;$SID)"
 echo SEMBRADO

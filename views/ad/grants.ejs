@@ -1,0 +1,56 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const d16 = function (v) { return v ? String(v).slice(0, 16) : '—'; }; %>
+<div class="row g-3">
+  <div class="col-lg-5">
+    <form method="post" action="/ad/permisos" class="card p-4" autocomplete="off">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h5><i class="bi bi-hourglass-split"></i> Dar un permiso temporal</h5>
+      <p class="small text-muted">Mientras dure, el usuario ejecuta estos cambios sin esperar su aprobación (confirmando su identidad en cada uno).
+        Todo queda registrado y puede revocarlo en cualquier momento. Las cuentas privilegiadas siguen protegidas igual.</p>
+      <div class="mb-3"><label class="form-label" for="user_id">Usuario de la aplicación *</label>
+        <select class="form-select" id="user_id" name="user_id" required><option value="">Elija…</option>
+          <% users.forEach(function (u) { %><option value="<%= u.id %>"><%= u.full_name %> (<%= u.email %>, <%= u.role %>)</option><% }); %></select>
+        <div class="form-text">Administradores y editores activos (el editor necesita además el módulo habilitado en Permisos).</div></div>
+      <fieldset class="mb-3"><legend class="form-label fs-6">Puede *</legend>
+        <% Object.keys(GROUPS).forEach(function (k) { %>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="groups" value="<%= k %>" id="g_<%= k %>">
+            <label class="form-check-label" for="g_<%= k %>"><%= GROUPS[k] %></label></div>
+        <% }); %>
+      </fieldset>
+      <div class="mb-3"><label class="form-label" for="hours">Durante *</label>
+        <select class="form-select" id="hours" name="hours" required><% Object.keys(DURATIONS).forEach(function (h) { %><option value="<%= h %>" <%= h === '8' ? 'selected' : '' %>><%= DURATIONS[h] %></option><% }); %></select></div>
+      <div class="mb-3"><label class="form-label" for="note">Motivo</label><input class="form-control" id="note" name="note" maxlength="500" placeholder="Ej.: altas del lunes por campaña"></div>
+      <%- include('_reauth') %>
+      <div><button class="btn btn-primary">Dar permiso</button></div>
+    </form>
+  </div>
+  <div class="col-lg-7">
+    <div class="card p-3">
+      <h6>Permisos dados</h6>
+      <div class="table-responsive">
+        <table class="table table-sm small align-middle">
+          <thead><tr><th>Usuario</th><th>Puede</th><th>Desde</th><th>Vence</th><th>Usos</th><th>Estado</th><th data-oculta>Dado por</th><th data-oculta>Motivo</th><th></th></tr></thead>
+          <tbody>
+            <% items.forEach(function (g) { %>
+              <tr class="<%= g.active ? '' : 'text-muted' %>">
+                <td><%= g.full_name %></td>
+                <td><%= g.operations.split(',').map(function (k) { return GROUPS[k] || k; }).join('; ') %></td>
+                <td data-valor="<%= g.granted_at %>"><%= d16(g.granted_at) %></td>
+                <td data-valor="<%= g.expires_at %>"><%= d16(g.expires_at) %></td>
+                <td class="text-end"><%= g.uses_count %></td>
+                <td><%= g.active ? 'Vigente' : (g.revoked_at ? 'Revocado ' + d16(g.revoked_at) : 'Vencido') %></td>
+                <td><%= g.granted_name || '—' %></td>
+                <td><%= g.note || '' %></td>
+                <td><% if (g.active) { %><form method="post" action="/ad/permisos/<%= g.id %>/revocar"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button class="btn btn-sm btn-outline-danger">Revocar</button></form><% } %></td>
+              </tr>
+            <% }); %>
+            <% if (!items.length) { %><tr><td colspan="9" class="text-center text-muted py-3">Aún no hay permisos temporales.</td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/foot') %>

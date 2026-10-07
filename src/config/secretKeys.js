@@ -13,7 +13,7 @@ const SECRET_KEYS = new Set([
   'devops_sidecar_password',
   'backup_recovery_password',
   'm365_client_secret',
-  'ad_bind_password',
+  'ad_bind_password', 'ad_write_password',
 ]);
 
 module.exports = { SECRET_KEYS };

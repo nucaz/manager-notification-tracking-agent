@@ -1,12 +1,19 @@
-// Directorio activo (fase 1: solo lectura). Ver src/services/adService.js.
+// Directorio activo. Ver src/services/adService.js (lectura),
+// adWriteService.js (cambios en el dominio) y adChangeService.js (aprobaciones).
 //   - Ver el modulo: permiso "directorio" (apagado por defecto para editor y lector).
 //   - Leer el dominio ahora: administradores.
-//   - Conexion (servidor, cuenta de servicio, CA): solo superadmin.
+//   - Cambios: superadmin directo; admin/editor piden aprobacion o usan un
+//     permiso temporal; lector nada. Ejecutar y aprobar piden re-autenticacion.
+//   - Conexion (servidor, cuentas, CA, OU gestionadas): solo superadmin.
+const crypto = require('crypto');
 const express = require('express');
-const { requireAuth, isAdmin, isSuperAdmin } = require('../middleware/auth');
+const pool = require('../db/pool');
+const { requireAuth, isAdmin, isSuperAdmin, canWrite } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const adService = require('../services/adService');
+const adWriteService = require('../services/adWriteService');
+const adChangeService = require('../services/adChangeService');
 const clinicService = require('../services/clinicService');
 const settingsService = require('../services/settingsService');
 const auditService = require('../services/auditService');
@@ -15,16 +22,82 @@ const router = express.Router();
 router.use(requireAuth, moduleRequired('directorio'));
 
 const bucket = (d) => clinicService.bucketLabel(clinicService.bucketOf(d));
-const VIEW = { bucket, BUCKETS: clinicService.BUCKETS, PRIVILEGED_LABEL: adService.PRIVILEGED_LABEL, IDLE_DAYS: adService.IDLE_DAYS };
+const VIEW = { bucket, BUCKETS: clinicService.BUCKETS, PRIVILEGED_LABEL: adService.PRIVILEGED_LABEL, IDLE_DAYS: adService.IDLE_DAYS,
+  OPS: adWriteService.OPS, GROUPS: adWriteService.GROUPS, STATUS: adChangeService.STATUS, VIA: adChangeService.VIA };
 
-async function base() {
-  const [run, cfg] = await Promise.all([adService.lastRun(), adService.config()]);
-  return { run, configured: !!(cfg.url && cfg.bindUser && cfg.password && cfg.caPem), lastResult: cfg.lastResult };
+async function base(req) {
+  const [run, cfg, wcfg] = await Promise.all([adService.lastRun(), adService.config(), adWriteService.config()]);
+  const user = req && req.session.user;
+  const canChange = !!user && ['superadmin', 'admin', 'editor'].includes(user.role);
+  return {
+    run, configured: !!(cfg.url && cfg.bindUser && cfg.password && cfg.caPem), lastResult: cfg.lastResult,
+    writes: { ready: !adWriteService.notReady(wcfg), reason: adWriteService.notReady(wcfg), managedOus: wcfg.managedOus },
+    canChange, pending: canChange ? await adChangeService.pendingCount(user) : 0,
+  };
+}
+
+// Codigo de un solo uso por formulario de cambio: recargar la pagina de
+// resultado no vuelve a ejecutar el cambio.
+function newNonce(req) {
+  const n = crypto.randomBytes(16).toString('hex');
+  req.session.adNonces = [...(req.session.adNonces || []).slice(-19), n];
+  return n;
+}
+function useNonce(req) {
+  const list = req.session.adNonces || [];
+  const i = list.indexOf(String(req.body.nonce || ''));
+  if (i === -1) return false;
+  list.splice(i, 1);
+  req.session.adNonces = list;
+  return true;
+}
+
+// ------------------------------ objetos de la ultima lectura ------------------------------
+const SNAP = {
+  usuario: { table: 'ad_users', label: (r) => (r.display_name ? `${r.sam} (${r.display_name})` : r.sam), dn: (r) => r.dn },
+  grupo: { table: 'ad_groups', label: (r) => r.name, dn: (r) => r.dn },
+  equipo: { table: 'ad_computers', label: (r) => r.name, dn: (r) => r.dn },
+  ou: { table: 'ad_ous', label: (r) => r.dn, dn: (r) => r.dn },
+  eliminado: { table: 'ad_deleted', label: (r) => `${r.name}${r.sam ? ` (${r.sam})` : ''}`, dn: (r) => r.last_known_parent },
+};
+async function snapshot(kind, ids) {
+  const s = SNAP[kind];
+  const list = [].concat(ids || []).map(Number).filter((n) => n > 0);
+  if (!s || !list.length) return [];
+  const [rows] = await pool.query(`SELECT * FROM ${s.table} WHERE id IN (?) ${kind === 'eliminado' ? '' : 'AND removed_at IS NULL'}`, [list]);
+  return rows;
+}
+const targetOf = (kind, row) => ({ kind, guid: row.object_guid, dn: SNAP[kind].dn(row), label: SNAP[kind].label(row), id: row.id });
+
+// Aviso previo con la ultima lectura (la comprobacion real es en vivo al ejecutar).
+function precheck(kind, row, managedOus) {
+  const r = [];
+  const dn = kind === 'eliminado' ? row.last_known_parent : row.dn;
+  if (!adWriteService.inManaged(managedOus, dn || '')) r.push('Está fuera de las unidades organizativas gestionadas.');
+  if (kind === 'usuario' && row.privileged_groups) r.push('Es una cuenta privilegiada (solo lectura).');
+  else if (kind === 'usuario' && row.admin_count) r.push('Tiene adminCount=1: es o fue una cuenta privilegiada.');
+  if (kind === 'grupo' && row.privileged) r.push('Es un grupo privilegiado (solo lectura).');
+  if (kind === 'equipo' && row.is_dc) r.push('Es un controlador de dominio.');
+  return r;
+}
+
+// OU gestionadas (y las que estan dentro) para elegir destino.
+async function managedOuOptions(managedOus) {
+  const rows = await adService.ous();
+  return rows.filter((o) => adWriteService.inManaged(managedOus, o.dn));
+}
+
+async function memberOf(groupId, hash) {
+  const [[m]] = await pool.query('SELECT member_dn, member_kind FROM ad_group_members WHERE group_id = ? AND member_hash = ?', [groupId, hash]);
+  if (!m) return null;
+  const table = m.member_kind === 'equipo' ? 'ad_computers' : 'ad_users';
+  const [[row]] = await pool.query(`SELECT * FROM ${table} WHERE LOWER(dn) = LOWER(?) AND removed_at IS NULL`, [m.member_dn]);
+  return row ? { guid: row.object_guid, label: row.sam || row.name, dn: row.dn } : null;
 }
 
 router.get('/', async (req, res, next) => {
   try {
-    const [b, ov] = await Promise.all([base(), adService.overview()]);
+    const [b, ov] = await Promise.all([base(req), adService.overview()]);
     // Antiguedad de la ultima conexion de los usuarios habilitados.
     const tramos = Object.fromEntries(clinicService.BUCKETS.map((x) => [x.key, 0]));
     ov.lastSeen.forEach((u) => { tramos[clinicService.bucketOf(u.last_seen)] += 1; });
@@ -36,7 +109,7 @@ router.get('/', async (req, res, next) => {
 
 router.get('/usuarios', async (req, res, next) => {
   try {
-    res.render('ad/users', { title: 'Directorio activo: usuarios', tab: 'usuarios', ...(await base()), items: await adService.users(), ...VIEW });
+    res.render('ad/users', { title: 'Directorio activo: usuarios', tab: 'usuarios', ...(await base(req)), items: await adService.users(), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -49,7 +122,12 @@ router.get('/usuarios/:id(\\d+)', async (req, res, next) => {
       req.flash('error', 'Usuario no encontrado en la última lectura del dominio.');
       return res.redirect('/ad/usuarios');
     }
-    res.render('ad/user', { title: `Directorio activo: ${item.sam}`, tab: 'usuarios', ...(await base()), item, ...VIEW });
+    const b = await base(req);
+    const groupOptions = (await adService.groups()).filter((g) => !g.privileged && adWriteService.inManaged(b.writes.managedOus, g.dn)
+      && !item.memberOf.some((m) => m.id === g.id));
+    res.render('ad/user', { title: `Directorio activo: ${item.sam}`, tab: 'usuarios', ...b, item, ...VIEW, groupOptions,
+      memberHash: crypto.createHash('sha1').update(String(item.dn).toLowerCase()).digest('hex'),
+      protectedReasons: precheck('usuario', item, b.writes.managedOus) });
   } catch (err) {
     next(err);
   }
@@ -57,7 +135,7 @@ router.get('/usuarios/:id(\\d+)', async (req, res, next) => {
 
 router.get('/grupos', async (req, res, next) => {
   try {
-    res.render('ad/groups', { title: 'Directorio activo: grupos', tab: 'grupos', ...(await base()), items: await adService.groups(), ...VIEW });
+    res.render('ad/groups', { title: 'Directorio activo: grupos', tab: 'grupos', ...(await base(req)), items: await adService.groups(), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -70,7 +148,8 @@ router.get('/grupos/:id(\\d+)', async (req, res, next) => {
       req.flash('error', 'Grupo no encontrado en la última lectura del dominio.');
       return res.redirect('/ad/grupos');
     }
-    res.render('ad/group', { title: `Directorio activo: ${item.name}`, tab: 'grupos', ...(await base()), item, ...VIEW });
+    const b = await base(req);
+    res.render('ad/group', { title: `Directorio activo: ${item.name}`, tab: 'grupos', ...b, item, ...VIEW, protectedReasons: precheck('grupo', item, b.writes.managedOus) });
   } catch (err) {
     next(err);
   }
@@ -78,7 +157,7 @@ router.get('/grupos/:id(\\d+)', async (req, res, next) => {
 
 router.get('/unidades', async (req, res, next) => {
   try {
-    res.render('ad/ous', { title: 'Directorio activo: unidades organizativas', tab: 'unidades', ...(await base()), items: await adService.ous(), ...VIEW });
+    res.render('ad/ous', { title: 'Directorio activo: unidades organizativas', tab: 'unidades', ...(await base(req)), items: await adService.ous(), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -86,7 +165,7 @@ router.get('/unidades', async (req, res, next) => {
 
 router.get('/equipos', async (req, res, next) => {
   try {
-    res.render('ad/computers', { title: 'Directorio activo: equipos', tab: 'equipos', ...(await base()), items: await adService.computers(), ...VIEW });
+    res.render('ad/computers', { title: 'Directorio activo: equipos', tab: 'equipos', ...(await base(req)), items: await adService.computers(), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -94,7 +173,7 @@ router.get('/equipos', async (req, res, next) => {
 
 router.get('/dns', async (req, res, next) => {
   try {
-    res.render('ad/dns', { title: 'Directorio activo: DNS', tab: 'dns', ...(await base()), items: await adService.dns(), ...VIEW });
+    res.render('ad/dns', { title: 'Directorio activo: DNS', tab: 'dns', ...(await base(req)), items: await adService.dns(), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -102,7 +181,7 @@ router.get('/dns', async (req, res, next) => {
 
 router.get('/papelera', async (req, res, next) => {
   try {
-    res.render('ad/deleted', { title: 'Directorio activo: papelera', tab: 'papelera', ...(await base()), items: await adService.deleted(), ...VIEW });
+    res.render('ad/deleted', { title: 'Directorio activo: papelera', tab: 'papelera', ...(await base(req)), items: await adService.deleted(), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -121,15 +200,349 @@ router.post('/sincronizar', isAdmin, verifyCsrfToken, async (req, res) => {
   res.redirect(req.get('referer') && /\/ad(\/|$)/.test(req.get('referer')) ? req.get('referer') : '/ad');
 });
 
+// ------------------------------ cambios en el dominio ------------------------------
+const back = (req, fallback) => (req.get('referer') && /\/ad(\/|$)/.test(req.get('referer')) ? req.get('referer') : fallback);
+const ids = (v) => [].concat(v || []).map(Number).filter((n) => n > 0);
+
+// Lee el formulario de una operacion y arma { target, params } (validado).
+async function buildChange(req, op) {
+  const def = adWriteService.OPS[op];
+  const b = req.body;
+  const wcfg = await adWriteService.config();
+  const kind = def.target;
+  const [row] = await snapshot(kind, kind === 'ou' ? b.ou_id : b.id);
+  if (!row) throw new Error(kind === 'ou' ? 'Elija la unidad organizativa.' : 'El objeto ya no está en la última lectura del dominio.');
+  const pre = precheck(kind, row, wcfg.managedOus);
+  if (pre.length) throw new Error(`No se puede: ${pre.join(' ')}`);
+  let params = {};
+  switch (op) {
+    case 'user_create':
+      params = { givenName: b.givenName, sn: b.sn, sam: b.sam, displayName: b.displayName, mail: b.mail, title: b.title, department: b.department,
+        description: b.description, employeeID: b.employeeID, mustChange: b.mustChange === '1' };
+      break;
+    case 'user_update': {
+      const live = await adWriteService.readLive(row.object_guid, Object.keys(adWriteService.USER_FIELDS));
+      if (!live) throw new Error('El usuario ya no existe en el dominio.');
+      const changes = {};
+      Object.keys(adWriteService.USER_FIELDS).forEach((k) => {
+        const v = b[`f_${k}`];
+        if (v !== undefined && String(v).trim() !== String(live[k] || '').trim()) changes[k] = { from: live[k] || '', to: v };
+      });
+      params = { changes };
+      break;
+    }
+    case 'user_reset_password':
+      params = { mustChange: b.mustChange === '1', unlock: b.unlock === '1' };
+      break;
+    case 'user_move': {
+      const [ou] = await snapshot('ou', b.to_ou_id);
+      if (!ou || !adWriteService.inManaged(wcfg.managedOus, ou.dn)) throw new Error('Elija una unidad organizativa de destino gestionada.');
+      params = { toOuGuid: ou.object_guid, toOuDn: ou.dn };
+      break;
+    }
+    case 'group_create':
+      params = { name: b.name, scope: b.scope, kind: b.kind, description: b.description };
+      break;
+    case 'computer_create':
+    case 'ou_create':
+      params = { name: b.name, description: b.description };
+      break;
+    case 'group_add_member': {
+      const q = String(b.member || '').trim().replace(/\$$/, '');
+      const [[u]] = await pool.query('SELECT object_guid, sam FROM ad_users WHERE removed_at IS NULL AND LOWER(sam) = LOWER(?)', [q]);
+      const [[c]] = u ? [[null]] : await pool.query('SELECT object_guid, name FROM ad_computers WHERE removed_at IS NULL AND LOWER(name) = LOWER(?)', [q]);
+      if (!u && !c) throw new Error(`No se encontró el usuario o equipo "${q}" en la última lectura.`);
+      params = { memberGuid: (u || c).object_guid, memberLabel: u ? u.sam : c.name };
+      break;
+    }
+    case 'group_remove_member': {
+      const m = await memberOf(row.id, String(b.member_hash || ''));
+      if (!m) throw new Error('Ese miembro ya no figura en el grupo (vuelva a leer el dominio).');
+      params = { memberGuid: m.guid, memberLabel: m.label };
+      break;
+    }
+    default:
+      break;
+  }
+  params = adWriteService.validateParams(op, params);
+  const target = targetOf(kind, row);
+  if (kind === 'ou') {
+    const what = { user_create: params.sam, group_create: params.name, computer_create: params.name, ou_create: params.name }[op];
+    target.label = `${what} (nuevo) en ${row.name}`;
+  } else if (op === 'group_add_member' || op === 'group_remove_member') {
+    target.label = `${row.name} ${op === 'group_add_member' ? '+' : '−'} ${params.memberLabel}`;
+  }
+  return { target, params };
+}
+
+function renderResult(res, req, results, title) {
+  res.render('ad/result', { title, tab: 'cambios', results, ...res.locals.adBase, ...VIEW });
+}
+
+router.get('/cambios/nuevo', canWrite, async (req, res, next) => {
+  try {
+    const op = String(req.query.op || '');
+    const def = adWriteService.OPS[op];
+    if (!def) return res.redirect('/ad/cambios');
+    const b = await base(req);
+    const kind = def.target;
+    let row = null;
+    if (req.query.id) [row] = await snapshot(kind, req.query.id);
+    if (!row && kind !== 'ou') {
+      req.flash('error', 'El objeto ya no está en la última lectura del dominio.');
+      return res.redirect('/ad');
+    }
+    const pre = row ? precheck(kind, row, b.writes.managedOus) : [];
+    const mode = await adChangeService.modeFor(req.session.user, op);
+    const extra = {};
+    if (kind === 'ou' || op === 'user_move') extra.ouOptions = await managedOuOptions(b.writes.managedOus);
+    if (op === 'user_update' && row && !pre.length && b.writes.ready) {
+      try { extra.live = await adWriteService.readLive(row.object_guid, Object.keys(adWriteService.USER_FIELDS)); } catch (err) { extra.liveError = err.message; }
+    }
+    if (op === 'computer_delete' && row) {
+      [extra.dns] = await pool.query(
+        `SELECT zone, name, rtype, data FROM ad_dns_records WHERE computer_id = ?
+           OR (rtype = 'PTR' AND LOWER(TRIM(TRAILING '.' FROM data)) = LOWER(?)) ORDER BY zone, name`, [row.id, row.dns_host || `${row.name}.`]
+      );
+    }
+    if (op === 'group_remove_member' && row) {
+      extra.memberHash = String(req.query.miembro || '');
+      extra.member = await memberOf(row.id, extra.memberHash);
+    }
+    if (op === 'group_add_member') {
+      [extra.candidates] = await pool.query("SELECT sam, display_name FROM ad_users WHERE removed_at IS NULL AND privileged_groups IS NULL AND admin_count = 0 ORDER BY sam LIMIT 5000");
+    }
+    const form = req.session.adFormData && req.session.adFormData.op === op ? req.session.adFormData : (req.query.member ? { member: String(req.query.member) } : {});
+    delete req.session.adFormData;
+    res.render('ad/change_form', { title: `Directorio activo: ${def.label.toLowerCase()}`, tab: 'cambios', ...b, ...VIEW, op, def, kind, row, pre, mode,
+      reauth: await adChangeService.reauthKind(req.session.user.id), nonce: newNonce(req), form, USER_FIELDS: adWriteService.USER_FIELDS, ...extra });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/cambios', canWrite, verifyCsrfToken, async (req, res, next) => {
+  const op = String(req.body.op || '');
+  const def = adWriteService.OPS[op];
+  if (!def) return res.redirect('/ad/cambios');
+  const formUrl = `/ad/cambios/nuevo?op=${encodeURIComponent(op)}${req.body.id ? `&id=${encodeURIComponent(req.body.id)}` : (req.body.ou_id ? `&id=${encodeURIComponent(req.body.ou_id)}` : '')}`
+    + `${req.body.member_hash ? `&miembro=${encodeURIComponent(req.body.member_hash)}` : ''}`;
+  try {
+    if (!useNonce(req)) throw new Error('Este formulario ya se envió (o venció). Ábralo de nuevo.');
+    const { target, params } = await buildChange(req, op);
+    const r = await adChangeService.submit(req, { op, targets: [target], params, reason: req.body.reason });
+    if (r.mode === 'aprobacion') {
+      req.flash('success', `Solicitud #${r.ids[0]} enviada. Un superadministrador debe aprobarla; mientras tanto no se cambia nada en el dominio.`);
+      return res.redirect(`/ad/cambios/${r.ids[0]}`);
+    }
+    res.locals.adBase = await base(req);
+    return renderResult(res, req, r.results, 'Directorio activo: resultado');
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    const keep = { ...req.body };
+    ['_csrf', 'nonce', 'reauth_code', 'reauth_password'].forEach((k) => delete keep[k]);
+    req.session.adFormData = keep;
+    req.flash('error', err.message);
+    return res.redirect(formUrl);
+  }
+});
+
+// Lote: revisar (pantalla de confirmacion) y ejecutar/pedir.
+router.post('/cambios/lote/revisar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const op = String(req.body.op || '');
+    const def = adWriteService.OPS[op];
+    if (!def || !def.bulk) throw new Error('Operación no disponible en lote.');
+    const list = ids(req.body.ids);
+    if (!list.length) throw new Error('Marque al menos un elemento de la tabla.');
+    if (list.length > adChangeService.MAX_BATCH) throw new Error(`Como máximo ${adChangeService.MAX_BATCH} elementos por vez.`);
+    const b = await base(req);
+    const rows = await snapshot(def.target, list);
+    const items = rows.map((row) => ({ row, target: targetOf(def.target, row), pre: precheck(def.target, row, b.writes.managedOus) }));
+    res.render('ad/batch', { title: `Directorio activo: ${def.label.toLowerCase()} en lote`, tab: 'cambios', ...b, ...VIEW, op, def, items,
+      mode: await adChangeService.modeFor(req.session.user, op), reauth: await adChangeService.reauthKind(req.session.user.id), nonce: newNonce(req) });
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+    return res.redirect(back(req, '/ad'));
+  }
+});
+
+router.post('/cambios/lote', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    if (!useNonce(req)) throw new Error('Este formulario ya se envió (o venció). Vuelva a marcar los elementos.');
+    const op = String(req.body.op || '');
+    const def = adWriteService.OPS[op];
+    if (!def || !def.bulk) throw new Error('Operación no disponible en lote.');
+    const b = await base(req);
+    const rows = await snapshot(def.target, ids(req.body.ids));
+    const targets = rows.filter((row) => !precheck(def.target, row, b.writes.managedOus).length).map((row) => targetOf(def.target, row));
+    const r = await adChangeService.submit(req, { op, targets, params: {}, reason: req.body.reason });
+    if (r.mode === 'aprobacion') {
+      req.flash('success', `${r.ids.length} solicitud(es) enviada(s) para aprobación (#${r.ids[0]}${r.ids.length > 1 ? ` a #${r.ids[r.ids.length - 1]}` : ''}).`);
+      return res.redirect('/ad/cambios');
+    }
+    res.locals.adBase = b;
+    return renderResult(res, req, r.results, 'Directorio activo: resultado del lote');
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+    return res.redirect('/ad/cambios');
+  }
+});
+
+router.get('/cambios', canWrite, async (req, res, next) => {
+  try {
+    const items = await adChangeService.list(req.session.user, { status: req.query.estado });
+    res.render('ad/changes', { title: 'Directorio activo: cambios', tab: 'cambios', ...(await base(req)), ...VIEW, items, estado: req.query.estado || '',
+      reauth: await adChangeService.reauthKind(req.session.user.id), grants: await adChangeService.myGrants(req.session.user.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/cambios/:id(\\d+)', canWrite, async (req, res, next) => {
+  try {
+    const item = await adChangeService.get(req.params.id, req.session.user);
+    if (!item) {
+      req.flash('error', 'Solicitud no encontrada.');
+      return res.redirect('/ad/cambios');
+    }
+    res.render('ad/change', { title: `Directorio activo: solicitud #${item.id}`, tab: 'cambios', ...(await base(req)), ...VIEW, item,
+      reauth: await adChangeService.reauthKind(req.session.user.id), USER_FIELDS: adWriteService.USER_FIELDS });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/cambios/aprobar', isSuperAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const results = await adChangeService.approve(req, ids(req.body.ids), req.body.note);
+    if (results.some((r) => r.secret)) {
+      res.locals.adBase = await base(req);
+      return renderResult(res, req, results, 'Directorio activo: resultado');
+    }
+    const ok = results.filter((r) => r.ok).length;
+    req.flash(ok === results.length ? 'success' : 'error', `${ok} de ${results.length} cambio(s) aprobados y ejecutados.`
+      + `${results.filter((r) => !r.ok).map((r) => ` #${r.id}: ${r.message}`).join(' ')}`);
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+  }
+  return res.redirect(back(req, '/ad/cambios'));
+});
+
+router.post('/cambios/rechazar', isSuperAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const n = await adChangeService.reject(req, ids(req.body.ids), req.body.note);
+    req.flash('success', `${n} solicitud(es) rechazada(s).`);
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+  }
+  return res.redirect(back(req, '/ad/cambios'));
+});
+
+router.post('/cambios/:id(\\d+)/cancelar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const n = await adChangeService.cancel(req, req.params.id);
+    req.flash(n ? 'success' : 'error', n ? 'Solicitud cancelada.' : 'Solo se cancela una solicitud propia que siga pendiente.');
+  } catch (err) {
+    return next(err);
+  }
+  return res.redirect(`/ad/cambios/${req.params.id}`);
+});
+
+// La contrasena generada, una sola vez, a quien pidio el cambio.
+router.post('/cambios/:id(\\d+)/contrasena', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const secret = await adChangeService.revealSecret(req, req.params.id);
+    const item = await adChangeService.get(req.params.id, req.session.user);
+    res.locals.adBase = await base(req);
+    return renderResult(res, req, [{ id: item.id, ok: true, message: item.result, secret, label: item.target_label, operation: item.operation }],
+      'Directorio activo: contraseña generada');
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+    return res.redirect(`/ad/cambios/${req.params.id}`);
+  }
+});
+
+// ------------------------------ permisos temporales (superadmin) ------------------------------
+router.get('/permisos', isSuperAdmin, async (req, res, next) => {
+  try {
+    res.render('ad/grants', { title: 'Directorio activo: permisos temporales', tab: 'cambios', ...(await base(req)), ...VIEW,
+      items: await adChangeService.grants(), users: await adChangeService.grantableUsers(), DURATIONS: adChangeService.DURATIONS,
+      reauth: await adChangeService.reauthKind(req.session.user.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/permisos', isSuperAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const g = await adChangeService.grant(req, { userId: Number(req.body.user_id), groups: req.body.groups, hours: req.body.hours, note: req.body.note });
+    req.flash('success', `Permiso temporal dado a ${g.user.full_name || g.user.email}.`);
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+  }
+  return res.redirect('/ad/permisos');
+});
+
+router.post('/permisos/:id(\\d+)/revocar', isSuperAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const n = await adChangeService.revoke(req, req.params.id);
+    req.flash(n ? 'success' : 'error', n ? 'Permiso revocado.' : 'Ese permiso ya estaba revocado.');
+  } catch (err) {
+    return next(err);
+  }
+  return res.redirect('/ad/permisos');
+});
+
 // ------------------------------ conexion (solo superadmin) ------------------------------
 router.get('/configuracion', isSuperAdmin, async (req, res, next) => {
   try {
     const cfg = await adService.config();
-    res.render('ad/config', { title: 'Directorio activo: conexión', tab: 'configuracion', ...(await base()),
-      cfg: { ...cfg, password: cfg.password ? 'set' : '' }, test: null });
+    const wcfg = await adWriteService.config();
+    res.render('ad/config', { title: 'Directorio activo: conexión', tab: 'configuracion', ...(await base(req)),
+      cfg: { ...cfg, password: cfg.password ? 'set' : '' }, test: null,
+      wcfg: { enabled: wcfg.enabled, managedOus: wcfg.managedOus, writeUser: wcfg.writeUser, hasWritePassword: wcfg.hasWritePassword },
+      ouList: await adService.ous(), reauth: await adChangeService.reauthKind(req.session.user.id) });
   } catch (err) {
     next(err);
   }
+});
+
+// Cambios en el dominio: interruptor, OU gestionadas y cuenta de escritura.
+// Se prueba antes de guardar (inicio de sesion y que las OU existan).
+router.post('/configuracion/escritura', isSuperAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    await adChangeService.verifyReauth(req);
+    const current = await adWriteService.config();
+    const managedOus = [...new Set(String(req.body.ad_managed_ous || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean))].slice(0, 50);
+    const writeUser = String(req.body.ad_write_user || '').trim().slice(0, 255);
+    const newPassword = req.body.ad_write_password ? String(req.body.ad_write_password) : '';
+    const enabled = req.body.ad_writes_enabled === '1';
+    const pairs = { ad_writes_enabled: enabled ? '1' : '0', ad_managed_ous: managedOus.join('\n'), ad_write_user: writeUser };
+    if (newPassword) pairs.ad_write_password = newPassword;
+    if (!writeUser) pairs.ad_write_password = '';
+    if (enabled) {
+      if (!managedOus.length) throw new Error('Indique al menos una unidad organizativa gestionada.');
+      const password = writeUser ? (newPassword || (writeUser === current.writeUser ? (await settingsService.getAll()).ad_write_password : ''))
+        : (await adService.config()).password;
+      if (writeUser && !password) throw new Error('Falta la contraseña de la cuenta de escritura.');
+      await adWriteService.testWrite({ ...current, managedOus, writeUser, bindUser: writeUser || current.readUser, password });
+    }
+    await settingsService.setMany(pairs);
+    await auditService.log(req, { user: req.session.user, action: 'ad_configuracion_escritura', target: 'directorio activo',
+      detail: `${enabled ? 'cambios encendidos' : 'cambios apagados'}; cuenta ${writeUser || '(la de lectura)'}${newPassword ? ', contraseña cambiada' : ''}; OU: ${managedOus.join(' | ')}` });
+    req.flash('success', enabled ? 'Cambios en el dominio encendidos: cuenta y unidades organizativas verificadas.' : 'Cambios en el dominio apagados.');
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', err.message);
+  }
+  return res.redirect('/ad/configuracion');
 });
 
 router.post('/configuracion', isSuperAdmin, verifyCsrfToken, async (req, res, next) => {

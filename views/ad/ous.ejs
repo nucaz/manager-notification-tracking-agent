@@ -5,12 +5,19 @@
    items.forEach(function (o) { const k = String(o.parent_dn || '').toLowerCase(); (byParent[k] = byParent[k] || []).push(o); });
    const known = new Set(items.map(function (o) { return String(o.dn).toLowerCase(); }));
    const roots = items.filter(function (o) { return !known.has(String(o.parent_dn || '').toLowerCase()); });
+   const mng = function (dn) { return locals.canChange && writes.ready && writes.managedOus.some(function (m) { const d = String(dn).toLowerCase(), x = m.toLowerCase(); return d === x || d.endsWith(',' + x); }); };
+   const crear = function (o) {
+     if (!mng(o.dn)) return '';
+     return ' <span class="small d-inline-flex gap-2">' + [['user_create', 'usuario'], ['group_create', 'grupo'], ['computer_create', 'equipo'], ['ou_create', 'sub-unidad']]
+       .map(function (x) { return '<a href="/ad/cambios/nuevo?op=' + x[0] + '&id=' + o.id + '">+ ' + x[1] + '</a>'; }).join('') + '</span>';
+   };
    const draw = function (o, level) {
      const kids = (byParent[String(o.dn).toLowerCase()] || []).sort(function (a, b) { return a.name.localeCompare(b.name, 'es'); });
      let html = '<li class="ou-nodo"><div class="d-flex flex-wrap align-items-center gap-2 py-1 border-bottom">'
        + '<i class="bi ' + (o.kind === 'ou' ? 'bi-folder2-open text-warning' : 'bi-box text-secondary') + '"></i>'
        + '<strong>' + o.name.replace(/</g, '&lt;') + '</strong>'
        + (o.kind === 'ou' ? '' : ' <span class="badge text-bg-light border">contenedor</span>')
+       + (mng(o.dn) ? ' <span class="badge text-bg-success-subtle text-success-emphasis border" title="Unidad gestionada: se pueden hacer cambios">gestionada</span>' + crear(o) : '')
        + '<span class="small text-muted ms-auto" style="font-variant-numeric: tabular-nums">' + o.users_count + ' usuarios · ' + o.computers_count + ' equipos · ' + o.groups_count + ' grupos</span>'
        + '</div>';
      if (o.description) html += '<div class="small text-muted ps-4">' + String(o.description).replace(/</g, '&lt;') + '</div>';

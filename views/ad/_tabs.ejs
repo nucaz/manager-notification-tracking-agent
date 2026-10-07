@@ -1,12 +1,13 @@
 <%# Encabezado comun del directorio activo: pestañas, ultima lectura y "Leer ahora". %>
 <% const sum = run && run.summary; const TABS = [['resumen', '/ad', 'Resumen', 'bi-speedometer2'], ['usuarios', '/ad/usuarios', 'Usuarios', 'bi-person'],
      ['grupos', '/ad/grupos', 'Grupos', 'bi-people'], ['unidades', '/ad/unidades', 'Unidades organizativas', 'bi-diagram-3'],
-     ['equipos', '/ad/equipos', 'Equipos', 'bi-pc-display'], ['dns', '/ad/dns', 'DNS', 'bi-hdd-network'], ['papelera', '/ad/papelera', 'Papelera', 'bi-trash']]; %>
+     ['equipos', '/ad/equipos', 'Equipos', 'bi-pc-display'], ['dns', '/ad/dns', 'DNS', 'bi-hdd-network'], ['papelera', '/ad/papelera', 'Papelera', 'bi-trash']];
+   if (locals.canChange) TABS.push(['cambios', '/ad/cambios', 'Cambios', 'bi-clipboard-check']); %>
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
   <div>
     <h2 class="mb-0">Directorio activo <% if (sum) { %><span class="text-muted fs-5"><%= sum.domain %></span><% } %></h2>
     <div class="small text-muted">
-      <% if (run && run.ok) { %>Última lectura: <%= String(run.ok.finished_at || run.ok.started_at).slice(0, 16) %> desde <%= run.ok.dc %> · solo lectura
+      <% if (run && run.ok) { %>Última lectura: <%= String(run.ok.finished_at || run.ok.started_at).slice(0, 16) %> desde <%= run.ok.dc %> · <%= locals.writes && writes.ready ? 'cambios habilitados (con aprobación)' : 'solo lectura' %>
       <% } else { %>Aún no se ha leído el dominio.<% } %>
       <% if (run && run.last && run.last.status === 'error') { %><span class="text-danger"> · la última lectura falló: <%= run.last.error %></span><% } %>
     </div>
@@ -25,6 +26,7 @@
 <% } %>
 <ul class="nav nav-tabs mb-3">
   <% TABS.forEach(function (t) { %>
-    <li class="nav-item"><a class="nav-link <%= tab === t[0] ? 'active' : '' %>" href="<%= t[1] %>"><i class="bi <%= t[3] %>"></i> <%= t[2] %></a></li>
+    <li class="nav-item"><a class="nav-link <%= tab === t[0] ? 'active' : '' %>" href="<%= t[1] %>"><i class="bi <%= t[3] %>"></i> <%= t[2] %><% if (t[0] === 'cambios' && locals.pending) { %>
+      <span class="badge rounded-pill text-bg-warning" title="<%= currentUser.role === 'superadmin' ? 'Pendientes de su aprobación' : 'Sus solicitudes pendientes' %>"><%= pending %></span><% } %></a></li>
   <% }); %>
 </ul>

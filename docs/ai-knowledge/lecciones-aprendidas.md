@@ -527,3 +527,25 @@ encontro la prueba contra un DC real, no la lectura del codigo.
 "Domain Admins" se llama "Admins. del dominio" en un AD en espanol. Por
 nombre se pierden; por SID (dominio + RID 512, S-1-5-32-544, ...) no. Los
 miembros efectivos (anidados) con la regla de cadena 1.2.840.113556.1.4.1941.
+
+## 52. ldapts: un GUID en un filtro de texto nunca coincide
+
+`(objectGUID=\00\11...\aa...)` como texto: ldapts convierte los bytes
+escapados a una cadena y la envia en UTF-8, asi que todo byte mayor a 0x7F
+llega distinto y la busqueda no encuentra nada (sin error). Se busca con
+`new EqualityFilter({ attribute: 'objectGUID', value: Buffer })` (y
+`AndFilter` para combinar). Lo encontro la prueba contra el DC de prueba:
+el primer GUID que se probo a mano tenia bytes bajos y "funcionaba".
+
+## 53. Samba no devuelve msDS-LastKnownRDN
+
+Para restaurar de la papelera hace falta el nombre original. AD lo da en
+msDS-LastKnownRDN; Samba no. Se toma del DN eliminado: lo que esta antes
+de `\0ADEL:` (el salto de linea escapado que AD agrega al eliminar).
+
+## 54. Una prueba que escribe deja sucio al DC de prueba
+
+`tests/ad_cambios.e2e.js` mueve, deshabilita y elimina; si falla a la
+mitad (o se corre antes que la de lectura), la siguiente corrida ve otro
+dominio y falla por motivos que no son errores. Siempre: DC recien
+levantado, primero `ad.e2e.js`, despues `ad_cambios.e2e.js`.

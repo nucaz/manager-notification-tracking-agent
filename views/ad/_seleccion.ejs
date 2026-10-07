@@ -1,0 +1,29 @@
+<%# Acciones en lote: las casillas .ad-sel de la tabla (form="adLote") van a la
+    pantalla de confirmacion. Recibe loteOps (claves de OPS con bulk). %>
+<% if (canChange && writes.ready) { %>
+<form id="adLote" method="post" action="/ad/cambios/lote/revisar" class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <span class="small text-muted"><strong id="adLoteN">0</strong> seleccionado(s):</span>
+  <% loteOps.forEach(function (k) { %>
+    <button class="btn btn-sm <%= OPS[k].danger ? 'btn-outline-danger' : 'btn-outline-secondary' %>" name="op" value="<%= k %>" disabled data-lote>
+      <i class="bi <%= OPS[k].icon %>"></i> <%= OPS[k].label %></button>
+  <% }); %>
+  <span class="small text-muted">Antes de cambiar nada se muestra la lista para confirmar.</span>
+</form>
+<script>
+(function () {
+  var n = document.getElementById('adLoteN');
+  function upd() {
+    var c = document.querySelectorAll('.ad-sel:checked').length;
+    n.textContent = c;
+    document.querySelectorAll('[data-lote]').forEach(function (b) { b.disabled = !c; });
+  }
+  document.addEventListener('change', function (ev) {
+    if (ev.target.id === 'adSelTodos') {
+      document.querySelectorAll('tr:not([hidden]) .ad-sel:not(:disabled)').forEach(function (cb) { cb.checked = ev.target.checked; });
+    }
+    if (ev.target.id === 'adSelTodos' || ev.target.classList.contains('ad-sel')) upd();
+  });
+})();
+</script>
+<% } %>

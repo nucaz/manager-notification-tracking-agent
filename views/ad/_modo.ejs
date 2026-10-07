@@ -1,0 +1,13 @@
+<%# Como se aplicara el cambio segun el rol / permiso del usuario. %>
+<% if (!mode) { %>
+  <div class="alert alert-secondary small">Su rol no permite cambios en el directorio activo.</div>
+<% } else if (mode.mode === 'directa') { %>
+  <div class="alert alert-warning small"><i class="bi bi-lightning-charge"></i> Como <strong>superadministrador</strong>, el cambio se ejecuta
+    <strong>de inmediato</strong> en el dominio.</div>
+<% } else if (mode.mode === 'permiso_temporal') { %>
+  <div class="alert alert-warning small"><i class="bi bi-hourglass-split"></i> Tiene un <strong>permiso temporal</strong> para esto (vence
+    <%= String(mode.grant.expires_at).slice(0, 16) %>): el cambio se ejecuta <strong>de inmediato</strong> y queda registrado.</div>
+<% } else { %>
+  <div class="alert alert-info small"><i class="bi bi-send"></i> Se enviará como <strong>solicitud</strong>: un superadministrador debe aprobarla.
+    Hasta entonces no cambia nada en el dominio. Vence a los 7 días si nadie la decide.</div>
+<% } %>

@@ -26,4 +26,6 @@ docker cp "$DIR/ca.pem" licencias_app:/tmp/ca.pem
 echo "Listo. Contraseña del Administrator de PRUEBA en $DIR/pw. Ejecute:"
 echo "  docker exec -e E2E_PERMITIR=1 -e AD_TEST_URL=ldaps://dc1.prueba.local:636 -e AD_TEST_CA=/tmp/ca.pem \\"
 echo "    -e AD_TEST_USER=svc-gestor@prueba.local -e 'AD_TEST_PASSWORD=Usu4rio-Prueba!2026' \\"
+echo "    -e AD_TEST_WRITE_USER=svc-escritor@prueba.local -e 'AD_TEST_WRITE_PASSWORD=Usu4rio-Prueba!2026' \\"
 echo "    -e AD_TEST_ADMIN_USER=Administrator@prueba.local -e AD_TEST_ADMIN_PASSWORD=\"\$(cat $DIR/pw)\" licencias_app node tests/ad.e2e.js"
+echo "  (y luego, con las mismas variables, tests/ad_cambios.e2e.js: modifica el DC; para repetir, vuelva a levantarlo)"

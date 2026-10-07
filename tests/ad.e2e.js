@@ -143,7 +143,7 @@ async function main() {
       && pedro.privileged_groups === 'administrators' && pedro.pwd_never_expires === 1);
     check('Deshabilitado y unidad organizativa', maria.enabled === 0 && /OU=Ventas,OU=Depilzone/.test(maria.ou_dn));
     const [[pc]] = await pool.query("SELECT * FROM ad_computers WHERE name = 'PC-VENTAS-01'");
-    const [[old]] = await pool.query("SELECT * FROM ad_computers WHERE name = 'PC-ANTIGUA'");
+    const [[old]] = await pool.query("SELECT * FROM ad_computers WHERE name = 'PC-SIN-DNS'");
     const [[ghost]] = await pool.query("SELECT * FROM ad_dns_records WHERE name = 'pc-fantasma'");
     check('Equipos con su IP desde el DNS integrado; uno sin DNS', pc.ips === '10.10.0.21' && !old.ips);
     check('Registro DNS sin equipo en AD (huérfano) detectado', ghost && ghost.computer_id === null && ghost.data === '10.10.0.99');

@@ -6,8 +6,14 @@
   <h4 class="mb-0"><%= item.name %></h4>
   <% if (item.privileged) { %><span class="badge text-bg-danger"><%= PRIVILEGED_LABEL[item.privileged] %></span><% } %>
   <span class="text-muted small"><%= item.kind === 'seguridad' ? 'Seguridad' : 'Distribución' %> · <%= item.scope || '' %> · <%= item.sid %></span>
-  <a href="/ad/grupos" class="btn btn-sm btn-outline-secondary ms-auto">Volver</a>
+  <% const edit = canChange && writes.ready && !protectedReasons.length; %>
+  <% if (edit) { %>
+    <a href="/ad/cambios/nuevo?op=group_add_member&id=<%= item.id %>" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-person-plus"></i> Agregar miembro</a>
+    <a href="/ad/cambios/nuevo?op=group_delete&id=<%= item.id %>" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Eliminar grupo</a>
+  <% } %>
+  <a href="/ad/grupos" class="btn btn-sm btn-outline-secondary <%= edit ? '' : 'ms-auto' %>">Volver</a>
 </div>
+<% if (canChange && writes.ready && protectedReasons.length) { %><p class="small text-muted"><i class="bi bi-shield-lock"></i> Solo lectura: <%= protectedReasons.join(' ') %></p><% } %>
 <% if (item.description) { %><p class="small"><%= item.description %></p><% } %>
 <div class="row g-3">
   <% if (item.privileged) { %>
@@ -28,14 +34,15 @@
     <div class="card p-3">
       <h6>Miembros directos (<%= item.members.length %>)</h6>
       <div class="table-responsive"><table class="table table-sm small mb-0">
-        <thead><tr><th>Miembro</th><th>Tipo</th><th>Estado</th><th>Última conexión</th></tr></thead>
+        <thead><tr><th>Miembro</th><th>Tipo</th><th>Estado</th><th>Última conexión</th><% if (edit) { %><th data-orden="no"></th><% } %></tr></thead>
         <tbody><% item.members.forEach(function (m) { %>
           <tr><td><% if (m.user_id) { %><a class="font-monospace" href="/ad/usuarios/<%= m.user_id %>"><%= m.sam %></a> <%= m.display_name ? '· ' + m.display_name : '' %>
               <% } else { %><span class="font-monospace small"><%= m.member_dn.split(',')[0].replace(/^CN=/i, '') %></span><% } %></td>
             <td><%= KIND[m.member_kind] || m.member_kind %></td><td><%= m.user_id ? (m.enabled ? 'Habilitado' : 'Deshabilitado') : '—' %></td>
-            <td data-valor="<%= m.last_seen || '' %>"><%= m.user_id ? d16(m.last_seen) : '—' %></td></tr>
+            <td data-valor="<%= m.last_seen || '' %>"><%= m.user_id ? d16(m.last_seen) : '—' %></td>
+            <% if (edit) { %><td><% if (['usuario', 'equipo'].includes(m.member_kind)) { %><a class="small text-danger" href="/ad/cambios/nuevo?op=group_remove_member&id=<%= item.id %>&miembro=<%= m.member_hash %>">Quitar</a><% } %></td><% } %></tr>
         <% }); %>
-        <% if (!item.members.length) { %><tr><td colspan="4" class="text-muted">Sin miembros directos.</td></tr><% } %></tbody></table></div>
+        <% if (!item.members.length) { %><tr><td colspan="<%= edit ? 5 : 4 %>" class="text-muted">Sin miembros directos.</td></tr><% } %></tbody></table></div>
     </div>
   </div>
 </div>

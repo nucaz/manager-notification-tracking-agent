@@ -133,11 +133,16 @@ READMEs.
   claro fijo. Lo vigila `tests/tema.dom.js`.
 - **Directorio activo** (`src/services/adService.js`): solo LDAPS con la
   CA validada, cuenta de servicio sin privilegios, conexión solo para
-  superadmin y probada antes de guardar. La fase 1 no escribe nada en el
-  dominio (`tests/ad.e2e.js` lo comprueba buscando operaciones de
-  escritura); cualquier escritura futura va con aprobación del superadmin
-  y nunca sobre cuentas privilegiadas. Probar contra
-  `scripts/ad-prueba/levantar.sh`, nunca contra un dominio real.
+  superadmin y probada antes de guardar. `adService.js` solo lee (la
+  prueba busca operaciones de escritura); TODA escritura va en
+  `adWriteService.js` y pasa por `adChangeService.js` (superadmin directo,
+  el resto con aprobación o permiso temporal, con re-autenticación). Las
+  protecciones (OU gestionadas, privilegiados por SID y por cadena,
+  adminCount, RID < 1000, DC, cuentas propias) se comprueban EN VIVO al
+  ejecutar, no con la foto. Búsquedas por GUID: con `EqualityFilter` y un
+  Buffer, nunca con un filtro de texto. Probar contra
+  `scripts/ad-prueba/levantar.sh` (`tests/ad.e2e.js` y luego
+  `tests/ad_cambios.e2e.js`, que modifica el DC), nunca contra un dominio real.
 - **Tablas de listado (estándar en toda la app)**: toda tabla con
   `<thead>` dentro de `.table-responsive` recibe sola, de
   `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por

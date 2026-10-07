@@ -566,7 +566,7 @@ se escribe si no está; se guarda como foto con la fecha y una referencia
 
 Prueba: `E2E_PERMITIR=1 node tests/solicitudes.e2e.js` (Graph simulado).
 
-### 5.2 Directorio activo (fase 1: solo lectura)
+### 5.2 Directorio activo
 
 Menú *Directorio activo*. Lee el dominio por **LDAPS** y muestra:
 usuarios (estado, privilegios, última conexión y su antigüedad, OU,
@@ -587,14 +587,46 @@ administrador (la papelera necesita solo "Listar contenido" y "Leer"
 delegados en `CN=Deleted Objects`); contraseña cifrada; la conexión solo
 la ve y cambia un **superadministrador** y se prueba antes de guardarse;
 cada lectura y cambio de conexión queda en Auditoría; el módulo viene
-apagado para editor y lector. Esta fase **no escribe nada** en el dominio
-(lo verifica `tests/ad.e2e.js`). La fase 2 (crear, modificar, bloquear,
-desbloquear, restablecer contraseñas, grupos, equipos con su DNS,
-restaurar de la papelera) pasará por la aprobación del superadministrador
-o por permisos temporales, con las cuentas privilegiadas en solo lectura.
+apagado para editor y lector. El servicio de lectura (`adService.js`)
+**no escribe nada** en el dominio (lo verifica `tests/ad.e2e.js`).
+
+**Cambios en el dominio** (pestaña *Cambios*; se encienden en *Conexión →
+Cambios en el dominio*): crear, modificar, mover, deshabilitar, habilitar,
+desbloquear y eliminar usuarios; restablecer contraseñas; crear grupos y
+cambiar sus miembros; crear, deshabilitar y eliminar equipos (con sus
+registros DNS A y PTR); crear unidades organizativas y restaurar de la
+papelera. Las tablas de usuarios y equipos permiten marcar varias filas
+(por ejemplo, las que llevan más de un año sin conectarse) y actuar en
+lote, con una pantalla de confirmación.
+
+- **Superadministrador**: ejecuta directo.
+- **Administrador / editor con el módulo**: pide el cambio con un motivo;
+  queda pendiente hasta que un superadministrador lo aprueba (y se
+  ejecuta) o lo rechaza con una nota. Vence a los 7 días.
+- **Permiso temporal**: el superadministrador habilita a un usuario, por
+  1 hora a 7 días, ciertos tipos de cambio que entonces ejecuta sin
+  aprobación. Se puede revocar; cada uso queda contado.
+- **Lector**: nada.
+
+**Capas de seguridad de los cambios**: interruptor apagado por defecto;
+cuenta de **escritura** propia, delegada solo sobre las unidades
+organizativas gestionadas (nunca administrador del dominio); solo se
+toca lo que está dentro de esas OU; nunca cuentas o grupos privilegiados
+(por SID, incluidos los anidados y el grupo primario), integrados
+(RID < 1000), críticos del sistema, con `adminCount=1`, controladores de
+dominio ni las cuentas de la aplicación, y esto se **vuelve a comprobar
+en vivo al ejecutar**; ejecutar, aprobar, dar permisos y cambiar la
+cuenta piden **confirmar la identidad** (código 2FA o contraseña; cinco
+fallos bloquean 15 minutos); un formulario enviado no se puede reenviar.
+Las contraseñas las genera la aplicación (16 caracteres) y se muestran
+**una sola vez** a quien pidió el cambio: si lo aprobó otro, quedan
+cifradas hasta que el solicitante las ve (24 horas como máximo). Todo
+queda en Auditoría y en el reporte *Cambios en el directorio activo*.
 
 Prueba contra un DC de prueba desechable: `scripts/ad-prueba/levantar.sh`
-(Samba AD en Docker) y `tests/ad.e2e.js`.
+(Samba AD en Docker, con una cuenta de escritura delegada solo sobre
+`OU=Depilzone`), `tests/ad.e2e.js` (lectura) y `tests/ad_cambios.e2e.js`
+(cambios). Primero la de lectura: la de cambios modifica el DC.
 
 ## 6. Roles de usuario
 

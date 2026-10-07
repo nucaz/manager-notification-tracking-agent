@@ -1,0 +1,12 @@
+<%# Confirmacion de identidad antes de cambiar el dominio, aprobar o dar permisos. %>
+<div class="border rounded p-3 mb-3 bg-body-tertiary">
+  <% if (reauth === 'codigo') { %>
+    <label class="form-label" for="reauth_code"><i class="bi bi-shield-lock"></i> Código de su app de autenticación *</label>
+    <input class="form-control font-monospace" id="reauth_code" name="reauth_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"
+      required style="max-width: 10rem">
+  <% } else { %>
+    <label class="form-label" for="reauth_password"><i class="bi bi-shield-lock"></i> Su contraseña de esta aplicación *</label>
+    <input class="form-control" type="password" id="reauth_password" name="reauth_password" autocomplete="current-password" required style="max-width: 20rem">
+  <% } %>
+  <div class="form-text">Se pide para confirmar que es usted. Cinco intentos fallidos bloquean estas acciones 15 minutos.</div>
+</div>

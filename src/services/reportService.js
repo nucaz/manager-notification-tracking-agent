@@ -449,6 +449,37 @@ const adEquipos = {
   },
 };
 
+// Cambios pedidos y ejecutados en el dominio (fase 2): quien pidio, quien
+// aprobo, por que via y con que resultado.
+const adCambios = {
+  label: 'Cambios en el directorio activo',
+  group: 'Directorio activo',
+  module: 'directorio',
+  columns: [
+    { key: 'id', label: 'N.º' }, { key: 'fecha', label: 'Pedido' }, { key: 'operacion', label: 'Operación' }, { key: 'target_label', label: 'Objeto' },
+    { key: 'estado', label: 'Estado' }, { key: 'via', label: 'Vía' }, { key: 'pidio', label: 'Pedido por' }, { key: 'decidio', label: 'Decidió' },
+    { key: 'reason', label: 'Motivo' }, { key: 'ejecutada', label: 'Ejecutada' }, { key: 'result', label: 'Resultado' },
+  ],
+  print: [
+    { key: 'fecha', label: 'Pedido', w: 0.8 }, { key: 'operacion', label: 'Operación', w: 1.2 }, { key: 'target_label', label: 'Objeto', w: 1.4 },
+    { key: 'estado', label: 'Estado', w: 0.7 }, { key: 'pidio', label: 'Pedido por', w: 0.9 }, { key: 'decidio', label: 'Decidió', w: 0.9 },
+  ],
+  barcodes: [],
+  selects: [{ key: 'estado', label: 'Estado' }, { key: 'operacion', label: 'Operación' }, { key: 'via', label: 'Vía' }, { key: 'pidio', label: 'Pedido por' }],
+  groupBy: [{ key: 'estado', label: 'Por estado' }, { key: 'operacion', label: 'Por operación' }, { key: 'pidio', label: 'Por quién lo pidió' }],
+  async load() {
+    const { OPS } = require('./adWriteService');
+    const { STATUS, VIA } = require('./adChangeService');
+    const [rows] = await pool.query(
+      `SELECT r.id, r.operation, r.target_label, r.status, r.via, r.reason, r.result, r.requested_at, r.executed_at,
+              u.full_name AS pidio, d.full_name AS decidio
+       FROM ad_change_requests r LEFT JOIN users u ON u.id = r.requested_by LEFT JOIN users d ON d.id = r.decided_by ORDER BY r.id DESC`
+    );
+    return rows.map((r) => ({ ...r, fecha: dateTime(r.requested_at), ejecutada: dateTime(r.executed_at), operacion: (OPS[r.operation] || {}).label || r.operation,
+      estado: STATUS[r.status] || r.status, via: VIA[r.via] || r.via, pidio: r.pidio || '—', decidio: r.decidio || '—', reason: r.reason || '', result: r.result || '' }));
+  },
+};
+
 // ---------------------------------------------------------------------
 // DevOps: repositorios que vigila el sidecar
 // ---------------------------------------------------------------------
@@ -512,6 +543,7 @@ const REPORTS = {
   ad_usuarios: adUsuarios,
   ad_privilegiados: adPrivilegiados,
   ad_equipos: adEquipos,
+  ad_cambios: adCambios,
   repositorios,
 };
 
