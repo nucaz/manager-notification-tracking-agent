@@ -10,15 +10,21 @@
     <ul class="mb-0"><% sum.notes.forEach(function (n) { %><li><%= n %></li><% }); %></ul></div>
 <% } %>
 
-<div class="row g-3 mb-3" style="font-variant-numeric: tabular-nums">
-  <div class="col-md-3 col-6"><a class="card p-3 h-100 text-decoration-none" href="/ad/usuarios"><div class="small text-muted">Usuarios habilitados</div>
-    <div class="fs-3 fw-semibold"><%= u.enabled %></div><div class="small text-muted"><%= u.disabled %> deshabilitados<%= u.locked ? ' · ' + u.locked + ' bloqueados' : '' %></div></a></div>
-  <div class="col-md-3 col-6"><a class="card p-3 h-100 text-decoration-none border-danger" href="/ad/grupos"><div class="small text-muted">Con privilegios de administración</div>
-    <div class="fs-3 fw-semibold text-danger"><%= u.privileged %></div><div class="small text-muted">usuarios habilitados en grupos privilegiados (incluidos anidados)</div></a></div>
+<% const L = function (n, href, cls) { return '<a class="' + (cls || 'link-body-emphasis') + '" href="' + href + '">' + n + '</a>'; }; %>
+<div class="row g-3 mb-3" style="font-variant-numeric: tabular-nums" id="ad_indicadores">
+  <div class="col-md-3 col-6"><div class="card p-3 h-100"><div class="small text-muted">Usuarios habilitados</div>
+    <div class="fs-3 fw-semibold"><%- L(u.enabled, '/ad/usuarios?f=habilitados', 'link-body-emphasis text-decoration-none') %></div>
+    <div class="small text-muted"><%- L(u.disabled, '/ad/usuarios?f=deshabilitados') %> deshabilitados<% if (u.locked) { %> · <%- L(u.locked, '/ad/usuarios?f=bloqueados') %> bloqueados<% } %></div></div></div>
+  <div class="col-md-3 col-6"><div class="card p-3 h-100 border-danger"><div class="small text-muted">Con privilegios de administración</div>
+    <div class="fs-3 fw-semibold"><%- L(u.privileged, '/ad/usuarios?f=privilegiados', 'link-danger text-decoration-none') %></div>
+    <div class="small text-muted">usuarios habilitados en <a href="/ad/grupos?f=privilegiados">grupos privilegiados</a> (incluidos anidados)</div></div></div>
   <div class="col-md-3 col-6"><div class="card p-3 h-100"><div class="small text-muted">Sin conectarse en <%= IDLE_DAYS %> días</div>
-    <div class="fs-3 fw-semibold text-warning-emphasis"><%= u.idle %></div><div class="small text-muted"><%= u.neverLogged %> nunca entraron · <%= u.neverExpires %> con contraseña que no vence</div></div></div>
-  <div class="col-md-3 col-6"><a class="card p-3 h-100 text-decoration-none" href="/ad/equipos"><div class="small text-muted">Equipos habilitados</div>
-    <div class="fs-3 fw-semibold"><%= c.enabled %></div><div class="small text-muted"><%= c.dcs %> controlador(es) · <%= c.idle %> inactivos <%= IDLE_DAYS %> días · <%= c.noDns %> sin DNS</div></a></div>
+    <div class="fs-3 fw-semibold"><%- L(u.idle, '/ad/usuarios?f=inactivos', 'link-warning text-decoration-none') %></div>
+    <div class="small text-muted"><%- L(u.neverLogged, '/ad/usuarios?f=nunca') %> nunca entraron · <%- L(u.neverExpires, '/ad/usuarios?f=no_vence') %> con contraseña que no vence</div></div></div>
+  <div class="col-md-3 col-6"><div class="card p-3 h-100"><div class="small text-muted">Equipos habilitados</div>
+    <div class="fs-3 fw-semibold"><%- L(c.enabled, '/ad/equipos?f=habilitados', 'link-body-emphasis text-decoration-none') %></div>
+    <div class="small text-muted"><%- L(c.dcs, '/ad/equipos?f=dc') %> controlador(es) · <%- L(c.idle, '/ad/equipos?f=inactivos') %> inactivos <%= IDLE_DAYS %> días
+      · <%- L(c.noDns, '/ad/equipos?f=sin_dns') %> sin DNS</div></div></div>
 </div>
 
 <div class="row g-3 mb-3">
@@ -31,7 +37,7 @@
         <tbody>
           <% ov.privileged.forEach(function (g) { %>
             <tr><td><a href="/ad/grupos/<%= g.id %>"><%= g.name %></a> <span class="text-muted">· <%= PRIVILEGED_LABEL[g.privileged] %></span></td>
-              <td class="text-end <%= g.n ? 'fw-semibold' : 'text-muted' %>"><%= g.n %></td></tr>
+              <td class="text-end <%= g.n ? 'fw-semibold' : 'text-muted' %>"><% if (g.n) { %><a href="/ad/grupos/<%= g.id %>"><%= g.n %></a><% } else { %>0<% } %></td></tr>
           <% }); %>
           <% if (!ov.privileged.length) { %><tr><td colspan="2" class="text-muted">Sin datos: lea el dominio.</td></tr><% } %>
         </tbody>
@@ -43,11 +49,12 @@
       <h5>Última conexión de los usuarios habilitados</h5>
       <div class="d-flex flex-column gap-2 mt-1">
         <% BUCKETS.forEach(function (b) { const n = tramos[b.key] || 0; %>
-          <div class="d-flex align-items-center gap-2 small" style="font-variant-numeric: tabular-nums">
-            <span style="width: 130px; flex: none"><%= b.label %></span>
+          <a class="d-flex align-items-center gap-2 small text-reset text-decoration-none" style="font-variant-numeric: tabular-nums" href="/ad/usuarios?tramo=<%= b.key %>"
+            title="Ver los <%= n %> usuarios habilitados de este tramo">
+            <span style="width: 130px; flex: none" class="link-primary"><%= b.label %></span>
             <span class="flex-grow-1 bg-body-tertiary rounded" style="height: 1.1rem"><span class="d-block h-100 rounded <%= TONE[b.tone] %>" style="width: <%= (n * 100 / totalSeen).toFixed(1) %>%"></span></span>
             <span style="width: 50px; flex: none" class="text-end"><strong><%= n %></strong></span>
-          </div>
+          </a>
         <% }); %>
       </div>
       <div class="form-text">La más reciente entre <code>lastLogon</code> (de cada DC consultado) y <code>lastLogonTimestamp</code> (replicado, hasta ~14 días de desfase).</div>
@@ -77,10 +84,11 @@
     <div class="card p-3 h-100">
       <h5>Equipos por sistema operativo</h5>
       <table class="table table-sm small mb-2" data-tabla="no" style="font-variant-numeric: tabular-nums">
-        <tbody><% ov.os.forEach(function (o) { %><tr><td><%= o.os %></td><td class="text-end"><%= o.n %></td></tr><% }); %></tbody>
+        <tbody><% ov.os.forEach(function (o) { const h = '/ad/equipos?so=' + encodeURIComponent(o.os); %>
+          <tr><td><a href="<%= h %>"><%= o.os %></a></td><td class="text-end"><a href="<%= h %>"><%= o.n %></a></td></tr><% }); %></tbody>
       </table>
       <div class="small">
-        <a href="/ad/dns">DNS</a>: <%= ov.dns.total %> registros · <span class="<%= ov.dns.withoutComputer ? 'text-warning-emphasis fw-semibold' : '' %>"><%= ov.dns.withoutComputer %> sin equipo en AD</span>
+        <a href="/ad/dns">DNS</a>: <%= ov.dns.total %> registros · <a class="<%= ov.dns.withoutComputer ? 'link-warning fw-semibold' : '' %>" href="/ad/dns?f=huerfanos"><%= ov.dns.withoutComputer %> sin equipo en AD</a>
         · <a href="/ad/papelera">Papelera</a>: <%= ov.deleted %> objeto(s)
       </div>
     </div>

@@ -12,6 +12,7 @@
       (por ejemplo, Estado = Habilitado y Antigüedad = Más de 1 año para encontrar cuentas a deshabilitar)<%= sel ? '; marque las filas para actuar en lote.' : '.' %></p>
     <% if (sel) { %><a href="/ad/cambios/nuevo?op=user_create" class="btn btn-sm btn-primary"><i class="bi bi-person-plus"></i> Nuevo usuario</a><% } %>
   </div>
+  <%- include('_buscar', { placeholder: 'Usuario, nombre, correo, cargo, área, DNI…' }) %>
   <%- include('_seleccion', { loteOps: ['user_disable', 'user_enable', 'user_unlock', 'user_delete'] }) %>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small">

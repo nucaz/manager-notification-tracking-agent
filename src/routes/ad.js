@@ -95,6 +95,66 @@ async function memberOf(groupId, hash) {
   return row ? { guid: row.object_guid, label: row.sam || row.name, dn: row.dn } : null;
 }
 
+// ------------------------------ filtros por enlace y busqueda ------------------------------
+// Los numeros del resumen y del Panel enlazan a la lista ya filtrada
+// (?f=clave, ?tramo=, ?so=); ?q= busca texto en las columnas principales.
+const ageDays = (d) => {
+  if (!d) return null;
+  const t = d instanceof Date ? d : new Date(String(d).replace(' ', 'T').slice(0, 19));
+  return (Date.now() - t.getTime()) / 86400000;
+};
+const IDLE = adService.IDLE_DAYS;
+const SPECIAL_DNS = (r) => r.name === '@' || String(r.name).startsWith('_') || ['DomainDnsZones', 'ForestDnsZones'].includes(r.name);
+const FILTERS = {
+  usuarios: {
+    habilitados: ['Habilitados', (u) => u.enabled],
+    deshabilitados: ['Deshabilitados', (u) => !u.enabled],
+    bloqueados: ['Bloqueados', (u) => u.locked],
+    privilegiados: ['Habilitados con privilegios de administración', (u) => u.enabled && u.privileged_groups],
+    inactivos: [`Habilitados sin conectarse en ${IDLE} días`, (u) => u.enabled && u.last_seen && ageDays(u.last_seen) > IDLE],
+    nunca: ['Habilitados que nunca entraron (creados hace más de 30 días)', (u) => u.enabled && !u.last_seen && (!u.when_created || ageDays(u.when_created) > 30)],
+    no_vence: ['Habilitados con contraseña que no vence', (u) => u.enabled && u.pwd_never_expires],
+  },
+  equipos: {
+    habilitados: ['Habilitados', (c) => c.enabled],
+    inactivos: [`Habilitados sin conectarse en ${IDLE} días (o nunca)`, (c) => c.enabled && !c.is_dc && (!c.last_seen || ageDays(c.last_seen) > IDLE)],
+    sin_dns: ['Habilitados sin registro DNS', (c) => c.enabled && !c.is_dc && !c.ips],
+    dc: ['Controladores de dominio', (c) => c.is_dc],
+  },
+  grupos: { privilegiados: ['Grupos privilegiados', (g) => g.privileged] },
+  dns: { huerfanos: ['Registros de host sin equipo en AD', (r) => !r.computer_id && ['A', 'AAAA'].includes(r.rtype) && !SPECIAL_DNS(r)] },
+};
+const SEARCH = {
+  usuarios: (u) => [u.sam, u.display_name, u.upn, u.mail, u.title, u.department, u.description, u.dn, u.employee_dni],
+  grupos: (g) => [g.name, g.sam, g.description, g.dn],
+  equipos: (c) => [c.name, c.dns_host, c.os, c.ips, c.description, c.dn],
+  dns: (r) => [r.zone, r.name, r.data, r.computer_name],
+  papelera: (d) => [d.name, d.sam, d.last_known_parent, d.object_class],
+};
+function listFilter(kind, req, items) {
+  const labels = [];
+  const keep = {};
+  let out = items;
+  const f = FILTERS[kind] && FILTERS[kind][req.query.f];
+  if (f) { out = out.filter(f[1]); labels.push(f[0]); keep.f = req.query.f; }
+  if (kind === 'usuarios' && req.query.tramo) {
+    const b = clinicService.BUCKETS.find((x) => x.key === req.query.tramo);
+    if (b) { out = out.filter((u) => u.enabled && clinicService.bucketOf(u.last_seen) === b.key); labels.push(`Habilitados · última conexión: ${b.label}`); keep.tramo = b.key; }
+  }
+  if (kind === 'equipos' && req.query.so) {
+    const so = String(req.query.so);
+    out = out.filter((c) => c.enabled && (c.os || 'Sin dato') === so);
+    labels.push(`Habilitados con ${so}`);
+    keep.so = so;
+  }
+  const q = String(req.query.q || '').trim().slice(0, 100);
+  if (q && SEARCH[kind]) {
+    const n = q.toLowerCase();
+    out = out.filter((x) => SEARCH[kind](x).some((v) => v && String(v).toLowerCase().includes(n)));
+  }
+  return { items: out, filtro: labels.join(' · '), q, keep, total: items.length };
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const [b, ov] = await Promise.all([base(req), adService.overview()]);
@@ -109,7 +169,7 @@ router.get('/', async (req, res, next) => {
 
 router.get('/usuarios', async (req, res, next) => {
   try {
-    res.render('ad/users', { title: 'Directorio activo: usuarios', tab: 'usuarios', ...(await base(req)), items: await adService.users(), ...VIEW });
+    res.render('ad/users', { title: 'Directorio activo: usuarios', tab: 'usuarios', ...(await base(req)), ...listFilter('usuarios', req, await adService.users()), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -135,7 +195,7 @@ router.get('/usuarios/:id(\\d+)', async (req, res, next) => {
 
 router.get('/grupos', async (req, res, next) => {
   try {
-    res.render('ad/groups', { title: 'Directorio activo: grupos', tab: 'grupos', ...(await base(req)), items: await adService.groups(), ...VIEW });
+    res.render('ad/groups', { title: 'Directorio activo: grupos', tab: 'grupos', ...(await base(req)), ...listFilter('grupos', req, await adService.groups()), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -157,7 +217,8 @@ router.get('/grupos/:id(\\d+)', async (req, res, next) => {
 
 router.get('/unidades', async (req, res, next) => {
   try {
-    res.render('ad/ous', { title: 'Directorio activo: unidades organizativas', tab: 'unidades', ...(await base(req)), items: await adService.ous(), ...VIEW });
+    res.render('ad/ous', { title: 'Directorio activo: unidades organizativas', tab: 'unidades', ...(await base(req)), items: await adService.ous(), ...VIEW,
+      q: String(req.query.q || '').trim().slice(0, 100) });
   } catch (err) {
     next(err);
   }
@@ -165,7 +226,7 @@ router.get('/unidades', async (req, res, next) => {
 
 router.get('/equipos', async (req, res, next) => {
   try {
-    res.render('ad/computers', { title: 'Directorio activo: equipos', tab: 'equipos', ...(await base(req)), items: await adService.computers(), ...VIEW });
+    res.render('ad/computers', { title: 'Directorio activo: equipos', tab: 'equipos', ...(await base(req)), ...listFilter('equipos', req, await adService.computers()), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -173,7 +234,7 @@ router.get('/equipos', async (req, res, next) => {
 
 router.get('/dns', async (req, res, next) => {
   try {
-    res.render('ad/dns', { title: 'Directorio activo: DNS', tab: 'dns', ...(await base(req)), items: await adService.dns(), ...VIEW });
+    res.render('ad/dns', { title: 'Directorio activo: DNS', tab: 'dns', ...(await base(req)), ...listFilter('dns', req, await adService.dns()), ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -181,7 +242,7 @@ router.get('/dns', async (req, res, next) => {
 
 router.get('/papelera', async (req, res, next) => {
   try {
-    res.render('ad/deleted', { title: 'Directorio activo: papelera', tab: 'papelera', ...(await base(req)), items: await adService.deleted(), ...VIEW });
+    res.render('ad/deleted', { title: 'Directorio activo: papelera', tab: 'papelera', ...(await base(req)), ...listFilter('papelera', req, await adService.deleted()), ...VIEW });
   } catch (err) {
     next(err);
   }

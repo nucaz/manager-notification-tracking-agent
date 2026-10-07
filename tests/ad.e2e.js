@@ -176,6 +176,22 @@ async function main() {
     check(`Todas las pantallas del módulo (${Object.keys(pages).length})${badPages.length ? ': fallan ' + badPages.join(', ') : ''}`, !badPages.length);
     const pu = await get('/ad/usuarios');
     check('Usuarios: columnas extra y antigüedad de conexión para filtrar', pu.text.includes('<th data-oculta>UPN</th>') && pu.text.includes('Nunca entró'));
+    const fp = await get('/ad/usuarios?f=privilegiados');
+    check('Filtro por enlace: privilegiados (y se ve cuál está activo)', fp.text.includes('>ana.admin<') && fp.text.includes('>pedro.soporte<')
+      && !fp.text.includes('>juan.perez<') && fp.text.includes('Habilitados con privilegios de administración'));
+    const fq = await get('/ad/usuarios?q=maria');
+    check('Búsqueda en usuarios', fq.text.includes('>maria.lopez<') && !fq.text.includes('>juan.perez<') && fq.text.includes('Quitar filtro y búsqueda'));
+    const fe = await get('/ad/equipos?f=sin_dns');
+    const [[noDns]] = await pool.query("SELECT COUNT(*) AS n FROM ad_computers WHERE removed_at IS NULL AND enabled = 1 AND is_dc = 0 AND ips IS NULL AND dn LIKE '%DC=prueba,DC=local'");
+    check('Equipos sin DNS desde el enlace (los mismos que cuenta el resumen)', fe.text.includes(`>${noDns.n} equipos.`) && !fe.text.includes('PC-VENTAS-01')
+      && fe.text.includes('Habilitados sin registro DNS'));
+    check('DNS sin equipo desde el enlace', (await get('/ad/dns?f=huerfanos')).text.includes('pc-fantasma') && !(await get('/ad/dns?f=huerfanos')).text.includes('>intranet<'));
+    const fo = await get('/ad/unidades?q=Ventas');
+    check('Unidades: árbol plegable y búsqueda por rama', fo.text.includes('<details') && fo.text.includes('Expandir todo') && fo.text.includes('>Ventas<')
+      && !fo.text.includes('>Sistemas<'));
+    const ix = await get('/ad');
+    check('Indicadores del resumen enlazan a la lista filtrada', ['/ad/usuarios?f=inactivos', '/ad/usuarios?f=nunca', '/ad/equipos?f=sin_dns', '/ad/usuarios?tramo=nunca',
+      '/ad/dns?f=huerfanos'].every((h) => ix.text.includes(`href="${h}"`)));
     const [[never]] = await pool.query("SELECT COUNT(*) AS n FROM ad_users WHERE sam = 'juan.perez' AND last_logon IS NULL AND last_logon_ts IS NULL");
     const ov = await ad.overview();
     check('Quien nunca se conectó cuenta como "nunca" (no como "más de 1 año")', Number(never.n) === 1

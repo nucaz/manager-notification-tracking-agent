@@ -146,10 +146,10 @@
       <%- fallo(resumen.directorio) %>
       <% if (a) { %>
         <ul class="list-unstyled small mb-2 mt-2">
-          <%- linea('Con privilegios de administración', a.users.privileged, '/ad/grupos', 'danger') %>
-          <%- linea('Sin conectarse en 90 días', a.users.idle, '/ad/usuarios', 'warning') %>
-          <%- linea('Nunca se conectaron', a.users.neverLogged, '/ad/usuarios', 'warning') %>
-          <%- linea('Contraseña que no vence', a.users.neverExpires, '/ad/usuarios', 'warning') %>
+          <%- linea('Con privilegios de administración', a.users.privileged, '/ad/usuarios?f=privilegiados', 'danger') %>
+          <%- linea('Sin conectarse en 90 días', a.users.idle, '/ad/usuarios?f=inactivos', 'warning') %>
+          <%- linea('Nunca se conectaron', a.users.neverLogged, '/ad/usuarios?f=nunca', 'warning') %>
+          <%- linea('Contraseña que no vence', a.users.neverExpires, '/ad/usuarios?f=no_vence', 'warning') %>
           <%- linea('Deshabilitados / bloqueados', a.users.disabled + ' / ' + a.users.locked) %>
           <% if (a.pendingChanges) { %><%- linea('Cambios pendientes de aprobar', a.pendingChanges, '/ad/cambios?estado=pendiente', 'warning') %><% } %>
         </ul>
@@ -165,11 +165,11 @@
       </div>
       <% if (a) { %>
         <ul class="list-unstyled small mb-2 mt-2">
-          <%- linea('Equipos sin conectarse en 90 días', a.computers.idle, '/ad/equipos', 'warning') %>
-          <%- linea('Equipos sin registro DNS', a.computers.noDns, '/ad/equipos', 'warning') %>
-          <%- linea('Registros DNS sin equipo en AD', a.dns.withoutComputer, '/ad/dns', 'warning') %>
+          <%- linea('Equipos sin conectarse en 90 días', a.computers.idle, '/ad/equipos?f=inactivos', 'warning') %>
+          <%- linea('Equipos sin registro DNS', a.computers.noDns, '/ad/equipos?f=sin_dns', 'warning') %>
+          <%- linea('Registros DNS sin equipo en AD', a.dns.withoutComputer, '/ad/dns?f=huerfanos', 'warning') %>
           <%- linea('Objetos en la papelera', a.deleted, '/ad/papelera') %>
-          <%- linea('Controladores de dominio', a.computers.dcs, '/ad') %>
+          <%- linea('Controladores de dominio', a.computers.dcs, '/ad/equipos?f=dc') %>
         </ul>
         <div class="small text-muted mt-auto">Papelera de AD: <%= a.recycleBin === null ? '—' : (a.recycleBin ? 'habilitada' : 'no habilitada') %></div>
       <% } %>

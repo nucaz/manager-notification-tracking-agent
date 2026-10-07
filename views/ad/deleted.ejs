@@ -14,6 +14,7 @@
 <% } %>
 <div class="card p-3">
   <p class="small text-muted mb-2"><%= items.length %> objetos en CN=Deleted Objects. Se restaura lo que estaba en una unidad organizativa gestionada.</p>
+  <%- include('_buscar', { placeholder: 'Nombre, cuenta, ubicación anterior…' }) %>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small">
       <thead><tr><th>Nombre</th><th>Tipo</th><th>Cuenta</th><th>Estaba en</th><th>Eliminado</th><th data-oculta>GUID</th><% if (canChange && writes.ready) { %><th data-orden="no"></th><% } %></tr></thead>

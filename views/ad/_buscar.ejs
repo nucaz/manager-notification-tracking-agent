@@ -1,0 +1,10 @@
+<%# Buscador de la pestaña y filtro activo (?f=, ?tramo=, ?so= vienen de los numeros del resumen). %>
+<form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
+  <% Object.keys(keep || {}).forEach(function (k) { %><input type="hidden" name="<%= k %>" value="<%= keep[k] %>"><% }); %>
+  <label class="visually-hidden" for="ad_q">Buscar</label>
+  <input type="search" class="form-control form-control-sm" id="ad_q" name="q" value="<%= q %>" placeholder="<%= placeholder %>" style="max-width: 20rem">
+  <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
+  <% if (filtro) { %><span class="badge text-bg-primary fw-normal"><i class="bi bi-funnel"></i> <%= filtro %></span><% } %>
+  <% if (filtro || q) { %><span class="small text-muted"><%= items.length %> de <%= total %></span>
+    <a class="small" href="<%= currentPath %>">Quitar filtro y búsqueda</a><% } %>
+</form>

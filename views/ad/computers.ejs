@@ -9,6 +9,7 @@
       <%= sel ? 'Eliminar un equipo borra también sus registros DNS (A y PTR).' : '' %></p>
     <% if (sel) { %><a href="/ad/cambios/nuevo?op=computer_create" class="btn btn-sm btn-primary"><i class="bi bi-pc-display"></i> Nuevo equipo</a><% } %>
   </div>
+  <%- include('_buscar', { placeholder: 'Equipo, IP, sistema operativo, descripción…' }) %>
   <%- include('_seleccion', { loteOps: ['computer_disable', 'computer_enable', 'computer_delete'] }) %>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small">
