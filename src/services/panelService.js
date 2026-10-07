@@ -6,6 +6,7 @@ const pool = require('../db/pool');
 const clinicService = require('./clinicService');
 const settingsService = require('./settingsService');
 const devopsSidecarClient = require('./devopsSidecarClient');
+const adService = require('./adService');
 
 async function clinic() {
   const counts = await clinicService.counts();
@@ -77,6 +78,12 @@ async function devops() {
   };
 }
 
+async function directorio() {
+  const [ov, run] = await Promise.all([adService.overview(), adService.lastRun()]);
+  return { ...ov, domain: run.summary && run.summary.domain, lastRead: run.ok ? String(run.ok.finished_at || run.ok.started_at).slice(0, 16) : null,
+    lastError: run.last && run.last.status === 'error' ? run.last.error : null, recycleBin: run.summary ? run.summary.recycleBin : null };
+}
+
 // { clinic, m365, solicitudes, devops }: cada uno { data } o { error }; solo
 // los modulos que este usuario tiene habilitados.
 async function summary(user, enabledModules = {}) {
@@ -84,6 +91,7 @@ async function summary(user, enabledModules = {}) {
     clinic: enabledModules.clinic ? clinic : null,
     m365: enabledModules.m365 ? m365 : null,
     solicitudes: enabledModules.solicitudes ? solicitudes : null,
+    directorio: enabledModules.directorio ? directorio : null,
     devops: user && (['superadmin', 'admin'].includes(user.role) || enabledModules.devops) ? devops : null,
   };
   const out = {};
@@ -98,4 +106,4 @@ async function summary(user, enabledModules = {}) {
   return out;
 }
 
-module.exports = { summary, clinic, m365, solicitudes, devops };
+module.exports = { summary, clinic, m365, solicitudes, devops, directorio };

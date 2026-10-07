@@ -162,6 +162,7 @@ app.use('/celulares', mobileDeviceRoutes);
 app.use('/empleados', employeeRoutes);
 app.use('/clinic', require('./routes/clinic'));
 app.use('/m365', require('./routes/m365'));
+app.use('/ad', require('./routes/ad'));
 app.use('/solicitudes', require('./routes/requests'));
 app.use('/adjuntos', attachmentRoutes);
 app.use('/red', networkRoutes);

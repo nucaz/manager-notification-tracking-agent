@@ -40,6 +40,9 @@
     <% if (enabledModules.m365) { %>
     <li><a class="nav-link <%= currentPath.startsWith('/m365') ? 'active' : '' %>" href="/m365"><i class="bi bi-microsoft"></i> <span>Microsoft 365</span></a></li>
     <% } %>
+    <% if (enabledModules.directorio) { %>
+    <li><a class="nav-link <%= currentPath.startsWith('/ad') ? 'active' : '' %>" href="/ad"><i class="bi bi-diagram-2-fill"></i> <span>Directorio activo</span></a></li>
+    <% } %>
     <% if (enabledModules.clinic) { %>
     <li><a class="nav-link <%= currentPath.startsWith('/clinic') ? 'active' : '' %>" href="/clinic"><i class="bi bi-hospital"></i> <span>Usuarios de Clinic</span></a></li>
     <% } %>

@@ -506,3 +506,24 @@ Clinic tiene unos 1 000 usuarios activos y la planilla unas 360 personas.
 Si la importacion crea empleados, "activos sin empleado" deja de mostrar
 a quienes no son personal. Los creados desde Clinic llevan
 employees.source = 'clinic' y no cuentan como planilla.
+
+## 49. En AD, sin permiso no hay error: hay vacio
+
+Una cuenta sin "Listar contenido" en CN=Deleted Objects recibe cero
+resultados, no un error de acceso. La pantalla no puede decir "vacia" sin
+mas: si la papelera sale vacia, explica el permiso que hay que delegar.
+Igual con cualquier lectura delegada en AD.
+
+## 50. GREATEST con texto compara como texto
+
+`NULLIF(GREATEST(COALESCE(fecha, '1000-01-01'), ...), '1000-01-01 00:00:00')`
+nunca daba NULL: con un literal de texto MariaDB compara cadenas y devuelve
+'1000-01-01', y los usuarios que nunca entraron salian como "mas de 1 ano".
+Con TIMESTAMP('1000-01-01 00:00:00') en los tres lugares funciona. Lo
+encontro la prueba contra un DC real, no la lectura del codigo.
+
+## 51. Los grupos privilegiados se buscan por SID
+
+"Domain Admins" se llama "Admins. del dominio" en un AD en espanol. Por
+nombre se pierden; por SID (dominio + RID 512, S-1-5-32-544, ...) no. Los
+miembros efectivos (anidados) con la regla de cadena 1.2.840.113556.1.4.1941.

@@ -1,0 +1,90 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const sum = run && run.summary; const u = ov.users; const c = ov.computers;
+   const totalSeen = Object.values(tramos).reduce(function (a, b) { return a + b; }, 0) || 1;
+   const TONE = { ok: 'bg-success', warn: 'bg-warning', bad: 'bg-danger' };
+   const certDays = sum && sum.cert && sum.cert.validTo ? Math.round((new Date(sum.cert.validTo) - Date.now()) / 86400000) : null; %>
+
+<% if (sum && sum.notes && sum.notes.length) { %>
+  <div class="alert alert-warning small" data-aviso="ad-lectura-avisos"><strong>Avisos de la última lectura:</strong>
+    <ul class="mb-0"><% sum.notes.forEach(function (n) { %><li><%= n %></li><% }); %></ul></div>
+<% } %>
+
+<div class="row g-3 mb-3" style="font-variant-numeric: tabular-nums">
+  <div class="col-md-3 col-6"><a class="card p-3 h-100 text-decoration-none" href="/ad/usuarios"><div class="small text-muted">Usuarios habilitados</div>
+    <div class="fs-3 fw-semibold"><%= u.enabled %></div><div class="small text-muted"><%= u.disabled %> deshabilitados<%= u.locked ? ' · ' + u.locked + ' bloqueados' : '' %></div></a></div>
+  <div class="col-md-3 col-6"><a class="card p-3 h-100 text-decoration-none border-danger" href="/ad/grupos"><div class="small text-muted">Con privilegios de administración</div>
+    <div class="fs-3 fw-semibold text-danger"><%= u.privileged %></div><div class="small text-muted">usuarios habilitados en grupos privilegiados (incluidos anidados)</div></a></div>
+  <div class="col-md-3 col-6"><div class="card p-3 h-100"><div class="small text-muted">Sin conectarse en <%= IDLE_DAYS %> días</div>
+    <div class="fs-3 fw-semibold text-warning-emphasis"><%= u.idle %></div><div class="small text-muted"><%= u.neverLogged %> nunca entraron · <%= u.neverExpires %> con contraseña que no vence</div></div></div>
+  <div class="col-md-3 col-6"><a class="card p-3 h-100 text-decoration-none" href="/ad/equipos"><div class="small text-muted">Equipos habilitados</div>
+    <div class="fs-3 fw-semibold"><%= c.enabled %></div><div class="small text-muted"><%= c.dcs %> controlador(es) · <%= c.idle %> inactivos <%= IDLE_DAYS %> días · <%= c.noDns %> sin DNS</div></a></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card p-3 h-100">
+      <h5>Grupos privilegiados</h5>
+      <p class="small text-muted mb-2">Miembros efectivos habilitados (directos y por grupos anidados). Se identifican por SID, no por nombre.</p>
+      <table class="table table-sm small mb-0" data-tabla="no" style="font-variant-numeric: tabular-nums">
+        <thead><tr><th>Grupo</th><th class="text-end">Usuarios</th></tr></thead>
+        <tbody>
+          <% ov.privileged.forEach(function (g) { %>
+            <tr><td><a href="/ad/grupos/<%= g.id %>"><%= g.name %></a> <span class="text-muted">· <%= PRIVILEGED_LABEL[g.privileged] %></span></td>
+              <td class="text-end <%= g.n ? 'fw-semibold' : 'text-muted' %>"><%= g.n %></td></tr>
+          <% }); %>
+          <% if (!ov.privileged.length) { %><tr><td colspan="2" class="text-muted">Sin datos: lea el dominio.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-3 h-100">
+      <h5>Última conexión de los usuarios habilitados</h5>
+      <div class="d-flex flex-column gap-2 mt-1">
+        <% BUCKETS.forEach(function (b) { const n = tramos[b.key] || 0; %>
+          <div class="d-flex align-items-center gap-2 small" style="font-variant-numeric: tabular-nums">
+            <span style="width: 130px; flex: none"><%= b.label %></span>
+            <span class="flex-grow-1 bg-body-tertiary rounded" style="height: 1.1rem"><span class="d-block h-100 rounded <%= TONE[b.tone] %>" style="width: <%= (n * 100 / totalSeen).toFixed(1) %>%"></span></span>
+            <span style="width: 50px; flex: none" class="text-end"><strong><%= n %></strong></span>
+          </div>
+        <% }); %>
+      </div>
+      <div class="form-text">La más reciente entre <code>lastLogon</code> (de cada DC consultado) y <code>lastLogonTimestamp</code> (replicado, hasta ~14 días de desfase).</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card p-3 h-100">
+      <h5>Dominio</h5>
+      <% if (!sum) { %><p class="text-muted small mb-0">Sin datos: lea el dominio.</p><% } else { %>
+      <table class="table table-sm small mb-0" data-tabla="no">
+        <tr><th style="width: 220px">Dominio</th><td><%= sum.domain %> <span class="text-muted">(<%= sum.baseDn %>)</span></td></tr>
+        <tr><th>Nivel funcional</th><td>Windows Server <%= sum.domainLevel %></td></tr>
+        <tr><th>Controladores de dominio</th><td><% sum.dcs.forEach(function (d) { %><div><%= d.dc %> <%- d.ok ? '<span class="text-success">✓</span>' : '<span class="text-danger">no respondió</span>' %></div><% }); %></td></tr>
+        <tr><th>Papelera de reciclaje de AD</th><td><%- sum.recycleBin ? '<span class="text-success">Habilitada</span>' : '<span class="text-warning-emphasis">No habilitada (lo eliminado no se puede restaurar con sus atributos)</span>' %></td></tr>
+        <tr><th>Certificado LDAPS</th><td><% if (sum.cert && sum.cert.validTo) { %><%= sum.cert.subject %> · vence <%= String(sum.cert.validTo).slice(0, 10) %>
+          <span class="<%= certDays !== null && certDays < 30 ? 'text-danger fw-semibold' : 'text-muted' %>">(<%= certDays %> días)</span><% } else { %>—<% } %></td></tr>
+        <tr><th>Contraseñas</th><td>mínimo <%= sum.policy.minPwdLength %> caracteres · vencen a los <%= sum.policy.maxPwdAgeDays || 'nunca' %> días · historial <%= sum.policy.pwdHistory %></td></tr>
+        <tr><th>Bloqueo de cuentas</th><td><%= sum.policy.lockoutThreshold ? 'tras ' + sum.policy.lockoutThreshold + ' intentos, ' + sum.policy.lockoutMinutes + ' min' : '<span class="text-warning-emphasis">sin bloqueo por intentos fallidos</span>' %></td></tr>
+      </table>
+      <% } %>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-3 h-100">
+      <h5>Equipos por sistema operativo</h5>
+      <table class="table table-sm small mb-2" data-tabla="no" style="font-variant-numeric: tabular-nums">
+        <tbody><% ov.os.forEach(function (o) { %><tr><td><%= o.os %></td><td class="text-end"><%= o.n %></td></tr><% }); %></tbody>
+      </table>
+      <div class="small">
+        <a href="/ad/dns">DNS</a>: <%= ov.dns.total %> registros · <span class="<%= ov.dns.withoutComputer ? 'text-warning-emphasis fw-semibold' : '' %>"><%= ov.dns.withoutComputer %> sin equipo en AD</span>
+        · <a href="/ad/papelera">Papelera</a>: <%= ov.deleted %> objeto(s)
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

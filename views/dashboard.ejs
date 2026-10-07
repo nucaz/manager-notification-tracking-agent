@@ -134,6 +134,48 @@
   };
   const fallo = function (b) { return b && b.error ? '<div class="small text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> No se pudo cargar: ' + b.error.replace(/</g, '&lt;') + '</div>' : ''; };
 %>
+<% if (resumen.directorio) { const a = resumen.directorio.data; %>
+<h6 class="text-muted text-uppercase small mb-2">Directorio activo<%= a && a.domain ? ' · ' + a.domain : '' %></h6>
+<div class="row g-3 mb-4" id="panel_directorio" style="font-variant-numeric: tabular-nums">
+  <div class="col-md-6">
+    <div class="card p-3 h-100 d-flex flex-column">
+      <div class="d-flex justify-content-between align-items-start">
+        <a href="/ad/usuarios" class="text-decoration-none"><i class="bi bi-person-badge"></i> Usuarios del dominio</a>
+        <% if (a) { %><span class="badge bg-primary rounded-pill" title="Habilitados"><%= a.users.enabled %></span><% } %>
+      </div>
+      <%- fallo(resumen.directorio) %>
+      <% if (a) { %>
+        <ul class="list-unstyled small mb-2 mt-2">
+          <%- linea('Con privilegios de administración', a.users.privileged, '/ad/grupos', 'danger') %>
+          <%- linea('Sin conectarse en 90 días', a.users.idle, '/ad/usuarios', 'warning') %>
+          <%- linea('Nunca se conectaron', a.users.neverLogged, '/ad/usuarios', 'warning') %>
+          <%- linea('Contraseña que no vence', a.users.neverExpires, '/ad/usuarios', 'warning') %>
+          <%- linea('Deshabilitados / bloqueados', a.users.disabled + ' / ' + a.users.locked) %>
+        </ul>
+        <div class="small text-muted mt-auto"><%= a.lastRead ? 'Última lectura: ' + a.lastRead : 'Aún no se lee el dominio.' %><%= a.lastError ? ' · la última lectura falló' : '' %></div>
+      <% } %>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card p-3 h-100 d-flex flex-column">
+      <div class="d-flex justify-content-between align-items-start">
+        <a href="/ad/equipos" class="text-decoration-none"><i class="bi bi-pc-display"></i> Equipos, DNS y papelera</a>
+        <% if (a) { %><span class="badge bg-primary rounded-pill" title="Equipos habilitados"><%= a.computers.enabled %></span><% } %>
+      </div>
+      <% if (a) { %>
+        <ul class="list-unstyled small mb-2 mt-2">
+          <%- linea('Equipos sin conectarse en 90 días', a.computers.idle, '/ad/equipos', 'warning') %>
+          <%- linea('Equipos sin registro DNS', a.computers.noDns, '/ad/equipos', 'warning') %>
+          <%- linea('Registros DNS sin equipo en AD', a.dns.withoutComputer, '/ad/dns', 'warning') %>
+          <%- linea('Objetos en la papelera', a.deleted, '/ad/papelera') %>
+          <%- linea('Controladores de dominio', a.computers.dcs, '/ad') %>
+        </ul>
+        <div class="small text-muted mt-auto">Papelera de AD: <%= a.recycleBin === null ? '—' : (a.recycleBin ? 'habilitada' : 'no habilitada') %></div>
+      <% } %>
+    </div>
+  </div>
+</div>
+<% } %>
 <% if (resumen.clinic || resumen.m365 || resumen.solicitudes) { %>
 <h6 class="text-muted text-uppercase small mb-2">Personas y accesos</h6>
 <div class="row g-3 mb-4" id="panel_accesos" style="font-variant-numeric: tabular-nums">

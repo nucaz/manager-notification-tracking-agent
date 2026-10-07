@@ -1,0 +1,46 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const d10 = function (v) { return v ? String(v).slice(0, 10) : ''; };
+   const d16 = function (v) { return v ? String(v).slice(0, 16) : ''; };
+   const ouOf = function (dn) { return String(dn || '').split(/,(?=DC=)/i)[0].split(',').map(function (p) { return p.replace(/^(OU|CN)=/i, ''); }).reverse().join(' / '); };
+   const estado = function (u) { return !u.enabled ? 'Deshabilitado' : (u.locked ? 'Bloqueado' : 'Habilitado'); }; %>
+
+<div class="card p-3">
+  <p class="small text-muted mb-2"><%= items.length %> usuarios. Clic en un encabezado para ordenar, <i class="bi bi-funnel"></i> para filtrar
+    (por ejemplo, Estado = Habilitado y Antigüedad = Más de 1 año para encontrar cuentas a deshabilitar). Solo lectura.</p>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr>
+        <th>Usuario</th><th>Nombre</th><th>Estado</th><th>Privilegiado</th><th>Última conexión</th><th>Antigüedad</th><th>Unidad organizativa</th>
+        <th data-oculta>UPN</th><th data-oculta>Correo</th><th data-oculta>Cargo</th><th data-oculta>Área</th><th data-oculta>Descripción</th>
+        <th data-oculta>Contraseña cambiada</th><th data-oculta>Contraseña no vence</th><th data-oculta>Creado</th><th data-oculta>Grupos</th><th data-oculta>Empleado</th>
+      </tr></thead>
+      <tbody>
+        <% items.forEach(function (u) { const b = bucket(u.last_seen); const idle = u.enabled && /año|Nunca/.test(b); %>
+          <tr>
+            <td class="font-monospace text-nowrap"><a href="/ad/usuarios/<%= u.id %>"><%= u.sam %></a></td>
+            <td><%= u.display_name || '—' %></td>
+            <td><span class="badge <%= !u.enabled ? 'text-bg-secondary' : (u.locked ? 'text-bg-warning' : 'text-bg-success') %>"><%= estado(u) %></span></td>
+            <td><% if (u.privileged_groups) { %><span class="badge text-bg-danger" title="<%= u.privileged_groups.split(',').map(function (k) { return PRIVILEGED_LABEL[k] || k; }).join(', ') %>">Sí</span><% } else { %>No<% } %></td>
+            <td class="text-nowrap" data-valor="<%= u.last_seen || '' %>"><%= u.last_seen ? d16(u.last_seen) : 'Nunca' %></td>
+            <td class="<%= idle ? 'text-danger fw-semibold' : '' %>"><%= b %></td>
+            <td title="<%= u.dn %>"><%= ouOf(u.ou_dn) %></td>
+            <td><%= u.upn || '—' %></td>
+            <td><%= u.mail || '—' %></td>
+            <td><%= u.title || '—' %></td>
+            <td><%= u.department || '—' %></td>
+            <td><%= u.description || '—' %></td>
+            <td class="text-nowrap" data-valor="<%= u.pwd_last_set || '' %>"><%= d10(u.pwd_last_set) || 'Debe cambiarla' %></td>
+            <td><%= u.pwd_never_expires ? 'Sí' : 'No' %></td>
+            <td class="text-nowrap" data-valor="<%= u.when_created || '' %>"><%= d10(u.when_created) %></td>
+            <td><%= u.groups_list || '—' %></td>
+            <td><%= u.employee_id ? [u.first_name, u.last_name].join(' ') : 'Sin vincular' %></td>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="17" class="text-center text-muted py-4">Sin usuarios: lea el dominio.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/foot') %>

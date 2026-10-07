@@ -566,14 +566,47 @@ se escribe si no está; se guarda como foto con la fecha y una referencia
 
 Prueba: `E2E_PERMITIR=1 node tests/solicitudes.e2e.js` (Graph simulado).
 
+### 5.2 Directorio activo (fase 1: solo lectura)
+
+Menú *Directorio activo*. Lee el dominio por **LDAPS** y muestra:
+usuarios (estado, privilegios, última conexión y su antigüedad, OU,
+contraseña), **grupos privilegiados** identificados por SID (funciona con
+el AD en español) con sus miembros efectivos incluidos los anidados,
+grupos y miembros, el árbol de **unidades organizativas**, **equipos**
+con su IP desde el DNS integrado, los registros **DNS** sin equipo en AD,
+la **papelera** y los datos del dominio (nivel funcional, papelera
+habilitada, vencimiento del certificado LDAPS, política de contraseñas y
+bloqueo). Todas las tablas ordenan, filtran y suman columnas; Reportes
+tiene usuarios, cuentas privilegiadas y equipos, y el Panel su resumen.
+Se lee a las 06:40 y con *Leer el dominio ahora*.
+
+**Capas de seguridad**: solo `ldaps://` (636) y el certificado del DC se
+valida siempre contra la CA configurada (no hay "aceptar cualquier
+certificado"); cuenta de servicio propia **sin** privilegios de
+administrador (la papelera necesita solo "Listar contenido" y "Leer"
+delegados en `CN=Deleted Objects`); contraseña cifrada; la conexión solo
+la ve y cambia un **superadministrador** y se prueba antes de guardarse;
+cada lectura y cambio de conexión queda en Auditoría; el módulo viene
+apagado para editor y lector. Esta fase **no escribe nada** en el dominio
+(lo verifica `tests/ad.e2e.js`). La fase 2 (crear, modificar, bloquear,
+desbloquear, restablecer contraseñas, grupos, equipos con su DNS,
+restaurar de la papelera) pasará por la aprobación del superadministrador
+o por permisos temporales, con las cuentas privilegiadas en solo lectura.
+
+Prueba contra un DC de prueba desechable: `scripts/ad-prueba/levantar.sh`
+(Samba AD en Docker) y `tests/ad.e2e.js`.
+
 ## 6. Roles de usuario
 
-- **admin**: acceso total, incluye Usuarios, Configuración, Permisos y
-  Auditoría. Nunca se le puede restringir el acceso a ningún módulo (así
-  no puede auto-bloquearse la pantalla de Permisos).
+- **superadmin**: todo el control: Usuarios, Permisos, Configuración
+  (credenciales de conexión), IA, Respaldos, Mantenimiento de la base,
+  conexión de Microsoft 365 y del directorio activo, y DevOps. Siempre
+  queda al menos uno activo.
+- **admin**: gestiona todos los módulos, Catálogos, Auditoría e Historial
+  de chat, pero **no** lo crítico (credenciales, usuarios, permisos,
+  respaldos, mantenimiento, DevOps).
 - **editor**: puede crear, editar y eliminar en los módulos que tenga
-  habilitados (ver 6.1), pero no accede a Usuarios, Configuración,
-  Permisos ni Auditoría.
+  habilitados (ver 6.1), pero no accede a la administración.
 - **lector**: solo puede ver — nunca crear, editar ni eliminar, sin
   importar qué módulos tenga habilitados.
 

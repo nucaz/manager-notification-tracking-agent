@@ -26,6 +26,7 @@ const devopsSidecarClient = require('./devopsSidecarClient');
 const clinicService = require('./clinicService');
 const m365Service = require('./m365Service');
 const requestService = require('./requestService');
+const adService = require('./adService');
 
 const STATUS_LABEL = { vencido: 'Vencido', por_vencer: 'Por vencer', activo: 'Activo', sin_fecha: 'Sin fecha' };
 const STATUS_BADGE = { vencido: 'bg-danger', por_vencer: 'bg-warning text-dark', activo: 'bg-success', sin_fecha: 'bg-secondary' };
@@ -368,6 +369,87 @@ const personas = {
 };
 
 // ---------------------------------------------------------------------
+// Directorio activo (foto de la ultima lectura del dominio)
+// ---------------------------------------------------------------------
+const adOu = (dn) => String(dn || '').split(/,(?=DC=)/i)[0].split(',').map((p) => p.replace(/^(OU|CN)=/i, '')).reverse().join(' / ');
+const adState = (u) => (!u.enabled ? 'Deshabilitado' : (u.locked ? 'Bloqueado' : 'Habilitado'));
+const adPriv = (keys) => String(keys || '').split(',').filter(Boolean).map((k) => adService.PRIVILEGED_LABEL[k] || k).join(', ');
+
+const adUsuarios = {
+  label: 'Usuarios del directorio activo',
+  group: 'Directorio activo',
+  module: 'directorio',
+  columns: [
+    { key: 'sam', label: 'Usuario' }, { key: 'display_name', label: 'Nombre' }, { key: 'upn', label: 'UPN' }, { key: 'estado', label: 'Estado' },
+    { key: 'privilegiado', label: 'Privilegios' }, { key: 'ultima', label: 'Última conexión' }, { key: 'tramo', label: 'Antigüedad de conexión' },
+    { key: 'ou', label: 'Unidad organizativa' }, { key: 'title', label: 'Cargo' }, { key: 'department', label: 'Área' }, { key: 'mail', label: 'Correo' },
+    { key: 'pwd', label: 'Contraseña cambiada' }, { key: 'no_vence', label: 'Contraseña no vence' }, { key: 'creado', label: 'Creado' },
+    { key: 'grupos', label: 'Grupos' },
+  ],
+  print: [
+    { key: 'sam', label: 'Usuario', w: 0.9 }, { key: 'display_name', label: 'Nombre', w: 1.4 }, { key: 'estado', label: 'Estado', w: 0.7 },
+    { key: 'tramo', label: 'Conexión', w: 0.9 }, { key: 'ou', label: 'Unidad organizativa', w: 1.6 },
+  ],
+  barcodes: [{ key: 'sam', label: 'Usuario' }],
+  selects: [{ key: 'estado', label: 'Estado' }, { key: 'tramo', label: 'Conexión' }, { key: 'es_priv', label: 'Privilegiado' }, { key: 'ou', label: 'Unidad organizativa' },
+    { key: 'no_vence', label: 'Contraseña no vence' }],
+  groupBy: [{ key: 'estado', label: 'Por estado' }, { key: 'tramo', label: 'Por antigüedad de conexión' }, { key: 'es_priv', label: 'Privilegiados' },
+    { key: 'ou', label: 'Por unidad organizativa' }],
+  async load() {
+    return (await adService.users()).map((u) => ({
+      ...u, estado: adState(u), privilegiado: adPriv(u.privileged_groups), es_priv: yesNo(u.privileged_groups), ultima: dateTime(u.last_seen) || 'Nunca',
+      tramo: loginBucket(u.last_seen), ou: adOu(u.ou_dn), pwd: day(u.pwd_last_set), no_vence: yesNo(u.pwd_never_expires), creado: day(u.when_created),
+      grupos: u.groups_list || '',
+    }));
+  },
+};
+
+const adPrivilegiados = {
+  label: 'Cuentas privilegiadas del dominio',
+  group: 'Directorio activo',
+  module: 'directorio',
+  columns: [
+    { key: 'sam', label: 'Usuario' }, { key: 'display_name', label: 'Nombre' }, { key: 'estado', label: 'Estado' }, { key: 'privilegiado', label: 'Privilegios' },
+    { key: 'ultima', label: 'Última conexión' }, { key: 'tramo', label: 'Antigüedad de conexión' }, { key: 'pwd', label: 'Contraseña cambiada' },
+    { key: 'no_vence', label: 'Contraseña no vence' }, { key: 'ou', label: 'Unidad organizativa' },
+  ],
+  print: [
+    { key: 'sam', label: 'Usuario', w: 0.9 }, { key: 'display_name', label: 'Nombre', w: 1.2 }, { key: 'privilegiado', label: 'Privilegios', w: 1.8 },
+    { key: 'tramo', label: 'Conexión', w: 0.9 }, { key: 'estado', label: 'Estado', w: 0.7 },
+  ],
+  barcodes: [],
+  selects: [{ key: 'estado', label: 'Estado' }, { key: 'tramo', label: 'Conexión' }],
+  groupBy: [{ key: 'estado', label: 'Por estado' }, { key: 'tramo', label: 'Por antigüedad de conexión' }],
+  async load() {
+    return (await adUsuarios.load()).filter((u) => u.privileged_groups);
+  },
+};
+
+const adEquipos = {
+  label: 'Equipos del directorio activo',
+  group: 'Directorio activo',
+  module: 'directorio',
+  columns: [
+    { key: 'name', label: 'Equipo' }, { key: 'os', label: 'Sistema operativo' }, { key: 'os_version', label: 'Versión' }, { key: 'estado', label: 'Estado' },
+    { key: 'ultima', label: 'Última conexión' }, { key: 'tramo', label: 'Antigüedad de conexión' }, { key: 'ips', label: 'IP (DNS)' },
+    { key: 'ou', label: 'Unidad organizativa' }, { key: 'description', label: 'Descripción' }, { key: 'creado', label: 'Creado' },
+  ],
+  print: [
+    { key: 'name', label: 'Equipo', w: 1 }, { key: 'os', label: 'Sistema operativo', w: 1.4 }, { key: 'ips', label: 'IP', w: 0.9 },
+    { key: 'tramo', label: 'Conexión', w: 0.9 }, { key: 'ou', label: 'Unidad organizativa', w: 1.4 },
+  ],
+  barcodes: [{ key: 'name', label: 'Equipo' }],
+  selects: [{ key: 'estado', label: 'Estado' }, { key: 'tramo', label: 'Conexión' }, { key: 'os', label: 'Sistema operativo' }, { key: 'ou', label: 'Unidad organizativa' }],
+  groupBy: [{ key: 'os', label: 'Por sistema operativo' }, { key: 'tramo', label: 'Por antigüedad de conexión' }, { key: 'estado', label: 'Por estado' }],
+  async load() {
+    return (await adService.computers()).map((c) => ({
+      ...c, os: c.os || 'Sin dato', estado: c.is_dc ? 'Controlador de dominio' : (c.enabled ? 'Habilitado' : 'Deshabilitado'),
+      ultima: dateTime(c.last_seen) || 'Nunca', tramo: loginBucket(c.last_seen), ips: c.ips || (c.is_dc ? '' : 'Sin DNS'), ou: adOu(c.ou_dn), creado: day(c.when_created),
+    }));
+  },
+};
+
+// ---------------------------------------------------------------------
 // DevOps: repositorios que vigila el sidecar
 // ---------------------------------------------------------------------
 const dateTime = (iso) => (iso ? String(iso).replace('T', ' ').slice(0, 16) : '');
@@ -427,6 +509,9 @@ const REPORTS = {
   m365_licencias: m365Licencias,
   solicitudes,
   personas,
+  ad_usuarios: adUsuarios,
+  ad_privilegiados: adPrivilegiados,
+  ad_equipos: adEquipos,
   repositorios,
 };
 

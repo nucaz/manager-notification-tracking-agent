@@ -131,6 +131,13 @@ READMEs.
   `partials/tema_selector.ejs`. Colores propios solo por variables
   (`--app-*` en `style.css`, o las de Bootstrap `--bs-*`), nunca un color
   claro fijo. Lo vigila `tests/tema.dom.js`.
+- **Directorio activo** (`src/services/adService.js`): solo LDAPS con la
+  CA validada, cuenta de servicio sin privilegios, conexión solo para
+  superadmin y probada antes de guardar. La fase 1 no escribe nada en el
+  dominio (`tests/ad.e2e.js` lo comprueba buscando operaciones de
+  escritura); cualquier escritura futura va con aprobación del superadmin
+  y nunca sobre cuentas privilegiadas. Probar contra
+  `scripts/ad-prueba/levantar.sh`, nunca contra un dominio real.
 - **Tablas de listado (estándar en toda la app)**: toda tabla con
   `<thead>` dentro de `.table-responsive` recibe sola, de
   `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por

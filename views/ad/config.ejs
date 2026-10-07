@@ -1,0 +1,46 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <form method="post" action="/ad/configuracion" class="card p-4" autocomplete="off">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h5>Conexión al controlador de dominio (LDAPS)</h5>
+      <p class="small text-muted">Solo un superadministrador ve y cambia esta pantalla. Al guardar se <strong>prueba la conexión</strong>: si el certificado no valida con la CA
+        o la cuenta no entra, no se guarda nada.</p>
+      <div class="mb-3"><label class="form-label" for="ad_url">Servidor *</label>
+        <input class="form-control font-monospace" id="ad_url" name="ad_url" required placeholder="ldaps://dc01.depilzone.local:636" value="<%= cfg.url %>">
+        <div class="form-text">Solo <code>ldaps://</code> (puerto 636). El nombre debe coincidir con el del certificado del DC.</div></div>
+      <div class="mb-3"><label class="form-label" for="ad_bind_user">Cuenta de servicio *</label>
+        <input class="form-control font-monospace" id="ad_bind_user" name="ad_bind_user" required placeholder="svc-gestor@depilzone.local" value="<%= cfg.bindUser %>"></div>
+      <div class="mb-3"><label class="form-label" for="ad_bind_password">Contraseña de la cuenta de servicio <%= cfg.password ? '' : '*' %></label>
+        <input class="form-control" type="password" id="ad_bind_password" name="ad_bind_password" autocomplete="new-password"
+          placeholder="<%= cfg.password ? 'Configurada - dejar vacío para mantenerla' : '' %>" <%= cfg.password ? '' : 'required' %>>
+        <div class="form-text">Se guarda cifrada. Nunca se vuelve a mostrar.</div></div>
+      <div class="mb-3"><label class="form-label" for="ad_ca_pem">Certificado de la CA que emitió el certificado del DC (PEM) *</label>
+        <textarea class="form-control font-monospace small" id="ad_ca_pem" name="ad_ca_pem" rows="6" required placeholder="-----BEGIN CERTIFICATE-----"><%= cfg.caPem %></textarea>
+        <div class="form-text">Exporte el certificado raíz de su CA interna en Base-64 (.cer) y pegue el texto. No hay opción de aceptar cualquier certificado.</div></div>
+      <div class="mb-3"><label class="form-label" for="ad_base_dn">DN base (opcional)</label>
+        <input class="form-control font-monospace" id="ad_base_dn" name="ad_base_dn" placeholder="Se detecta solo (DC=depilzone,DC=local)" value="<%= cfg.baseDn %>"></div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="ad_all_dcs" name="ad_all_dcs" value="1" <%= cfg.allDcs ? 'checked' : '' %>>
+        <label class="form-check-label" for="ad_all_dcs">Consultar todos los controladores de dominio para la última conexión exacta (<code>lastLogon</code> no se replica)</label></div>
+      <div><button class="btn btn-primary"><i class="bi bi-shield-check"></i> Probar y guardar</button></div>
+    </form>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-3">
+      <h6>Cuenta de servicio recomendada (fase 1, solo lectura)</h6>
+      <ol class="small mb-2">
+        <li>Un usuario propio (ej. <code>svc-gestor</code>), <strong>sin</strong> ser administrador del dominio, con contraseña larga y aleatoria.</li>
+        <li>Para leer el directorio basta con ser usuario del dominio. Para ver la <strong>papelera</strong>:
+          <code>dsacls "CN=Deleted Objects,DC=…" /takeownership</code> y <code>dsacls "CN=Deleted Objects,DC=…" /g "DOMINIO\svc-gestor:LCRP"</code>.</li>
+        <li>En sus propiedades marque "La cuenta es importante y no se puede delegar" y "La contraseña nunca expira" solo si la rota usted a mano.</li>
+        <li>En el firewall, permita solo desde el servidor de la aplicación hacia los DC por el puerto <strong>636</strong>.</li>
+        <li>Revise en el DC los eventos de inicio de sesión de esta cuenta: solo debe entrar desde la IP del servidor de la aplicación.</li>
+      </ol>
+      <div class="small text-muted">La fase 2 (crear, bloquear, resetear contraseñas, grupos, equipos y DNS) usará una delegación adicional solo sobre las OU que se gestionen,
+        con aprobación del superadministrador o permisos temporales. Las cuentas privilegiadas quedarán en solo lectura.</div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/foot') %>

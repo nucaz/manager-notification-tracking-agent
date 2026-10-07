@@ -1,0 +1,25 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% // Arbol: cada unidad debajo de su padre (por DN), con lo que contiene directamente.
+   const byParent = {};
+   items.forEach(function (o) { const k = String(o.parent_dn || '').toLowerCase(); (byParent[k] = byParent[k] || []).push(o); });
+   const known = new Set(items.map(function (o) { return String(o.dn).toLowerCase(); }));
+   const roots = items.filter(function (o) { return !known.has(String(o.parent_dn || '').toLowerCase()); });
+   const draw = function (o, level) {
+     const kids = (byParent[String(o.dn).toLowerCase()] || []).sort(function (a, b) { return a.name.localeCompare(b.name, 'es'); });
+     let html = '<li class="ou-nodo"><div class="d-flex flex-wrap align-items-center gap-2 py-1 border-bottom">'
+       + '<i class="bi ' + (o.kind === 'ou' ? 'bi-folder2-open text-warning' : 'bi-box text-secondary') + '"></i>'
+       + '<strong>' + o.name.replace(/</g, '&lt;') + '</strong>'
+       + (o.kind === 'ou' ? '' : ' <span class="badge text-bg-light border">contenedor</span>')
+       + '<span class="small text-muted ms-auto" style="font-variant-numeric: tabular-nums">' + o.users_count + ' usuarios · ' + o.computers_count + ' equipos · ' + o.groups_count + ' grupos</span>'
+       + '</div>';
+     if (o.description) html += '<div class="small text-muted ps-4">' + String(o.description).replace(/</g, '&lt;') + '</div>';
+     if (kids.length) html += '<ul class="list-unstyled ps-4 mb-0">' + kids.map(function (k) { return draw(k, level + 1); }).join('') + '</ul>';
+     return html + '</li>';
+   }; %>
+<div class="card p-3">
+  <p class="small text-muted mb-2"><%= items.length %> unidades organizativas y contenedores. Las cifras son lo que contiene cada una directamente.</p>
+  <ul class="list-unstyled mb-0"><%- roots.sort(function (a, b) { return a.dn.localeCompare(b.dn); }).map(function (r) { return draw(r, 0); }).join('') %></ul>
+  <% if (!items.length) { %><p class="text-muted mb-0">Sin datos: lea el dominio.</p><% } %>
+</div>
+<%- include('../partials/foot') %>

@@ -1,0 +1,27 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const special = function (r) { return r.name === '@' || r.name.indexOf('_') === 0 || ['DomainDnsZones', 'ForestDnsZones'].includes(r.name); }; %>
+<div class="card p-3">
+  <p class="small text-muted mb-2"><%= items.length %> registros de las zonas integradas en AD. "Sin equipo en AD": un registro de host cuyo nombre no es el de ningún equipo
+    del dominio (equipo eliminado que dejó su registro, o un servidor que no está unido al dominio). Estático = creado a mano; dinámico = lo registró el propio equipo.</p>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr><th>Zona</th><th>Nombre</th><th>Tipo</th><th>Dato</th><th>Equipo en AD</th><th>Origen</th><th data-oculta>TTL</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (r) { const host = ['A', 'AAAA'].includes(r.rtype) && !special(r); %>
+          <tr>
+            <td><%= r.zone %></td>
+            <td class="font-monospace"><%= r.name %></td>
+            <td><%= r.rtype %></td>
+            <td class="font-monospace"><%= r.data || '—' %></td>
+            <td><% if (r.computer_name) { %><%= r.computer_name %><% } else if (host) { %><span class="text-warning-emphasis fw-semibold">Sin equipo en AD</span><% } else { %>—<% } %></td>
+            <td><%= r.record_ts ? 'Dinámico (' + String(r.record_ts).slice(0, 10) + ')' : 'Estático' %></td>
+            <td><%= r.ttl %></td>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="7" class="text-center text-muted py-4">Sin registros: lea el dominio.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('../partials/foot') %>

@@ -1,0 +1,28 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<div class="card p-3">
+  <p class="small text-muted mb-2"><%= items.length %> grupos. Los privilegiados (por SID) van primero, con sus miembros efectivos incluidos los anidados.</p>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr><th>Grupo</th><th>Privilegiado</th><th>Tipo</th><th>Ámbito</th><th class="text-end">Miembros directos</th><th class="text-end">Usuarios efectivos</th>
+        <th data-oculta>Descripción</th><th data-oculta>SID</th><th data-oculta>Ubicación</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (g) { %>
+          <tr>
+            <td><a href="/ad/grupos/<%= g.id %>"><%= g.name %></a></td>
+            <td><% if (g.privileged) { %><span class="badge text-bg-danger"><%= PRIVILEGED_LABEL[g.privileged] %></span><% } else { %>No<% } %></td>
+            <td><%= g.kind === 'seguridad' ? 'Seguridad' : 'Distribución' %></td>
+            <td><%= ({ global: 'Global', local: 'Dominio local', universal: 'Universal' })[g.scope] || '—' %></td>
+            <td class="text-end"><%= g.member_count %></td>
+            <td class="text-end"><%= g.privileged ? g.effective_users : '—' %></td>
+            <td><%= g.description || '—' %></td>
+            <td class="font-monospace"><%= g.sid || '—' %></td>
+            <td class="font-monospace"><%= g.ou_dn || '—' %></td>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="9" class="text-center text-muted py-4">Sin grupos: lea el dominio.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('../partials/foot') %>

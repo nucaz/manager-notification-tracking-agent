@@ -1,0 +1,36 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const sum = run && run.summary; %>
+<% if (sum && !sum.recycleBin) { %>
+  <div class="alert alert-warning small" data-aviso="ad-papelera-deshabilitada">La <strong>Papelera de reciclaje de AD</strong> no está habilitada en el bosque: lo eliminado queda como
+    "lápida" sin sus atributos y no se puede restaurar completo. Se habilita una sola vez (no se puede deshacer) con
+    <code>Enable-ADOptionalFeature 'Recycle Bin Feature' -Scope ForestOrConfigurationSet -Target &lt;dominio&gt;</code>.</div>
+<% } %>
+<% if (sum && sum.deletedEmpty) { %>
+  <div class="alert alert-light border small" data-aviso="ad-papelera-permiso"><i class="bi bi-info-circle"></i> La papelera se ve vacía. Si sabe que hay objetos eliminados,
+    la cuenta de servicio no tiene permiso para verla (AD no da error, solo devuelve nada). Un administrador del dominio lo delega así:
+    <code>dsacls "CN=Deleted Objects,<%= sum.baseDn %>" /takeownership</code> y luego
+    <code>dsacls "CN=Deleted Objects,<%= sum.baseDn %>" /g "DOMINIO\cuenta-servicio:LCRP"</code> (listar y leer, nada más).</div>
+<% } %>
+<div class="card p-3">
+  <p class="small text-muted mb-2"><%= items.length %> objetos en CN=Deleted Objects. Restaurar será parte de la fase de escritura (con aprobación).</p>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr><th>Nombre</th><th>Tipo</th><th>Cuenta</th><th>Estaba en</th><th>Eliminado</th><th data-oculta>GUID</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (d) { %>
+          <tr>
+            <td><%= d.name %></td>
+            <td><%= d.object_class || '—' %></td>
+            <td class="font-monospace"><%= d.sam || '—' %></td>
+            <td class="font-monospace"><%= d.last_known_parent || '—' %></td>
+            <td class="text-nowrap" data-valor="<%= d.deleted_at || '' %>"><%= d.deleted_at ? String(d.deleted_at).slice(0, 16) : '—' %></td>
+            <td class="font-monospace"><%= d.object_guid %></td>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="6" class="text-center text-muted py-4">La papelera está vacía (o no hay permiso para verla).</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('../partials/foot') %>

@@ -22,6 +22,7 @@ const MODULES = {
   solicitudes: 'Solicitudes (quién pidió qué, en todos los módulos)',
   clinic: 'Usuarios de Clinic',
   m365: 'Cuentas de Microsoft 365',
+  directorio: 'Directorio activo (usuarios, grupos, equipos y DNS del dominio)',
   red: 'Red (topologías y diagramas)',
   glpi_inventario: 'Inventario GLPI',
   reportes: 'Reportes',
@@ -44,6 +45,9 @@ const DEFAULT_MODULE_ACCESS = Object.keys(MODULES).reduce((acc, key) => {
 // puede restaurar o borrar), y antes solo lo veia un administrador. Queda
 // apagado hasta que un admin lo habilite a proposito.
 DEFAULT_MODULE_ACCESS.devops = { editor: false, lector: false };
+// El directorio activo muestra quien es administrador del dominio: apagado
+// para editor y lector hasta que un superadmin lo habilite.
+DEFAULT_MODULE_ACCESS.directorio = { editor: false, lector: false };
 
 async function moduleEnabled(role, moduleKey) {
   if (role === 'superadmin') return true;

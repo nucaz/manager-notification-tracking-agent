@@ -1,0 +1,42 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const d16 = function (v) { return v ? String(v).slice(0, 16) : 'Nunca'; };
+   const KIND = { usuario: 'Usuario', grupo: 'Grupo', equipo: 'Equipo', otro: 'Otro' }; %>
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <h4 class="mb-0"><%= item.name %></h4>
+  <% if (item.privileged) { %><span class="badge text-bg-danger"><%= PRIVILEGED_LABEL[item.privileged] %></span><% } %>
+  <span class="text-muted small"><%= item.kind === 'seguridad' ? 'Seguridad' : 'Distribución' %> · <%= item.scope || '' %> · <%= item.sid %></span>
+  <a href="/ad/grupos" class="btn btn-sm btn-outline-secondary ms-auto">Volver</a>
+</div>
+<% if (item.description) { %><p class="small"><%= item.description %></p><% } %>
+<div class="row g-3">
+  <% if (item.privileged) { %>
+  <div class="col-lg-6">
+    <div class="card p-3 border-danger">
+      <h6>Usuarios con este privilegio (<%= item.effective.length %>)</h6>
+      <p class="small text-muted">Directos y por grupos anidados.</p>
+      <div class="table-responsive"><table class="table table-sm small mb-0">
+        <thead><tr><th>Usuario</th><th>Nombre</th><th>Estado</th><th>Última conexión</th><th>Antigüedad</th></tr></thead>
+        <tbody><% item.effective.forEach(function (u) { %>
+          <tr><td class="font-monospace"><a href="/ad/usuarios/<%= u.id %>"><%= u.sam %></a></td><td><%= u.display_name || '—' %></td>
+            <td><%= u.enabled ? 'Habilitado' : 'Deshabilitado' %></td><td data-valor="<%= u.last_seen || '' %>"><%= d16(u.last_seen) %></td><td><%= bucket(u.last_seen) %></td></tr>
+        <% }); %></tbody></table></div>
+    </div>
+  </div>
+  <% } %>
+  <div class="col-lg-<%= item.privileged ? 6 : 12 %>">
+    <div class="card p-3">
+      <h6>Miembros directos (<%= item.members.length %>)</h6>
+      <div class="table-responsive"><table class="table table-sm small mb-0">
+        <thead><tr><th>Miembro</th><th>Tipo</th><th>Estado</th><th>Última conexión</th></tr></thead>
+        <tbody><% item.members.forEach(function (m) { %>
+          <tr><td><% if (m.user_id) { %><a class="font-monospace" href="/ad/usuarios/<%= m.user_id %>"><%= m.sam %></a> <%= m.display_name ? '· ' + m.display_name : '' %>
+              <% } else { %><span class="font-monospace small"><%= m.member_dn.split(',')[0].replace(/^CN=/i, '') %></span><% } %></td>
+            <td><%= KIND[m.member_kind] || m.member_kind %></td><td><%= m.user_id ? (m.enabled ? 'Habilitado' : 'Deshabilitado') : '—' %></td>
+            <td data-valor="<%= m.last_seen || '' %>"><%= m.user_id ? d16(m.last_seen) : '—' %></td></tr>
+        <% }); %>
+        <% if (!item.members.length) { %><tr><td colspan="4" class="text-muted">Sin miembros directos.</td></tr><% } %></tbody></table></div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/foot') %>

@@ -1,0 +1,45 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const d16 = function (v) { return v ? String(v).slice(0, 16) : '—'; }; %>
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <h4 class="mb-0"><%= item.display_name || item.sam %></h4>
+  <span class="font-monospace"><%= item.sam %></span>
+  <span class="badge <%= !item.enabled ? 'text-bg-secondary' : (item.locked ? 'text-bg-warning' : 'text-bg-success') %>"><%= !item.enabled ? 'Deshabilitado' : (item.locked ? 'Bloqueado' : 'Habilitado') %></span>
+  <% if (item.privileged_groups) { %><span class="badge text-bg-danger">Privilegiado</span><% } %>
+  <% if (item.removed_at) { %><span class="badge text-bg-dark">Ya no está en el dominio (<%= String(item.removed_at).slice(0, 10) %>)</span><% } %>
+  <a href="/ad/usuarios" class="btn btn-sm btn-outline-secondary ms-auto">Volver</a>
+</div>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-3">
+      <table class="table table-sm mb-0" data-tabla="no">
+        <tr><th style="width: 210px">UPN</th><td><%= item.upn || '—' %></td></tr>
+        <tr><th>Correo</th><td><%= item.mail || '—' %></td></tr>
+        <tr><th>Cargo / Área</th><td><%= [item.title, item.department].filter(Boolean).join(' · ') || '—' %></td></tr>
+        <tr><th>Descripción</th><td><%= item.description || '—' %></td></tr>
+        <tr><th>Ubicación (DN)</th><td class="small font-monospace"><%= item.dn %></td></tr>
+        <tr><th>Última conexión</th><td><strong><%= item.last_seen ? d16(item.last_seen) : 'Nunca' %></strong> <span class="badge text-bg-light border"><%= bucket(item.last_seen) %></span>
+          <div class="small text-muted">lastLogon (DC): <%= d16(item.last_logon) %> · lastLogonTimestamp: <%= d16(item.last_logon_ts) %></div></td></tr>
+        <tr><th>Contraseña</th><td>cambiada <%= item.pwd_last_set ? d16(item.pwd_last_set) : '— (debe cambiarla al entrar)' %><%= item.pwd_never_expires ? ' · no vence' : '' %></td></tr>
+        <tr><th>Creado</th><td><%= d16(item.when_created) %></td></tr>
+        <tr><th>Empleado</th><td><%= item.employee_id ? [item.first_name, item.last_name].join(' ') + ' (DNI ' + item.employee_dni + ')' : 'Sin vincular (atributo employeeID = DNI del directorio)' %></td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <% if (item.privileged_groups) { %>
+      <div class="card p-3 mb-3 border-danger">
+        <h6 class="text-danger">Privilegios de administración</h6>
+        <ul class="small mb-0"><% item.privileged_groups.split(',').forEach(function (k) { %><li><%= PRIVILEGED_LABEL[k] || k %></li><% }); %></ul>
+        <div class="form-text">Incluye los obtenidos por grupos anidados. En la fase de escritura estas cuentas quedan en solo lectura.</div>
+      </div>
+    <% } %>
+    <div class="card p-3">
+      <h6>Miembro de (<%= item.memberOf.length %>)</h6>
+      <ul class="small mb-0"><% item.memberOf.forEach(function (g) { %><li><a href="/ad/grupos/<%= g.id %>"><%= g.name %></a><%= g.privileged ? ' ⚠' : '' %>
+        <span class="text-muted">· <%= g.kind %> <%= g.scope || '' %></span></li><% }); %>
+        <% if (!item.memberOf.length) { %><li class="text-muted">Solo el grupo primario (Domain Users).</li><% } %></ul>
+    </div>
+  </div>
+</div>
+<%- include('../partials/foot') %>

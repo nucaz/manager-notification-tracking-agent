@@ -5,6 +5,7 @@ const { startPolling } = require('./jobs/telegramPoller');
 const { startScheduler: startChatArchiveScheduler } = require('./jobs/archiveChatLogs');
 const { startScheduler: startHistoryPurgeScheduler } = require('./jobs/purgeHistory');
 const { startScheduler: startM365Scheduler } = require('./jobs/syncM365');
+const { startScheduler: startAdScheduler } = require('./jobs/syncAd');
 const { startScheduler: startExternalSyncScheduler } = require('./jobs/syncExternal');
 
 app.listen(env.port, () => {
@@ -14,5 +15,6 @@ app.listen(env.port, () => {
   startChatArchiveScheduler();
   startHistoryPurgeScheduler();
   startM365Scheduler();
+  startAdScheduler();
   startExternalSyncScheduler();
 });
