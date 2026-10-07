@@ -1,0 +1,33 @@
+<%#
+  Tema claro / oscuro / del sistema. Va en el <head> (antes de dibujar la
+  página, para que no parpadee): pone data-bs-theme en <html>, que Bootstrap
+  5.3 y public/css/style.css usan para sus colores. La elección se guarda en
+  este navegador (localStorage "tema": claro | oscuro | sistema); con
+  "sistema" sigue al sistema operativo, también si cambia con la página
+  abierta. El selector está en partials/tema_selector.ejs.
+%>
+<script>
+(function () {
+  var KEY = 'tema';
+  var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function read() { try { var v = localStorage.getItem(KEY); return v === 'claro' || v === 'oscuro' ? v : 'sistema'; } catch (e) { return 'sistema'; } }
+  function apply(v) {
+    var dark = v === 'oscuro' || (v === 'sistema' && media && media.matches);
+    document.documentElement.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-tema', v);
+  }
+  apply(read());
+  if (media) {
+    var follow = function () { if (read() === 'sistema') apply('sistema'); };
+    if (media.addEventListener) media.addEventListener('change', follow); else if (media.addListener) media.addListener(follow);
+  }
+  window.temaApp = {
+    get: read,
+    set: function (v) {
+      try { localStorage.setItem(KEY, v); } catch (e) { /* sin almacenamiento: solo esta vez */ }
+      apply(v);
+      document.dispatchEvent(new CustomEvent('tema', { detail: v }));
+    },
+  };
+})();
+</script>

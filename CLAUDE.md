@@ -119,6 +119,11 @@ READMEs.
   las pantallas sueltas), en DevOps Sidecar (`templates/base.html`) y en
   los PDF de Reportes. Nunca se vuelve configurable ni se quita; toda
   pantalla nueva con `</body>` lo incluye. Lo vigila `tests/credito.test.js`.
+- **Tema claro / oscuro / del sistema**: `views/partials/tema.ejs` (en el
+  `<head>` de toda página) pone `data-bs-theme`; el selector está en
+  `partials/tema_selector.ejs`. Colores propios solo por variables
+  (`--app-*` en `style.css`, o las de Bootstrap `--bs-*`), nunca un color
+  claro fijo. Lo vigila `tests/tema.dom.js`.
 - **Tablas de listado (estándar en toda la app)**: toda tabla con
   `<thead>` dentro de `.table-responsive` recibe sola, de
   `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por

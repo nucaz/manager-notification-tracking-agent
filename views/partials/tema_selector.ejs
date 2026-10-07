@@ -1,0 +1,33 @@
+<%# Selector de tema: claro, oscuro o el del sistema (ver partials/tema.ejs).
+    suelto: true -> flotando arriba a la derecha (pantallas sin barra lateral). %>
+<div class="tema-selector<%= typeof suelto !== 'undefined' && suelto ? ' tema-selector-suelto' : '' %>" role="group" aria-label="Tema de la aplicación">
+  <% if (!(typeof suelto !== 'undefined' && suelto)) { %><span class="tema-titulo">Tema</span><% } %>
+  <button type="button" data-tema-valor="claro" title="Tema claro" aria-label="Tema claro"><i class="bi bi-sun"></i></button>
+  <button type="button" data-tema-valor="oscuro" title="Tema oscuro" aria-label="Tema oscuro"><i class="bi bi-moon-stars"></i></button>
+  <button type="button" data-tema-valor="sistema" title="Tema del sistema" aria-label="Tema del sistema"><i class="bi bi-circle-half"></i></button>
+</div>
+<script>
+(function () {
+  var group = document.currentScript.previousElementSibling;
+  var ORDER = ['claro', 'oscuro', 'sistema'];
+  function mark() {
+    var v = window.temaApp ? window.temaApp.get() : 'sistema';
+    Array.prototype.forEach.call(group.querySelectorAll('button'), function (b) {
+      var on = b.getAttribute('data-tema-valor') === v;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  group.addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-tema-valor]');
+    if (!b || !window.temaApp) return;
+    var v = b.getAttribute('data-tema-valor');
+    // Con la barra lateral colapsada solo se ve el boton activo: un clic pasa al siguiente.
+    var sidebar = group.closest('.sidebar');
+    if (sidebar && sidebar.classList.contains('collapsed') && v === window.temaApp.get()) v = ORDER[(ORDER.indexOf(v) + 1) % ORDER.length];
+    window.temaApp.set(v);
+  });
+  document.addEventListener('tema', mark);
+  mark();
+})();
+</script>

@@ -158,6 +158,9 @@ Aplicación web para el seguimiento de:
   **respaldos** (resultado de la última ejecución de cada trabajo, el que
   falló, el último y el próximo). Cada cifra lleva al listado filtrado; si
   el sidecar no responde, el panel carga igual y lo avisa en ese bloque
+- **Tema claro, oscuro o el del sistema**: selector en la barra lateral
+  (y arriba a la derecha en el inicio de sesión); se recuerda en el
+  navegador. DevOps Sidecar tiene el suyo.
 - **Tablas ajustables** (en todas las pantallas): **ordenar con clic en
   el encabezado** (ascendente, descendente, original; números, montos y
   fechas se ordenan como tales y los vacíos van al final), **filtro en cada

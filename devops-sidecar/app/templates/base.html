@@ -6,9 +6,45 @@
   <title>{% block title %}DevOps Sidecar{% endblock %} — DevOps Sidecar</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  {# Tema claro / oscuro / del sistema: mismo mecanismo que la app principal (views/partials/tema.ejs). #}
+  <script>
+(function () {
+  var KEY = 'tema';
+  var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function read() { try { var v = localStorage.getItem(KEY); return v === 'claro' || v === 'oscuro' ? v : 'sistema'; } catch (e) { return 'sistema'; } }
+  function apply(v) {
+    var dark = v === 'oscuro' || (v === 'sistema' && media && media.matches);
+    document.documentElement.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-tema', v);
+  }
+  apply(read());
+  if (media) {
+    var follow = function () { if (read() === 'sistema') apply('sistema'); };
+    if (media.addEventListener) media.addEventListener('change', follow); else if (media.addListener) media.addListener(follow);
+  }
+  window.temaApp = {
+    get: read,
+    set: function (v) {
+      try { localStorage.setItem(KEY, v); } catch (e) { /* sin almacenamiento: solo esta vez */ }
+      apply(v);
+      document.dispatchEvent(new CustomEvent('tema', { detail: v }));
+    },
+  };
+})();
+</script>
   <style>
-    :root { --sidebar-w: 230px; --sidebar-w-collapsed: 64px; }
-    body { background: #f5f6f8; }
+    :root { --sidebar-w: 230px; --sidebar-w-collapsed: 64px; --app-bg: #f5f6f8; }
+    [data-bs-theme="dark"] { --app-bg: #12141b; color-scheme: dark; }
+    body { background: var(--app-bg); }
+    [data-bs-theme="dark"] .bg-light:not(.text-dark):not(.text-body-emphasis) { background-color: var(--bs-tertiary-bg) !important; }
+    .tema-selector { display: flex; gap: .25rem; padding: .35rem 1rem; align-items: center; }
+    .tema-selector .tema-titulo { color: #6b7080; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; margin-right: auto; }
+    .tema-selector button { background: transparent; border: 1px solid #343a4d; color: #9aa0ac; border-radius: 6px; width: 30px; height: 26px;
+      display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+    .tema-selector button:hover { color: #fff; border-color: #4a5168; }
+    .tema-selector button.active { background: #2d5be3; border-color: #2d5be3; color: #fff; }
+    .sidebar.collapsed .tema-selector { padding: .35rem 0; justify-content: center; }
+    .sidebar.collapsed .tema-selector .tema-titulo, .sidebar.collapsed .tema-selector button:not(.active) { display: none; }
     .sidebar {
       position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidebar-w);
       background: #1a1d29; color: #fff; overflow-y: auto; overflow-x: hidden;
@@ -53,7 +89,7 @@
       .sidebar.mobile-open .sidebar-section { display: inline; }
       .main-content { margin-left: var(--sidebar-w-collapsed); }
     }
-    .app-credito { text-align: center; font-size: .75rem; color: #8a93a6; padding: 1.5rem 0 .75rem; letter-spacing: .01em; }
+    .app-credito { text-align: center; font-size: .75rem; color: var(--bs-secondary-color); padding: 1.5rem 0 .75rem; letter-spacing: .01em; }
   </style>
 </head>
 <body>
@@ -78,6 +114,37 @@
     <li><a class="nav-link" href="/salir"><i class="bi bi-door-closed"></i> <span>Cerrar DevOps</span></a></li>
   </ul>
   {% endif %}
+<div class="tema-selector" role="group" aria-label="Tema de la aplicación">
+  <span class="tema-titulo">Tema</span>
+  <button type="button" data-tema-valor="claro" title="Tema claro" aria-label="Tema claro"><i class="bi bi-sun"></i></button>
+  <button type="button" data-tema-valor="oscuro" title="Tema oscuro" aria-label="Tema oscuro"><i class="bi bi-moon-stars"></i></button>
+  <button type="button" data-tema-valor="sistema" title="Tema del sistema" aria-label="Tema del sistema"><i class="bi bi-circle-half"></i></button>
+</div>
+<script>
+(function () {
+  var group = document.currentScript.previousElementSibling;
+  var ORDER = ['claro', 'oscuro', 'sistema'];
+  function mark() {
+    var v = window.temaApp ? window.temaApp.get() : 'sistema';
+    Array.prototype.forEach.call(group.querySelectorAll('button'), function (b) {
+      var on = b.getAttribute('data-tema-valor') === v;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  group.addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-tema-valor]');
+    if (!b || !window.temaApp) return;
+    var v = b.getAttribute('data-tema-valor');
+    // Con la barra lateral colapsada solo se ve el boton activo: un clic pasa al siguiente.
+    var sidebar = group.closest('.sidebar');
+    if (sidebar && sidebar.classList.contains('collapsed') && v === window.temaApp.get()) v = ORDER[(ORDER.indexOf(v) + 1) % ORDER.length];
+    window.temaApp.set(v);
+  });
+  document.addEventListener('tema', mark);
+  mark();
+})();
+</script>
   <button class="sidebar-toggle" id="sidebarToggle" title="Colapsar/expandir menú">
     <i class="bi bi-layout-sidebar-inset"></i> <span>Colapsar</span>
   </button>

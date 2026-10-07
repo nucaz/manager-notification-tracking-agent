@@ -1,10 +1,35 @@
+/* Tema claro, oscuro o el del sistema (views/partials/tema.ejs pone
+   data-bs-theme en <html>; Bootstrap 5.3 cambia sus propios colores). Los
+   colores propios de esta hoja salen de estas variables. */
+:root, [data-bs-theme="light"] {
+  --app-bg: #f7f8fa;
+  --app-suave: #f1f4fa;        /* fondo al pasar el mouse, pistas de barras */
+  --app-tenue: #9aa3b5;        /* iconos de filtro y orden en reposo */
+  --app-acento: #2d5be3;
+  --app-error-bg: #fdecea;
+  --app-error-fg: #8a1c13;
+}
+[data-bs-theme="dark"] {
+  --app-bg: #12141b;
+  --app-suave: #262b38;
+  --app-tenue: #7c8597;
+  --app-acento: #6d8cff;
+  --app-error-bg: #3b1d1b;
+  --app-error-fg: #f2b8b2;
+  color-scheme: dark;
+}
 html, body {
   overflow-x: hidden;
   max-width: 100%;
 }
 body {
-  background-color: #f7f8fa;
+  background-color: var(--app-bg);
 }
+/* Pantallas sueltas (login, 2FA, entrada a DevOps): fondo segun el tema. */
+.pagina-suelta { min-height: 100vh; background: var(--app-bg); }
+[data-bs-theme="dark"] .card { box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+/* En oscuro, bg-light sin color de texto propio pasa a un gris oscuro (si no, texto claro sobre claro). */
+[data-bs-theme="dark"] .bg-light:not(.text-dark):not(.text-body-emphasis) { background-color: var(--bs-tertiary-bg) !important; }
 .card {
   border: none;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
@@ -100,12 +125,12 @@ a.stat-card-link:focus-visible { outline: 2px solid #2d5be3; outline-offset: 2px
 .table-responsive > table > thead th { position: relative; }
 .col-ancho { position: absolute; top: 0; right: 0; width: 9px; height: 100%; cursor: col-resize; user-select: none; }
 .col-ancho::after { content: ""; position: absolute; top: 20%; right: 3px; width: 2px; height: 60%; background: transparent; border-radius: 1px; }
-th:hover > .col-ancho::after, .ajustando-columna .col-ancho::after { background: #b6bcc9; }
-.col-ancho:hover::after { background: #2d5be3; }
+th:hover > .col-ancho::after, .ajustando-columna .col-ancho::after { background: var(--app-tenue); }
+.col-ancho:hover::after { background: var(--app-acento); }
 body.ajustando-columna { cursor: col-resize; user-select: none; }
 .col-movible { cursor: grab; }
 .col-arrastrando { opacity: .45; }
-.col-destino { box-shadow: inset 3px 0 0 #2d5be3; }
+.col-destino { box-shadow: inset 3px 0 0 var(--app-acento); }
 /* Con anchos fijados, el texto que no cabe se corta con puntos suspensivos
    en vez de empujar a las demas columnas. */
 table.tabla-fija { table-layout: fixed; max-width: none; }
@@ -118,7 +143,7 @@ table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: elli
 .tabla-restablecer { margin-left: auto; }
 
 /* Credito del desarrollador (views/partials/credito.ejs): al pie de cada pagina. */
-.app-credito { text-align: center; font-size: .75rem; color: #8a93a6; padding: 1.5rem 1rem .75rem; letter-spacing: .01em; }
+.app-credito { text-align: center; font-size: .75rem; color: var(--bs-secondary-color); padding: 1.5rem 1rem .75rem; letter-spacing: .01em; }
 .app-credito-fija { position: fixed; left: 0; right: 0; bottom: 0; padding: .5rem 1rem; background: transparent; pointer-events: none; }
 @media print { .app-credito { color: #555; } .app-credito-fija { position: static; } }
 
@@ -127,37 +152,37 @@ table.tabla-fija th, table.tabla-fija td { overflow: hidden; text-overflow: elli
 .main-content { padding-bottom: 72px; } /* que el boton no tape el pie de las tablas */
 .ia-panel { --bs-offcanvas-width: min(620px, 100vw); }
 .ia-hilo { overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
-.ia-form { padding: .75rem 1rem; background: #fff; }
+.ia-form { padding: .75rem 1rem; background: var(--bs-body-bg); }
 .ia-form textarea { resize: none; }
 /* d-flex (display:flex !important) le gana a [hidden] de Bootstrap. */
 #ia_modelo_box[hidden] { display: none !important; }
 .ia-inicio .ia-ejemplo { display: block; margin: 0 0 .4rem; text-align: left; }
 .ia-turno { display: flex; flex-direction: column; gap: .5rem; }
 .ia-pregunta { align-self: flex-end; max-width: 88%; background: #2d5be3; color: #fff; padding: .5rem .75rem; border-radius: 12px 12px 2px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.ia-respuesta { background: #f3f5f9; padding: .65rem .75rem; border-radius: 12px 12px 12px 2px; overflow-wrap: anywhere; }
-.ia-respuesta.ia-error { background: #fdecea; color: #8a1c13; }
-.ia-modelo-usado { font-size: .72rem; color: #6c757d; margin-bottom: -.3rem; }
+.ia-respuesta { background: var(--bs-tertiary-bg); padding: .65rem .75rem; border-radius: 12px 12px 12px 2px; overflow-wrap: anywhere; }
+.ia-respuesta.ia-error { background: var(--app-error-bg); color: var(--app-error-fg); }
+.ia-modelo-usado { font-size: .72rem; color: var(--bs-secondary-color); margin-bottom: -.3rem; }
 .ia-texto p { margin: 0 0 .45rem; }
 .ia-texto ul { margin: 0 0 .45rem; padding-left: 1.2rem; }
 .ia-texto > :last-child { margin-bottom: 0; }
-.ia-tabla { margin-top: .6rem; background: #fff; border: 1px solid #dfe3ea; border-radius: 8px; overflow: hidden; }
-.ia-tabla-titulo { padding: .4rem .6rem; font-weight: 600; font-size: .85rem; border-bottom: 1px solid #dfe3ea; }
+.ia-tabla { margin-top: .6rem; background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: 8px; overflow: hidden; }
+.ia-tabla-titulo { padding: .4rem .6rem; font-weight: 600; font-size: .85rem; border-bottom: 1px solid var(--bs-border-color); }
 .ia-tabla-scroll { max-height: 320px; overflow: auto; }
 .ia-tabla-scroll table { font-size: .82rem; }
-.ia-tabla-scroll thead th { position: sticky; top: 0; background: #fff; white-space: nowrap; }
-.ia-tabla-pie { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .4rem .6rem; border-top: 1px solid #dfe3ea; font-size: .8rem; }
+.ia-tabla-scroll thead th { position: sticky; top: 0; background: var(--bs-body-bg); white-space: nowrap; }
+.ia-tabla-pie { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .4rem .6rem; border-top: 1px solid var(--bs-border-color); font-size: .8rem; }
 .ia-tabla-pie > span { margin-right: auto; }
 .ia-fuentes { margin-top: .5rem; font-size: .8rem; }
 @media print { .ia-abrir, .ia-panel { display: none !important; } }
 
 /* Filtros por columna (public/js/tablas.js). */
-.col-filtro { border: 0; background: transparent; color: #9aa3b5; padding: 0 .2rem; margin-left: .2rem; font-size: .8rem; line-height: 1; vertical-align: middle; cursor: pointer; }
-.col-filtro:hover, .col-filtro:focus-visible { color: #2d5be3; }
-.col-filtro.activo { color: #fff; background: #2d5be3; border-radius: 4px; }
-.col-filtro-panel { position: absolute; z-index: 1060; width: 280px; max-width: calc(100vw - 16px); background: #fff; border: 1px solid #d5dae3; border-radius: 8px; padding: .6rem; font-weight: normal; }
-.col-filtro-lista { max-height: 260px; overflow-y: auto; border: 1px solid #eef0f4; border-radius: 6px; padding: .25rem; }
+.col-filtro { border: 0; background: transparent; color: var(--app-tenue); padding: 0 .2rem; margin-left: .2rem; font-size: .8rem; line-height: 1; vertical-align: middle; cursor: pointer; }
+.col-filtro:hover, .col-filtro:focus-visible { color: var(--app-acento); }
+.col-filtro.activo { color: #fff; background: var(--app-acento); border-radius: 4px; }
+.col-filtro-panel { position: absolute; z-index: 1060; width: 280px; max-width: calc(100vw - 16px); background: var(--bs-body-bg); color: var(--bs-body-color); border: 1px solid var(--bs-border-color); border-radius: 8px; padding: .6rem; font-weight: normal; }
+.col-filtro-lista { max-height: 260px; overflow-y: auto; border: 1px solid var(--bs-border-color-translucent); border-radius: 6px; padding: .25rem; }
 .col-filtro-opcion { display: flex; align-items: center; padding: .15rem .3rem; border-radius: 4px; cursor: pointer; font-size: .85rem; margin: 0; }
-.col-filtro-opcion:hover { background: #f1f4fa; }
+.col-filtro-opcion:hover { background: var(--app-suave); }
 .col-filtro-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Barra sobre cada tabla (public/js/tablas.js): boton "Columnas". */
 .tabla-barra { display: flex; justify-content: flex-end; gap: .5rem; margin-bottom: .4rem; }
@@ -168,10 +193,10 @@ input.campo-buscar { max-width: 40ch; }
 .aviso-descartar { padding: 0 .25rem; margin-left: .5rem; font-size: .8rem; vertical-align: baseline; }
 /* Ordenar con clic en el encabezado: icono tenue hasta pasar el mouse; azul si ordena. */
 th.col-ordenable { cursor: pointer; user-select: none; }
-th.col-ordenable:hover { background-color: #f1f4fa; }
-.col-orden { margin-left: .25rem; font-size: .8rem; color: #c3c9d5; vertical-align: middle; }
-th.col-ordenable:hover .col-orden { color: #6b7488; }
-.col-orden.activo, th.col-ordenable:hover .col-orden.activo { color: #2d5be3; }
+th.col-ordenable:hover { background-color: var(--app-suave); }
+.col-orden { margin-left: .25rem; font-size: .8rem; color: var(--app-tenue); opacity: .7; vertical-align: middle; }
+th.col-ordenable:hover .col-orden { opacity: 1; }
+.col-orden.activo, th.col-ordenable:hover .col-orden.activo { color: var(--app-acento); opacity: 1; }
 .col-filtro-opcion[hidden] { display: none; }
 
 /* Tablero de celulares y chips (views/mobileDevices/board.ejs). */
@@ -180,10 +205,24 @@ th.col-ordenable:hover .col-orden { color: #6b7488; }
 .widget .barras { display: flex; flex-direction: column; gap: .3rem; }
 .widget .barra-fila { display: grid; grid-template-columns: minmax(0, 42%) 1fr auto; align-items: center; gap: .5rem; font-size: .82rem; }
 .widget .barra-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.widget .barra-pista { background: #eef1f6; border-radius: 3px; height: .8rem; overflow: hidden; }
+.widget .barra-pista { background: var(--app-suave); border-radius: 3px; height: .8rem; overflow: hidden; }
 .widget .barra { display: block; height: 100%; border-radius: 3px; }
 .widget .barra-valor { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .widget .widget-enlace { color: inherit; text-decoration: none; }
 .widget a.barra-fila { border-radius: 4px; padding: 0 .2rem; margin: 0 -.2rem; }
-.widget a.barra-fila:hover, .widget a.barra-fila:focus-visible { background: #eef3ff; }
-.widget a.widget-enlace:not(.barra-fila):hover, .widget a.widget-enlace:focus-visible { color: #2d5be3; text-decoration: underline; }
+.widget a.barra-fila:hover, .widget a.barra-fila:focus-visible { background: var(--app-suave); }
+.widget a.widget-enlace:not(.barra-fila):hover, .widget a.widget-enlace:focus-visible { color: var(--app-acento); text-decoration: underline; }
+
+/* Selector de tema (views/partials/tema_selector.ejs), en la barra lateral. */
+.tema-selector { display: flex; gap: .25rem; padding: .35rem 1rem; align-items: center; }
+.tema-selector .tema-titulo { color: #6b7080; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; margin-right: auto; }
+.tema-selector button { background: transparent; border: 1px solid #343a4d; color: #9aa0ac; border-radius: 6px; width: 30px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.tema-selector button:hover { color: #fff; border-color: #4a5168; }
+.tema-selector button.active { background: #2d5be3; border-color: #2d5be3; color: #fff; }
+.sidebar.collapsed .tema-selector { padding: .35rem 0; justify-content: center; }
+.sidebar.collapsed .tema-selector .tema-titulo, .sidebar.collapsed .tema-selector button:not(.active) { display: none; }
+/* En las pantallas sueltas: arriba a la derecha. */
+.tema-selector-suelto { position: fixed; top: 12px; right: 12px; z-index: 1040; }
+.tema-selector-suelto button { border-color: var(--bs-border-color); color: var(--bs-secondary-color); }
+.tema-selector-suelto button:hover { color: var(--bs-body-color); border-color: var(--bs-secondary-color); }
