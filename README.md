@@ -623,6 +623,15 @@ Las contraseñas las genera la aplicación (16 caracteres) y se muestran
 cifradas hasta que el solicitante las ve (24 horas como máximo). Todo
 queda en Auditoría y en el reporte *Cambios en el directorio activo*.
 
+**Cuentas de servicio**: `scripts/windows/ad-cuenta-servicio.ps1`, en un DC como
+administrador del dominio y sin parámetros: detecta el dominio, pregunta si la
+cuenta es de lectura o de escritura, muestra las OU y sugiere dónde crearla,
+pide la contraseña (validada), deja elegir las OU gestionadas (nunca Domain
+Controllers ni la de las cuentas de servicio) y al final guarda un informe
+`.txt` sin la contraseña, con cómo deshacerlo. Español o inglés según el
+servidor; los permisos van por GUID del esquema, así que sirve igual con un DC
+en inglés.
+
 Prueba contra un DC de prueba desechable: `scripts/ad-prueba/levantar.sh`
 (Samba AD en Docker, con una cuenta de escritura delegada solo sobre
 `OU=Depilzone`), `tests/ad.e2e.js` (lectura) y `tests/ad_cambios.e2e.js`
