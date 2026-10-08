@@ -632,6 +632,13 @@ Controllers ni la de las cuentas de servicio) y al final guarda un informe
 servidor; los permisos van por GUID del esquema, así que sirve igual con un DC
 en inglés.
 
+**Certificado LDAPS** (si el DC no tiene uno): `scripts/windows/ad-certificado-ldaps.ps1`
+en cada DC, como administrador. Detecta el dominio y el DC, ofrece reutilizar un
+certificado vigente o crea uno autofirmado (clave no exportable, sin instalar una
+CA), activa LDAPS sin reiniciar, verifica que el puerto 636 lo presente, ofrece
+quitar los anteriores y guarda un informe `.txt` y un `.pem` para pegar en
+*Conexión* (el de cada DC, uno debajo del otro).
+
 Prueba contra un DC de prueba desechable: `scripts/ad-prueba/levantar.sh`
 (Samba AD en Docker, con una cuenta de escritura delegada solo sobre
 `OU=Depilzone`), `tests/ad.e2e.js` (lectura) y `tests/ad_cambios.e2e.js`

@@ -10,7 +10,35 @@
    const kidsOf = function (o) { return (byParent[String(o.dn).toLowerCase()] || []).sort(function (a, b) { return a.name.localeCompare(b.name, 'es'); }); };
    const needle = String(q || '').toLowerCase();
    const hit = function (o) { return !needle || [o.name, o.dn, o.description].some(function (v) { return v && String(v).toLowerCase().indexOf(needle) > -1; }); };
-   const keep = function (o) { return hit(o) || kidsOf(o).some(keep); };
+   // Equipos de cada unidad (directos), para verlos al expandirla.
+   const pcsBy = {};
+   (locals.computers || []).forEach(function (c) { const k = String(c.ou_dn || '').toLowerCase(); (pcsBy[k] = pcsBy[k] || []).push(c); });
+   const pcsOf = function (o) { return pcsBy[String(o.dn).toLowerCase()] || []; };
+   const pcHit = function (c) { return !!needle && [c.name, c.dns_host, c.ips, c.os, c.description].some(function (v) { return v && String(v).toLowerCase().indexOf(needle) > -1; }); };
+   const keep = function (o) { return hit(o) || pcsOf(o).some(pcHit) || kidsOf(o).some(keep); };
+   let shownPcs = 0;
+   const pcList = function (o) {
+     const all = pcsOf(o);
+     const list = needle && !hit(o) ? all.filter(pcHit) : all;
+     if (!list.length) return '';
+     shownPcs += list.length;
+     const rows = list.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'es'); }).map(function (c) {
+       const b = bucket(c.last_seen);
+       const old = c.enabled && !c.is_dc && /año|Nunca/.test(b);
+       return '<li class="d-flex flex-wrap align-items-center gap-2 py-1 small border-bottom' + (pcHit(c) ? ' bg-warning-subtle' : '') + '">'
+         + '<i class="bi ' + (c.is_dc ? 'bi-hdd-rack text-primary' : 'bi-pc-display') + '"></i>'
+         + '<a class="font-monospace" href="/ad/equipos?q=' + encodeURIComponent(c.name) + '">' + esc(c.name) + '</a>'
+         + (c.is_dc ? ' <span class="badge text-bg-primary">DC</span>' : '')
+         + (c.enabled ? '' : ' <span class="badge text-bg-secondary">Deshabilitado</span>')
+         + '<span class="text-muted">' + esc(c.os || 'Sin sistema operativo') + '</span>'
+         + '<span class="ms-auto d-inline-flex gap-3" style="font-variant-numeric: tabular-nums">'
+         + '<span class="font-monospace">' + esc(c.ips || (c.is_dc ? '' : 'Sin DNS')) + '</span>'
+         + '<span class="' + (old ? 'text-danger fw-semibold' : 'text-muted') + '" title="Última conexión">' + esc(b) + '</span></span></li>';
+     }).join('');
+     return '<li class="ou-equipos"><details' + (needle && list.some(pcHit) ? ' open' : '') + '><summary class="ou-rama small text-muted py-1">'
+       + '<div class="d-inline"><i class="bi bi-pc-display"></i> Equipos (' + list.length + (list.length < all.length ? ' de ' + all.length : '') + ')</div></summary>'
+       + '<ul class="list-unstyled ps-4 mb-1">' + rows + '</ul></details></li>';
+   };
    let shown = 0;
    const mng = function (dn) { return locals.canChange && writes.ready && writes.managedOus.some(function (m) { const d = String(dn).toLowerCase(), x = m.toLowerCase(); return d === x || d.endsWith(',' + x); }); };
    const crear = function (o) {
@@ -35,9 +63,10 @@
      if (!keep(o)) return '';
      shown += 1;
      const kids = kidsOf(o).filter(keep);
-     if (!kids.length) return '<li class="ou-nodo ps-3">' + line(o) + '</li>';
+     const pcs = pcList(o);
+     if (!kids.length && !pcs) return '<li class="ou-nodo ps-3">' + line(o) + '</li>';
      return '<li class="ou-nodo"><details' + (needle || level < 1 ? ' open' : '') + '><summary class="ou-rama">' + line(o) + '</summary>'
-       + '<ul class="list-unstyled ps-4 mb-0">' + kids.map(function (k) { return draw(k, level + 1); }).join('') + '</ul></details></li>';
+       + '<ul class="list-unstyled ps-4 mb-0">' + pcs + kids.map(function (k) { return draw(k, level + 1); }).join('') + '</ul></details></li>';
    };
    const tree = roots.sort(function (a, b) { return a.dn.localeCompare(b.dn); }).map(function (r) { return draw(r, 0); }).join(''); %>
 <style>
@@ -50,15 +79,15 @@
 <div class="card p-3">
   <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
     <label class="visually-hidden" for="ad_q">Buscar unidad organizativa</label>
-    <input type="search" class="form-control form-control-sm" id="ad_q" name="q" value="<%= q %>" placeholder="Nombre o DN de la unidad…" style="max-width: 20rem">
+    <input type="search" class="form-control form-control-sm" id="ad_q" name="q" value="<%= q %>" placeholder="Unidad, DN o equipo (nombre, IP)…" style="max-width: 20rem">
     <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
-    <% if (q) { %><span class="small text-muted"><%= shown %> de <%= items.length %></span> <a class="small" href="/ad/unidades">Quitar búsqueda</a><% } %>
+    <% if (q) { %><span class="small text-muted"><%= shown %> de <%= items.length %> unidades<%= shownPcs ? ' · ' + shownPcs + ' equipo(s)' : '' %></span> <a class="small" href="/ad/unidades">Quitar búsqueda</a><% } %>
     <span class="ms-auto d-flex gap-2">
       <button type="button" class="btn btn-sm btn-outline-secondary" data-arbol="abrir"><i class="bi bi-arrows-expand"></i> Expandir todo</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-arbol="cerrar"><i class="bi bi-arrows-collapse"></i> Contraer todo</button>
     </span>
   </form>
-  <p class="small text-muted mb-2"><%= items.length %> unidades organizativas y contenedores. Las cifras son lo que contiene cada una directamente; clic en ellas para verlos.</p>
+  <p class="small text-muted mb-2"><%= items.length %> unidades organizativas y contenedores. Las cifras son lo que contiene cada una directamente; clic en ellas para verlos. Al expandir una unidad se ven sus equipos.</p>
   <ul class="list-unstyled mb-0" id="ad_arbol"><%- tree %></ul>
   <% if (!items.length) { %><p class="text-muted mb-0">Sin datos: lea el dominio.</p><% } else if (!shown) { %><p class="text-muted mb-0">Ninguna unidad coincide con la búsqueda.</p><% } %>
 </div>

@@ -189,6 +189,11 @@ async function main() {
     const fo = await get('/ad/unidades?q=Ventas');
     check('Unidades: árbol plegable y búsqueda por rama', fo.text.includes('<details') && fo.text.includes('Expandir todo') && fo.text.includes('>Ventas<')
       && !fo.text.includes('>Sistemas<'));
+    const fu = await get('/ad/unidades');
+    const fpc = await get('/ad/unidades?q=pc-ventas');
+    check('Unidades: los equipos se ven al expandir y se buscan por nombre', fu.text.includes('Equipos (') && fu.text.includes('>PC-VENTAS-01<')
+      && fpc.text.includes('>PC-VENTAS-01<') && fpc.text.includes('<strong>Equipos</strong>') && !fpc.text.includes('<strong>Sistemas</strong>')
+      && !fpc.text.includes('>SRV-ARCHIVOS<'));
     const ix = await get('/ad');
     check('Indicadores del resumen enlazan a la lista filtrada', ['/ad/usuarios?f=inactivos', '/ad/usuarios?f=nunca', '/ad/equipos?f=sin_dns', '/ad/usuarios?tramo=nunca',
       '/ad/dns?f=huerfanos'].every((h) => ix.text.includes(`href="${h}"`)));

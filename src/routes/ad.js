@@ -218,6 +218,7 @@ router.get('/grupos/:id(\\d+)', async (req, res, next) => {
 router.get('/unidades', async (req, res, next) => {
   try {
     res.render('ad/ous', { title: 'Directorio activo: unidades organizativas', tab: 'unidades', ...(await base(req)), items: await adService.ous(), ...VIEW,
+      computers: await adService.computers(),
       q: String(req.query.q || '').trim().slice(0, 100) });
   } catch (err) {
     next(err);
