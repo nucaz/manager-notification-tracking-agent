@@ -1,0 +1,67 @@
+<%- include('../partials/head', { title: title }) %>
+<% const puede = currentUser.role !== 'lector';
+   const esAdmin = ['superadmin', 'admin'].includes(currentUser.role);
+   const n = function (k) { return all.filter(function (d) { return d.kind === k; }).length; }; %>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h2 class="mb-0">Red — Equipos</h2>
+  <% if (puede) { %>
+    <div class="d-flex flex-wrap gap-2">
+      <form method="post" action="/red/equipos/traer-pc"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-outline-primary" title="Trae nombre, MAC e IP de lo que ya conocen GLPI y el directorio activo. No pisa lo escrito a mano.">
+          <i class="bi bi-cloud-download"></i> Traer PC de GLPI y del directorio activo</button></form>
+      <a href="/red/equipos/nuevo<%= kind ? '?tipo=' + kind : '' %>" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo equipo</a>
+    </div>
+  <% } %>
+</div>
+<%- include('_tabs') %>
+<div class="card p-3">
+  <div class="d-flex flex-wrap gap-2 mb-2 small">
+    <a class="btn btn-sm <%= kind ? 'btn-outline-secondary' : 'btn-secondary' %>" href="/red/equipos">Todos · <%= all.length %></a>
+    <% Object.keys(KINDS).filter(function (k) { return k !== 'celular'; }).forEach(function (k) { %>
+      <a class="btn btn-sm <%= kind === k ? 'btn-secondary' : 'btn-outline-secondary' %>" href="/red/equipos?tipo=<%= k %>"><i class="bi <%= KINDS[k][1] %>"></i> <%= KINDS[k][0] %> · <%= n(k) %></a>
+    <% }); %>
+  </div>
+  <p class="small text-muted mb-2">Las PC se traen de GLPI (nombre, MAC, IP, serie) y del directorio activo (nombre e IP); los puntos de acceso, switches y demás se registran a mano.
+    Los celulares están en su propia pestaña.</p>
+  <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
+    <% if (kind) { %><input type="hidden" name="tipo" value="<%= kind %>"><% } %>
+    <label class="visually-hidden" for="red_q">Buscar</label>
+    <input type="search" class="form-control form-control-sm" id="red_q" name="q" value="<%= q %>" placeholder="Nombre, MAC, IP, sede…" style="max-width: 20rem">
+    <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
+    <% if (q) { %><span class="small text-muted"><%= items.length %> resultado(s)</span> <a class="small" href="?<%= locals.kind ? 'tipo=' + kind : '' %>">Quitar búsqueda</a><% } %>
+  </form>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr><th>Tipo</th><th>Nombre</th><th>MAC</th><th>IP</th><th>VLAN</th><th>Sede</th><th>Área</th><th>Ubicación</th>
+        <th data-oculta>Segunda MAC (Wi-Fi)</th><th data-oculta>Marca / modelo</th><th data-oculta>Serie</th><th data-oculta>Notas</th><th data-oculta>Origen</th>
+        <% if (puede) { %><th data-orden="no"></th><% } %></tr></thead>
+      <tbody>
+        <% items.forEach(function (d) { %>
+          <tr>
+            <td class="text-nowrap"><i class="bi <%= (KINDS[d.kind] || KINDS.otro)[1] %>"></i> <%= (KINDS[d.kind] || [d.kind])[0] %></td>
+            <td class="fw-semibold"><%= d.name %></td>
+            <td class="font-monospace text-nowrap"><%= d.mac || '—' %></td>
+            <td class="font-monospace text-nowrap"><%= d.ip || '—' %></td>
+            <td><%= d.vlan_names || '—' %></td>
+            <td><%= d.sede || '—' %></td>
+            <td><%= d.area || '—' %></td>
+            <td><%= d.location || '—' %></td>
+            <td class="font-monospace"><%= d.mac_wifi || '—' %></td>
+            <td><%= d.brand_model || '—' %></td>
+            <td><%= d.serial || '—' %></td>
+            <td><%= d.notes || '—' %></td>
+            <td><%= SOURCES[d.source] || d.source %></td>
+            <% if (puede) { %><td class="text-nowrap text-end">
+              <% if (esAdmin && (d.ip || d.name)) { %><a class="btn btn-sm btn-outline-secondary" href="/red/herramientas?host=<%= encodeURIComponent(d.ip || d.name) %>" title="Ping y otras pruebas"><i class="bi bi-terminal"></i></a><% } %>
+              <a class="btn btn-sm btn-outline-primary" href="/red/equipos/<%= d.id %>" title="Editar"><i class="bi bi-pencil"></i></a>
+              <form method="post" action="/red/equipos/<%= d.id %>/eliminar" class="d-inline" onsubmit="return confirm('¿Eliminar <%= String(d.name).replace(/[\'\"\\]/g, '') %> del inventario de red?');">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-sm btn-outline-danger" title="Eliminar"><i class="bi bi-trash"></i></button></form>
+            </td><% } %>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="<%= puede ? 14 : 13 %>" class="text-center text-muted py-4">Sin equipos registrados<%= kind ? ' de este tipo' : '' %>.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('../partials/foot') %>

@@ -1,0 +1,9 @@
+<%# Pestañas del modulo Red. Las herramientas son solo para administradores. %>
+<% const RED_TABS = [['diagramas', '/red', 'Diagramas', 'bi-diagram-3'], ['equipos', '/red/equipos', 'Equipos', 'bi-hdd-network'],
+     ['celulares', '/red/celulares', 'Celulares', 'bi-phone'], ['vlan', '/red/vlan', 'VLAN', 'bi-layers']];
+   if (['superadmin', 'admin'].includes(currentUser.role)) RED_TABS.push(['herramientas', '/red/herramientas', 'Herramientas', 'bi-terminal']); %>
+<ul class="nav nav-tabs mb-3">
+  <% RED_TABS.forEach(function (t) { %>
+    <li class="nav-item"><a class="nav-link <%= locals.tab === t[0] ? 'active' : '' %>" href="<%= t[1] %>"><i class="bi <%= t[3] %>"></i> <%= t[2] %></a></li>
+  <% }); %>
+</ul>

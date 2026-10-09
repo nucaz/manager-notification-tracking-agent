@@ -16,9 +16,9 @@ const ssoService = require('./ssoService');
 const GLPI_TYPES = ['computadoras', 'monitores', 'impresoras'];
 const MAX_AGE_MIN = { glpi: 60, devops_repos: 10 };
 const GLPI_FIELDS = ['name', 'state', 'type', 'manufacturer', 'model', 'serial', 'otherserial', 'location', 'user', 'entity', 'date_mod',
-  'os', 'os_version', 'processor', 'memory_type', 'memory', 'ip'];
+  'os', 'os_version', 'processor', 'memory_type', 'memory', 'ip', 'mac'];
 const SIZES = { name: 255, state: 100, type: 100, manufacturer: 150, model: 150, serial: 150, otherserial: 150, location: 255, user: 150,
-  entity: 255, date_mod: 30, os: 150, os_version: 100, processor: 255, memory_type: 100, memory: 60, ip: 255 };
+  entity: 255, date_mod: 30, os: 150, os_version: 100, processor: 255, memory_type: 100, memory: 60, ip: 255, mac: 255 };
 
 const cut = (v, n) => {
   const s = v === null || v === undefined ? '' : String(v).trim();

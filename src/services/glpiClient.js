@@ -359,6 +359,11 @@ function ipList(raw) {
   return [...ips.filter((ip) => !ip.includes(':')), ...ips.filter((ip) => ip.includes(':'))].join(', ');
 }
 
+// MAC: en mayusculas, sin la vacia (00:00:00:00:00:00) ni repetidas.
+function macList(raw) {
+  return [...new Set(values(raw).map((m) => String(m).trim().toUpperCase()))].filter((m) => /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(m) && !/^(00:){5}00$/.test(m)).join(', ');
+}
+
 // Columnas de computadoras que solo entrega la busqueda de la API clasica
 // (sistema operativo, componentes y red). El numero de cada opcion de
 // busqueda se averigua en el propio GLPI por su tabla y campo (ver
@@ -370,6 +375,7 @@ const EXTRA_COLUMNS = [
   { id: 110, key: 'memory_type', label: 'Tipo de memoria', table: 'glpi_devicememories', field: 'designation', format: unique },
   { id: 111, key: 'memory', label: 'Memoria', table: 'glpi_items_devicememories', field: 'size', format: memoryTotal },
   { id: 126, key: 'ip', label: 'IP', table: 'glpi_ipaddresses', field: 'name', format: ipList },
+  { id: 21, key: 'mac', label: 'MAC', table: 'glpi_networkports', field: 'mac', format: macList },
 ].map((c) => ({ ...c, extra: true }));
 
 const ASSET_TYPES = {

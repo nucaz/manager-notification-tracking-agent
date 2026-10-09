@@ -1,0 +1,49 @@
+<%- include('../partials/head', { title: title }) %>
+<% const puede = currentUser.role !== 'lector';
+   const ESTADO = { en_stock: 'En stock', asignado: 'Asignado', en_reparacion: 'En reparación', en_decomiso: 'En decomiso', de_baja: 'De baja' };
+   const conMac = withMac; %>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h2 class="mb-0">Red — Celulares</h2>
+</div>
+<%- include('_tabs') %>
+<div class="card p-3">
+  <p class="small text-muted mb-2"><%= total %> celulares del inventario; <%= conMac %> con dirección MAC registrada. El código, el IMEI, la sede y el área vienen del módulo
+    Celulares; aquí se agregan la <strong>MAC</strong>, la IP, la <strong>ubicación</strong> y las VLAN. La MAC es la del Wi-Fi del equipo (Ajustes → Acerca del teléfono → Estado):
+    use la "MAC del dispositivo", no la aleatoria que el teléfono genera por cada red.</p>
+  <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
+    <label class="visually-hidden" for="red_q">Buscar</label>
+    <input type="search" class="form-control form-control-sm" id="red_q" name="q" value="<%= q %>" placeholder="Código, IMEI, MAC, sede, persona…" style="max-width: 20rem">
+    <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
+    <% if (q) { %><span class="small text-muted"><%= items.length %> resultado(s)</span> <a class="small" href="?<%= locals.kind ? 'tipo=' + kind : '' %>">Quitar búsqueda</a><% } %>
+  </form>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr><th>Código</th><th>IMEI</th><th>Marca / modelo</th><th>MAC</th><th>Ubicación</th><th>Sede</th><th>Área</th><th>Asignado a</th><th>Estado</th>
+        <th data-oculta>IP</th><th data-oculta>VLAN</th><th data-oculta>Número</th><th data-oculta>Notas de red</th>
+        <% if (puede) { %><th data-orden="no"></th><% } %></tr></thead>
+      <tbody>
+        <% items.forEach(function (p) { %>
+          <tr>
+            <td class="fw-semibold text-nowrap"><%= p.asset_code || '—' %></td>
+            <td class="font-monospace"><%= p.imei %></td>
+            <td><%= [p.brand, p.model].filter(Boolean).join(' ') || '—' %></td>
+            <td class="font-monospace text-nowrap"><%= p.mac || '—' %></td>
+            <td><%= p.location || '—' %></td>
+            <td><%= p.sede || '—' %></td>
+            <td><%= p.area || '—' %></td>
+            <td><%= p.holder_name || '—' %></td>
+            <td><%= ESTADO[p.status] || p.status %></td>
+            <td class="font-monospace"><%= p.ip || '—' %></td>
+            <td><%= p.vlan_names || '—' %></td>
+            <td><%= p.phone_number || '—' %></td>
+            <td><%= p.net_notes || '—' %></td>
+            <% if (puede) { %><td class="text-end"><a class="btn btn-sm btn-outline-primary text-nowrap" href="/red/celulares/<%= p.mobile_id %>">
+              <i class="bi bi-pencil"></i> <%= p.mac || p.location ? 'Editar' : 'Agregar MAC' %></a></td><% } %>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="<%= puede ? 14 : 13 %>" class="text-center text-muted py-4">No hay celulares en el inventario.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('../partials/foot') %>

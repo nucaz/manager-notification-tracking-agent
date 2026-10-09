@@ -623,6 +623,17 @@ Las contraseñas las genera la aplicación (16 caracteres) y se muestran
 cifradas hasta que el solicitante las ve (24 horas como máximo). Todo
 queda en Auditoría y en el reporte *Cambios en el directorio activo*.
 
+**Red: equipos, VLAN y herramientas.** Además de los diagramas, el módulo Red lleva el
+inventario de equipos de red con su MAC, IP, sede, área, ubicación, notas y VLAN:
+*Equipos* (PC, puntos de acceso, switches, routers, firewalls, impresoras, servidores),
+*Celulares* (código, IMEI y sede vienen del módulo Celulares; se les agrega MAC, IP,
+ubicación y VLAN) y *VLAN* (número, nombre, subred, puerta de enlace, sede). El botón
+*Traer PC de GLPI y del directorio activo* carga nombre, MAC e IP de lo que la
+aplicación ya conoce, sin pisar lo escrito a mano. *Herramientas* (solo
+administradores) hace ping, ruta de saltos, consulta DNS y revisión de puertos TCP
+abiertos **desde el servidor de la aplicación**; la revisión de puertos solo acepta
+direcciones de la red interna y cada prueba queda en la auditoría.
+
 **Directivas de grupo (GPO)**, solo lectura: la pestaña *Directivas (GPO)* lista cada
 directiva con su estado, qué tipo de configuración trae (scripts, despliegue de
 software, restricciones, seguridad, preferencias), los paquetes MSI que despliega, su

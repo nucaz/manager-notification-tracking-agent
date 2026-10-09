@@ -1,0 +1,71 @@
+<%- include('../partials/head', { title: title }) %>
+<% const v = function (k) { return item[k] === null || item[k] === undefined ? '' : item[k]; };
+   const back = phone ? '/red/celulares' : '/red/equipos' + (item.kind ? '?tipo=' + item.kind : ''); %>
+<div class="mb-2"><a href="<%= back %>" class="small"><i class="bi bi-arrow-left"></i> <%= phone ? 'Celulares' : 'Equipos' %></a></div>
+<div class="row"><div class="col-lg-8">
+  <form method="post" action="<%= action %>" class="card p-4" autocomplete="off">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <% if (phone) { %>
+      <h5><i class="bi bi-phone"></i> <%= phone.asset_code || phone.imei %></h5>
+      <dl class="row small mb-3">
+        <dt class="col-sm-3">IMEI</dt><dd class="col-sm-9 font-monospace"><%= phone.imei %></dd>
+        <dt class="col-sm-3">Equipo</dt><dd class="col-sm-9"><%= [phone.brand, phone.model].filter(Boolean).join(' ') || '—' %></dd>
+        <dt class="col-sm-3">Sede / área</dt><dd class="col-sm-9"><%= phone.sede || '—' %> / <%= phone.area || '—' %> <span class="text-muted">(se cambian en el módulo Celulares)</span></dd>
+      </dl>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="mac">Dirección MAC (Wi-Fi)</label>
+          <input class="form-control font-monospace" id="mac" name="mac" value="<%= v('mac') %>" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17">
+          <div class="form-text">La "MAC del dispositivo", no la aleatoria por red.</div></div>
+        <div class="col-md-6"><label class="form-label" for="ip">IP (si es fija o reservada)</label>
+          <input class="form-control font-monospace" id="ip" name="ip" value="<%= v('ip') %>" placeholder="172.16.20.15" maxlength="15"></div>
+        <div class="col-12"><label class="form-label" for="location">Ubicación</label>
+          <input class="form-control" id="location" name="location" value="<%= v('location') %>" maxlength="150" placeholder="Recepción, cabina 3, cajón de sistemas…"></div>
+    <% } else { %>
+      <h5><%= item.id ? 'Editar equipo' : 'Nuevo equipo' %></h5>
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label" for="kind">Tipo *</label>
+          <select class="form-select" id="kind" name="kind" required>
+            <% Object.keys(KINDS).filter(function (k) { return k !== 'celular'; }).forEach(function (k) { %>
+              <option value="<%= k %>" <%= item.kind === k ? 'selected' : '' %>><%= KINDS[k][0] %></option><% }); %>
+          </select></div>
+        <div class="col-md-8"><label class="form-label" for="name">Nombre *</label>
+          <input class="form-control" id="name" name="name" value="<%= v('name') %>" required maxlength="150" placeholder="SW-PISO2-01, AP-RECEPCION, PC-VENTAS-01…"></div>
+        <div class="col-md-4"><label class="form-label" for="mac">Dirección MAC</label>
+          <input class="form-control font-monospace" id="mac" name="mac" value="<%= v('mac') %>" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17">
+          <div class="form-text">Se acepta con dos puntos, guiones o seguida.</div></div>
+        <div class="col-md-4"><label class="form-label" for="mac_wifi">Segunda MAC (Wi-Fi)</label>
+          <input class="form-control font-monospace" id="mac_wifi" name="mac_wifi" value="<%= v('mac_wifi') %>" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17"></div>
+        <div class="col-md-4"><label class="form-label" for="ip">IP</label>
+          <input class="form-control font-monospace" id="ip" name="ip" value="<%= v('ip') %>" placeholder="172.16.1.20" maxlength="15"></div>
+        <div class="col-md-4"><label class="form-label" for="sede">Sede</label>
+          <input class="form-control" id="sede" name="sede" value="<%= v('sede') %>" list="red_sedes" maxlength="100">
+          <datalist id="red_sedes"><% sedes.forEach(function (s) { %><option value="<%= s %>"><% }); %></datalist></div>
+        <div class="col-md-4"><label class="form-label" for="area">Área</label>
+          <input class="form-control" id="area" name="area" value="<%= v('area') %>" list="red_areas" maxlength="100">
+          <datalist id="red_areas"><% areas.forEach(function (s) { %><option value="<%= s %>"><% }); %></datalist></div>
+        <div class="col-md-4"><label class="form-label" for="location">Ubicación</label>
+          <input class="form-control" id="location" name="location" value="<%= v('location') %>" maxlength="150" placeholder="Piso 2, rack A, U12"></div>
+        <div class="col-md-6"><label class="form-label" for="brand_model">Marca / modelo</label>
+          <input class="form-control" id="brand_model" name="brand_model" value="<%= v('brand_model') %>" maxlength="150" placeholder="Cisco CBS350-24P"></div>
+        <div class="col-md-6"><label class="form-label" for="serial">N.º de serie</label>
+          <input class="form-control" id="serial" name="serial" value="<%= v('serial') %>" maxlength="100"></div>
+    <% } %>
+        <div class="col-12"><span class="form-label d-block">VLAN que tiene</span>
+          <% if (vlanList.length) { %>
+            <div class="d-flex flex-wrap gap-3 border rounded p-2" style="max-height: 12rem; overflow: auto">
+              <% vlanList.forEach(function (vl) { %>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="vlan_ids" value="<%= vl.id %>" id="vl_<%= vl.id %>"
+                  <%= (item.vlan_ids || []).indexOf(vl.id) > -1 ? 'checked' : '' %>>
+                  <label class="form-check-label small" for="vl_<%= vl.id %>"><strong><%= vl.vlan_number %></strong> <%= vl.name %><%= vl.sede ? ' · ' + vl.sede : '' %></label></div>
+              <% }); %>
+            </div>
+            <div class="form-text">Un switch o un punto de acceso suelen llevar varias; una PC o un celular, una.</div>
+          <% } else { %><div class="small text-muted">Aún no hay VLAN registradas. <a href="/red/vlan">Registrar VLAN</a>.</div><% } %>
+        </div>
+        <div class="col-12"><label class="form-label" for="notes">Notas</label>
+          <textarea class="form-control" id="notes" name="notes" rows="2" maxlength="500"><%= v('notes') %></textarea></div>
+      </div>
+    <div class="mt-3 d-flex gap-2"><button class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar</button><a href="<%= back %>" class="btn btn-outline-secondary">Cancelar</a></div>
+  </form>
+</div></div>
+<%- include('../partials/foot') %>

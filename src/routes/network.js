@@ -2,10 +2,14 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const pool = require('../db/pool');
-const { requireAuth, canWrite } = require('../middleware/auth');
+const { requireAuth, canWrite, isAdmin } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const { uploader, DIRS } = require('../services/uploadService');
+const networkService = require('../services/networkService');
+const netToolsService = require('../services/netToolsService');
+const catalogService = require('../services/catalogService');
+const auditService = require('../services/auditService');
 
 const router = express.Router();
 router.use(requireAuth, moduleRequired('red'));
@@ -39,6 +43,7 @@ router.get('/', async (req, res, next) => {
     const [rows] = await pool.query(sql, params);
     res.render('network/list', {
       title: 'Red — Topologías y arquitecturas',
+      tab: 'diagramas',
       items: rows,
       categories: CATEGORIES,
       category: category || '',
@@ -155,4 +160,195 @@ router.post('/eliminar/:id', canWrite, verifyCsrfToken, async (req, res, next) =
   }
 });
 
+// =====================================================================
+// Inventario de red: equipos (PC, AP, switches...), celulares y VLAN.
+// =====================================================================
+const viewBase = async () => ({ KINDS: networkService.KINDS, SOURCES: networkService.SOURCES });
+const lists = async () => ({ sedes: await catalogService.getActive('sede'), areas: await catalogService.getActive('area'), vlanList: await networkService.vlans() });
+const fail = (req, res, err, back, next) => {
+  if (err.sqlMessage) return next(err);
+  req.flash('error', err.message);
+  return res.redirect(back);
+};
+const validKind = (k) => (networkService.KINDS[k] && k !== 'celular' ? k : '');
+// Busqueda simple (?q=) sobre los campos visibles.
+const search = (req, rows, fields) => {
+  const q = String(req.query.q || '').trim().slice(0, 100).toLowerCase();
+  return { q, rows: q ? rows.filter((r) => fields.some((f) => r[f] && String(r[f]).toLowerCase().includes(q))) : rows };
+};
+
+router.get('/equipos', async (req, res, next) => {
+  try {
+    const kind = validKind(req.query.tipo);
+    const all = await networkService.devices();
+    const f = search(req, kind ? all.filter((d) => d.kind === kind) : all, ['name', 'mac', 'mac_wifi', 'ip', 'sede', 'area', 'location', 'brand_model', 'serial', 'notes', 'vlan_names']);
+    res.render('network/devices', { title: 'Red — Equipos', tab: 'equipos', ...(await viewBase()), items: f.rows, q: f.q, all, kind,
+      ov: await networkService.overview() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/equipos/traer-pc', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const r = await networkService.importPcs(req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_traer_pc', target: 'equipos de red', detail: `${r.created} nuevas, ${r.updated} completadas, ${r.withMac} con MAC` });
+    req.flash('success', `PC traídas de GLPI y del directorio activo: ${r.created} nueva(s), ${r.updated} completada(s). ${r.withMac} tienen dirección MAC`
+      + (r.created + r.updated === 0 ? ' (no había nada nuevo).' : '; las demás se completan a mano o cuando GLPI las inventaríe.'));
+    return res.redirect('/red/equipos?tipo=pc');
+  } catch (err) {
+    return fail(req, res, err, '/red/equipos', next);
+  }
+});
+
+router.get('/equipos/nuevo', canWrite, async (req, res, next) => {
+  try {
+    res.render('network/device_form', { title: 'Red — Nuevo equipo', tab: 'equipos', ...(await viewBase()), ...(await lists()), item: { kind: validKind(req.query.tipo) || 'switch', vlan_ids: [] },
+      phone: null, action: '/red/equipos/nuevo' });
+  } catch (err) {
+    next(err);
+  }
+});
+router.post('/equipos/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const id = await networkService.saveDevice(0, req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_equipo_creado', target: req.body.name, detail: `id ${id}, ${req.body.kind}` });
+    req.flash('success', 'Equipo registrado.');
+    return res.redirect(`/red/equipos?tipo=${validKind(req.body.kind)}`);
+  } catch (err) {
+    return fail(req, res, err, `/red/equipos/nuevo?tipo=${validKind(req.body.kind)}`, next);
+  }
+});
+
+router.get('/equipos/:id(\\d+)', canWrite, async (req, res, next) => {
+  try {
+    const item = await networkService.device(req.params.id);
+    if (!item || item.kind === 'celular') {
+      req.flash('error', 'El equipo ya no existe.');
+      return res.redirect('/red/equipos');
+    }
+    return res.render('network/device_form', { title: `Red — ${item.name}`, tab: 'equipos', ...(await viewBase()), ...(await lists()), item, phone: null,
+      action: `/red/equipos/${item.id}` });
+  } catch (err) {
+    return next(err);
+  }
+});
+router.post('/equipos/:id(\\d+)', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    await networkService.saveDevice(req.params.id, req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_equipo_modificado', target: req.body.name, detail: `id ${req.params.id}` });
+    req.flash('success', 'Equipo actualizado.');
+    return res.redirect(`/red/equipos?tipo=${validKind(req.body.kind)}`);
+  } catch (err) {
+    return fail(req, res, err, `/red/equipos/${req.params.id}`, next);
+  }
+});
+router.post('/equipos/:id(\\d+)/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const item = await networkService.device(req.params.id);
+    if (await networkService.deleteDevice(req.params.id)) {
+      await auditService.log(req, { user: req.session.user, action: 'red_equipo_eliminado', target: item ? item.name : `id ${req.params.id}`,
+        detail: item ? `${item.kind} ${item.mac || ''} ${item.ip || ''}` : '' });
+      req.flash('success', 'Equipo eliminado del inventario de red.');
+    }
+    return res.redirect('/red/equipos');
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Celulares: los del modulo Celulares, con su MAC, IP, ubicacion y VLAN.
+router.get('/celulares', async (req, res, next) => {
+  try {
+    const all = await networkService.phones();
+    const f = search(req, all, ['asset_code', 'imei', 'brand', 'model', 'mac', 'ip', 'location', 'sede', 'area', 'holder_name', 'phone_number', 'vlan_names']);
+    res.render('network/phones', { title: 'Red — Celulares', tab: 'celulares', ...(await viewBase()), items: f.rows, q: f.q, total: all.length, withMac: all.filter((x) => x.mac).length });
+  } catch (err) {
+    next(err);
+  }
+});
+router.get('/celulares/:id(\\d+)', canWrite, async (req, res, next) => {
+  try {
+    const p = await networkService.phone(req.params.id);
+    if (!p) {
+      req.flash('error', 'El celular ya no existe en el inventario.');
+      return res.redirect('/red/celulares');
+    }
+    return res.render('network/device_form', { title: `Red — ${p.mobile.asset_code || p.mobile.imei}`, tab: 'celulares', ...(await viewBase()), ...(await lists()),
+      item: p.device || { kind: 'celular', vlan_ids: [] }, phone: p.mobile, action: `/red/celulares/${p.mobile.id}` });
+  } catch (err) {
+    return next(err);
+  }
+});
+router.post('/celulares/:id(\\d+)', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    await networkService.savePhone(req.params.id, req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_celular_modificado', target: `celular ${req.params.id}`,
+      detail: `MAC ${req.body.mac || '—'}, ubicación ${req.body.location || '—'}` });
+    req.flash('success', 'Datos de red del celular guardados.');
+    return res.redirect('/red/celulares');
+  } catch (err) {
+    return fail(req, res, err, `/red/celulares/${req.params.id}`, next);
+  }
+});
+
+// VLAN
+router.get('/vlan', async (req, res, next) => {
+  try {
+    const edit = req.query.editar ? await networkService.vlan(req.query.editar) : null;
+    res.render('network/vlans', { title: 'Red — VLAN', tab: 'vlan', ...(await viewBase()), items: await networkService.vlans(), edit, sedes: await catalogService.getActive('sede') });
+  } catch (err) {
+    next(err);
+  }
+});
+router.post('/vlan', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const id = await networkService.saveVlan(Number(req.body.id) || 0, req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_vlan_guardada', target: `VLAN ${req.body.vlan_number} ${req.body.name}`, detail: `id ${id}` });
+    req.flash('success', 'VLAN guardada.');
+    return res.redirect('/red/vlan');
+  } catch (err) {
+    return fail(req, res, err, Number(req.body.id) ? `/red/vlan?editar=${Number(req.body.id)}` : '/red/vlan', next);
+  }
+});
+router.post('/vlan/:id(\\d+)/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const v = await networkService.vlan(req.params.id);
+    if (await networkService.deleteVlan(req.params.id)) {
+      await auditService.log(req, { user: req.session.user, action: 'red_vlan_eliminada', target: v ? `VLAN ${v.vlan_number} ${v.name}` : `id ${req.params.id}` });
+      req.flash('success', 'VLAN eliminada (los equipos que la tenían quedan sin ella).');
+    }
+    return res.redirect('/red/vlan');
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Herramientas de diagnostico: solo administradores, con tope por usuario y auditoria.
+router.get('/herramientas', isAdmin, async (req, res, next) => {
+  try {
+    res.render('network/tools', { title: 'Red — Herramientas', tab: 'herramientas', ...(await viewBase()), TOOLS: netToolsService.TOOLS, COMMON_PORTS: netToolsService.COMMON_PORTS,
+      MAX_PORTS: netToolsService.MAX_PORTS, host: String(req.query.host || '').slice(0, 253), tool: netToolsService.TOOLS[req.query.h] ? req.query.h : 'ping' });
+  } catch (err) {
+    next(err);
+  }
+});
+const toolHits = new Map(); // userId -> marcas de tiempo
+router.post('/herramientas/ejecutar', isAdmin, verifyCsrfToken, async (req, res) => {
+  const id = req.session.user.id;
+  const recent = (toolHits.get(id) || []).filter((t) => t > Date.now() - 5 * 60000);
+  if (recent.length >= 40) return res.status(429).json({ error: 'Demasiadas consultas seguidas. Espere unos minutos.' });
+  toolHits.set(id, [...recent, Date.now()]);
+  const tool = String(req.body.tool || '');
+  try {
+    const r = await netToolsService.execute(tool, req.body.host, req.body.ports);
+    await auditService.log(req, { user: req.session.user, action: 'red_herramienta', target: r.host,
+      detail: `${tool}${tool === 'puertos' ? ` (${r.rows.length} puertos)` : ''}: ${r.summary}`.slice(0, 500) });
+    return res.json(r);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
 module.exports = router;
+

@@ -23,7 +23,7 @@ const MODULES = {
   clinic: 'Usuarios de Clinic',
   m365: 'Cuentas de Microsoft 365',
   directorio: 'Directorio activo (usuarios, grupos, equipos y DNS del dominio)',
-  red: 'Red (topologías y diagramas)',
+  red: 'Red (diagramas, equipos, VLAN y herramientas)',
   glpi_inventario: 'Inventario GLPI',
   reportes: 'Reportes',
   asistente: 'Asistente IA (preguntas a Gemini)',

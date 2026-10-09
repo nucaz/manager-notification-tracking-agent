@@ -144,6 +144,13 @@ READMEs.
   `tests/ad_cambios.e2e.js`, que modifica el DC), nunca contra un dominio real. Las directivas de grupo (GPO) se leen por LDAP en la misma lectura (`adGpoService.js`, tablas `ad_gpos` y
   `ad_gpo_links`, que se reemplazan): qué existe, tipo de configuración por sus extensiones, software, filtro WMI,
   vínculos y precedencia calculada; el contenido de SYSVOL no se lee y no hay escritura de GPO.
+- **Módulo Red** (`networkService.js`, `netToolsService.js`): inventario de equipos con MAC, IP y VLAN. Las PC se
+  traen de GLPI y del directorio activo y **nunca pisan lo escrito a mano**; los celulares son los de
+  `mobile_devices` (aquí solo MAC, IP, ubicación y VLAN). Las herramientas (ping, ruta, DNS, puertos) corren
+  desde el servidor, solo para admin, con el destino validado y pasado como argumento de `execFile` (nunca en
+  una línea de comandos), auditadas y con tope; la revisión de puertos solo acepta direcciones privadas. La
+  ruta usa `tracepath` porque `traceroute` exige privilegios que el contenedor no tiene. Prueba:
+  `tests/red.e2e.js`.
 - **Tablas de listado (estándar en toda la app)**: toda tabla con
   `<thead>` dentro de `.table-responsive` recibe sola, de
   `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por
