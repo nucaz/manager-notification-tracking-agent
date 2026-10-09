@@ -334,20 +334,50 @@ router.get('/herramientas', isAdmin, async (req, res, next) => {
   }
 });
 const toolHits = new Map(); // userId -> marcas de tiempo
-router.post('/herramientas/ejecutar', isAdmin, verifyCsrfToken, async (req, res) => {
+const overLimit = (req) => {
   const id = req.session.user.id;
   const recent = (toolHits.get(id) || []).filter((t) => t > Date.now() - 5 * 60000);
-  if (recent.length >= 40) return res.status(429).json({ error: 'Demasiadas consultas seguidas. Espere unos minutos.' });
+  if (recent.length >= 40) return true;
   toolHits.set(id, [...recent, Date.now()]);
+  return false;
+};
+const auditTool = (req, tool, r) => auditService.log(req, { user: req.session.user, action: 'red_herramienta', target: r.host,
+  detail: `${tool}${tool === 'puertos' ? ` (${r.rows.length} puertos)` : ''}: ${r.summary}`.slice(0, 500) });
+
+router.post('/herramientas/ejecutar', isAdmin, verifyCsrfToken, async (req, res) => {
+  if (overLimit(req)) return res.status(429).json({ error: 'Demasiadas consultas seguidas. Espere unos minutos.' });
   const tool = String(req.body.tool || '');
   try {
     const r = await netToolsService.execute(tool, req.body.host, req.body.ports);
-    await auditService.log(req, { user: req.session.user, action: 'red_herramienta', target: r.host,
-      detail: `${tool}${tool === 'puertos' ? ` (${r.rows.length} puertos)` : ''}: ${r.summary}`.slice(0, 500) });
+    await auditTool(req, tool, r);
     return res.json(r);
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
+});
+
+// La misma prueba, pero enviando cada linea en cuanto sale (para la ventana de
+// terminal). Formato de eventos del servidor: {t:'out', s} por linea y al
+// final {t:'end', r} o {t:'error', s}. Si quien mira cierra o pulsa Detener,
+// se corta el proceso.
+router.post('/herramientas/flujo', isAdmin, verifyCsrfToken, async (req, res) => {
+  if (overLimit(req)) return res.status(429).json({ error: 'Demasiadas consultas seguidas. Espere unos minutos.' });
+  const tool = String(req.body.tool || '');
+  res.status(200).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  const send = (obj) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(obj)}\n\n`); };
+  const stop = new AbortController();
+  let finished = false;
+  res.on('close', () => { if (!finished) stop.abort(); });
+  try {
+    const r = await netToolsService.execute(tool, req.body.host, req.body.ports, { emit: (s) => send({ t: 'out', s }), signal: stop.signal });
+    await auditTool(req, tool, r).catch(() => {});
+    send({ t: 'end', r: { ok: r.ok, summary: r.summary, host: r.host, ip: r.ip || null } });
+  } catch (err) {
+    send({ t: 'error', s: err.message });
+  }
+  finished = true;
+  return res.end();
 });
 
 module.exports = router;

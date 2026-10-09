@@ -1,4 +1,21 @@
 <%- include('../partials/head', { title: title }) %>
+<style>
+  /* Ventana de terminal: se ve igual en tema claro y oscuro (es una consola). */
+  .red-term { background: #0c1117; color: #d7dde5; border-radius: .5rem; border: 1px solid #2a323d; overflow: hidden; }
+  .red-term-barra { background: #1a212b; color: #9aa7b5; padding: .35rem .75rem; font-size: .8rem; display: flex; align-items: center; gap: .5rem; }
+  .red-term-barra .punto { width: .65rem; height: .65rem; border-radius: 50%; background: #3b4654; display: inline-block; }
+  .red-term-cuerpo { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; line-height: 1.45; padding: .75rem; height: 26rem; overflow: auto;
+    white-space: pre-wrap; word-break: break-word; }
+  .red-term .cmd { color: #7ee787; font-weight: 600; }
+  .red-term .nota { color: #79c0ff; }
+  .red-term .ok { color: #7ee787; }
+  .red-term .mal { color: #ffa198; }
+  .red-term .aviso { color: #e3b341; }
+  .red-term .tenue { color: #7d8896; }
+  .red-term .cursor { display: inline-block; width: .55em; height: 1em; background: #d7dde5; vertical-align: text-bottom; animation: red-parpadeo 1s steps(1) infinite; }
+  @keyframes red-parpadeo { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .red-term .cursor { animation: none; } }
+</style>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h2 class="mb-0">Red — Herramientas</h2></div>
 <%- include('_tabs') %>
 <div class="row g-3">
@@ -7,21 +24,25 @@
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="row g-2 align-items-end">
         <div class="col-md-5"><label class="form-label small" for="t_host">Equipo (nombre o IP) *</label>
-          <input class="form-control font-monospace" id="t_host" name="host" required maxlength="253" value="<%= host %>" placeholder="pc-ventas-01 o 172.16.1.20"></div>
+          <input class="form-control font-monospace" id="t_host" name="host" required maxlength="253" value="<%= host %>" placeholder="pcsist01 o 172.16.1.200"></div>
         <div class="col-md-4"><label class="form-label small" for="t_tool">Prueba</label>
           <select class="form-select" id="t_tool" name="tool">
             <% Object.keys(TOOLS).forEach(function (k) { %><option value="<%= k %>" <%= tool === k ? 'selected' : '' %>><%= TOOLS[k][0] %> — <%= TOOLS[k][1] %></option><% }); %>
           </select></div>
-        <div class="col-md-3"><button class="btn btn-primary w-100" id="t_run"><i class="bi bi-play-fill"></i> Ejecutar</button></div>
+        <div class="col-md-3 d-flex gap-2">
+          <button class="btn btn-primary flex-grow-1" id="t_run"><i class="bi bi-play-fill"></i> Ejecutar</button>
+          <button type="button" class="btn btn-outline-danger" id="t_stop" hidden title="Detener la prueba"><i class="bi bi-stop-fill"></i> Detener</button>
+        </div>
         <div class="col-12" id="t_ports_box" hidden><label class="form-label small" for="t_ports">Puertos (vacío = los <%= Object.keys(COMMON_PORTS).length %> más comunes)</label>
           <input class="form-control font-monospace" id="t_ports" name="ports" maxlength="300" placeholder="80,443,3389 o 8000-8010">
           <div class="form-text">Hasta <%= MAX_PORTS %> puertos por consulta. Solo sobre equipos de la red interna.</div></div>
       </div>
     </form>
-    <div class="card p-3 mt-3">
-      <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="mb-0">Resultado</h6>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="t_clear">Limpiar</button></div>
-      <div id="t_out" aria-live="polite"><p class="small text-muted mb-0">Elija un equipo y una prueba. Cada resultado queda arriba del anterior.</p></div>
+    <div class="red-term mt-3" id="red_term">
+      <div class="red-term-barra"><span class="punto"></span><span class="punto"></span><span class="punto"></span>
+        <span class="ms-1">servidor de la aplicación</span><span class="ms-auto" id="t_estado" aria-live="polite">en espera</span>
+        <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" style="color: #9aa7b5" id="t_clear">Limpiar</button></div>
+      <div class="red-term-cuerpo" id="t_out" role="log" aria-label="Salida de la prueba"><span class="tenue">Elija un equipo y una prueba. La salida aparece aquí mientras se ejecuta.</span></div>
     </div>
   </div>
   <div class="col-lg-4">
@@ -30,11 +51,13 @@
       <ul class="mb-2 ps-3">
         <li><strong>Ping</strong>: 4 intentos; dice si responde y en cuánto tiempo.</li>
         <li><strong>Ruta (saltos)</strong>: por qué equipos pasa hasta llegar (equivale a tracert).</li>
-        <li><strong>DNS</strong>: a qué IP resuelve un nombre, o qué nombre tiene una IP.</li>
+        <li><strong>DNS</strong>: qué responde cada fuente sobre un nombre, o qué nombre tiene una IP.</li>
         <li><strong>Puertos abiertos</strong>: qué servicios acepta conexiones (escritorio remoto, carpetas compartidas, web, impresión…).</li>
       </ul>
       <div class="alert alert-info py-2 mb-2"><i class="bi bi-info-circle"></i> Las pruebas salen <strong>desde el servidor de la aplicación</strong>, no desde su PC: muestran si el servidor
         llega al equipo. Un equipo puede no responder al ping por su firewall y aun así estar encendido.</div>
+      <div class="mb-2"><strong>Nombres de equipo</strong>: un nombre corto (como <code>pcsist01</code>) se busca primero en el DNS de los controladores de dominio, luego en el
+        directorio activo y el inventario de Red, y al final en el DNS del servidor. La salida dice de dónde salió la IP.</div>
       <div class="text-muted">Solo administradores. Cada prueba queda en la auditoría. No hay "netstat": eso lista las conexiones de un equipo desde dentro de él;
         para ver desde afuera qué puertos atiende, use "Puertos abiertos".</div>
     </div>
@@ -47,53 +70,70 @@
   var tool = document.getElementById('t_tool');
   var box = document.getElementById('t_ports_box');
   var btn = document.getElementById('t_run');
-  var primera = true;
+  var stop = document.getElementById('t_stop');
+  var estado = document.getElementById('t_estado');
+  var vacio = true;
+  var control = null;
+  var cursor = document.createElement('span'); cursor.className = 'cursor';
   function sync() { box.hidden = tool.value !== 'puertos'; }
   tool.addEventListener('change', sync); sync();
-  document.getElementById('t_clear').addEventListener('click', function () { out.textContent = ''; primera = false; });
-  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function show(titulo, r) {
-    if (primera) { out.textContent = ''; primera = false; }
-    var card = el('div', 'border rounded p-2 mb-2');
-    var head = el('div', 'd-flex flex-wrap gap-2 align-items-center mb-1');
-    head.appendChild(el('span', 'badge ' + (r.error ? 'text-bg-danger' : (r.ok ? 'text-bg-success' : 'text-bg-warning')), r.error ? 'Error' : (r.ok ? 'OK' : 'Sin éxito')));
-    head.appendChild(el('strong', 'font-monospace', titulo));
-    head.appendChild(el('span', 'small text-muted ms-auto', new Date().toLocaleTimeString()));
-    card.appendChild(head);
-    card.appendChild(el('div', 'small mb-1', r.error || r.summary));
-    if (r.hops && r.hops.length) {
-      var t = el('table', 'table table-sm small mb-1'); t.setAttribute('data-tabla', 'no');
-      var hb = el('tbody');
-      r.hops.forEach(function (h) { var tr = el('tr'); tr.appendChild(el('td', '', String(h.hop))); tr.appendChild(el('td', 'font-monospace', h.address || 'sin respuesta')); tr.appendChild(el('td', '', h.time || '')); hb.appendChild(tr); });
-      t.appendChild(hb); card.appendChild(t);
-    }
-    if (r.rows && r.rows.length) {
-      var abiertos = r.rows.filter(function (x) { return x.state === 'abierto'; });
-      if (abiertos.length) {
-        var t2 = el('table', 'table table-sm small mb-1'); t2.setAttribute('data-tabla', 'no');
-        var b2 = el('tbody');
-        abiertos.forEach(function (x) { var tr = el('tr'); tr.appendChild(el('td', 'font-monospace', String(x.port))); tr.appendChild(el('td', 'text-success fw-semibold', 'abierto')); tr.appendChild(el('td', '', x.service)); b2.appendChild(tr); });
-        t2.appendChild(b2); card.appendChild(t2);
-      }
-    }
-    if (r.output) {
-      var d = el('details'); d.appendChild(el('summary', 'small', 'Salida completa'));
-      d.appendChild(el('pre', 'small mb-0 mt-1 p-2 bg-body-tertiary rounded', r.output));
-      if (!r.hops && !r.rows) d.open = true;
-      card.appendChild(d);
-    }
-    out.insertBefore(card, out.firstChild);
+  document.getElementById('t_clear').addEventListener('click', function () { out.textContent = ''; vacio = false; });
+  function clase(s) {
+    if (/^\$ /.test(s)) return 'cmd';
+    if (/→ .*resuelto por|^Registrado en|^DNS del .*→/.test(s)) return 'nota';
+    if (/abierto|bytes from|reached/.test(s)) return 'ok';
+    if (/100% packet loss|No se pudo|no existe|no se resuelve|no reply|Se cortó|Detenido/.test(s)) return 'mal';
+    if (/sin respuesta|cerrado|sin nombre/.test(s)) return 'tenue';
+    return '';
   }
+  function linea(s, cls) {
+    if (vacio) { out.textContent = ''; vacio = false; }
+    if (cursor.parentNode) cursor.parentNode.removeChild(cursor);
+    var d = document.createElement('div');
+    if (cls !== undefined ? cls : clase(s)) d.className = cls !== undefined ? cls : clase(s);
+    d.textContent = s === '' ? ' ' : s;
+    out.appendChild(d);
+    out.scrollTop = out.scrollHeight;
+  }
+  function enMarcha(si) {
+    btn.disabled = si; stop.hidden = !si;
+    estado.textContent = si ? 'ejecutando…' : 'en espera';
+    if (si) { out.appendChild(cursor); out.scrollTop = out.scrollHeight; } else if (cursor.parentNode) cursor.parentNode.removeChild(cursor);
+  }
+  function evento(ev) {
+    if (ev.t === 'out') { linea(ev.s); out.appendChild(cursor); }
+    else if (ev.t === 'end') linea((ev.r.ok ? '✔ ' : '✖ ') + ev.r.summary, ev.r.ok ? 'ok' : 'aviso');
+    else if (ev.t === 'error') linea('✖ ' + ev.s, 'mal');
+  }
+  stop.addEventListener('click', function () { if (control) control.abort(); });
   form.addEventListener('submit', function (ev) {
     ev.preventDefault();
+    if (control) return;
     var datos = new URLSearchParams(new FormData(form));
-    var titulo = tool.options[tool.selectedIndex].text.split(' — ')[0] + ' → ' + datos.get('host');
-    btn.disabled = true; btn.textContent = 'Ejecutando…';
-    fetch('/red/herramientas/ejecutar', { method: 'POST', body: datos, credentials: 'same-origin', headers: { Accept: 'application/json' } })
-      .then(function (res) { return res.json().catch(function () { return { error: 'Respuesta inesperada del servidor (' + res.status + ').' }; }); })
-      .then(function (r) { show(titulo, r); })
-      .catch(function () { show(titulo, { error: 'No se pudo consultar. Revise la conexión e intente de nuevo.' }); })
-      .finally(function () { btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill"></i> Ejecutar'; });
+    if (!vacio && out.childNodes.length) linea('');
+    control = new AbortController();
+    enMarcha(true);
+    var fin = function () { control = null; enMarcha(false); };
+    fetch('/red/herramientas/flujo', { method: 'POST', body: datos, credentials: 'same-origin', headers: { Accept: 'text/event-stream' }, signal: control.signal })
+      .then(function (res) {
+        if (!res.ok || !res.body) return res.json().catch(function () { return { error: 'Respuesta inesperada del servidor (' + res.status + ').' }; }).then(function (j) { linea('✖ ' + (j.error || 'No se pudo ejecutar.'), 'mal'); });
+        var lector = res.body.getReader();
+        var deco = new TextDecoder();
+        var resto = '';
+        var leer = function () {
+          return lector.read().then(function (x) {
+            if (x.done) return null;
+            resto += deco.decode(x.value, { stream: true });
+            var partes = resto.split('\n\n');
+            resto = partes.pop();
+            partes.forEach(function (p) { if (p.indexOf('data: ') === 0) { try { evento(JSON.parse(p.slice(6))); } catch (e) { /* trozo incompleto */ } } });
+            return leer();
+          });
+        };
+        return leer();
+      })
+      .catch(function (err) { linea(err && err.name === 'AbortError' ? '✖ Detenido.' : '✖ Se perdió la conexión con el servidor.', 'mal'); })
+      .then(fin, fin);
   });
 })();
 </script>

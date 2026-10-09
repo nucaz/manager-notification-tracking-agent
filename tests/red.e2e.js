@@ -172,10 +172,24 @@ async function main() {
     // ---------------- herramientas ----------------
     const tool = async (data) => { const r = await post('/red/herramientas/ejecutar', data); let j = {}; try { j = JSON.parse(r.text); } catch (_) { j = {}; } return { ...r, j }; };
     const pg = await tool({ tool: 'ping', host: '127.0.0.1' });
-    check('Ping: responde con resumen y salida', pg.status === 200 && pg.j.ok === true && /Responde/.test(pg.j.summary) && /packets transmitted/.test(pg.j.output));
+    check('Ping: responde con resumen y salida', pg.status === 200 && pg.j.ok === true && /responde/.test(pg.j.summary) && /packets transmitted/.test(pg.j.output));
     const inj = await tool({ tool: 'ping', host: '127.0.0.1; cat /etc/passwd' });
     const inj2 = await tool({ tool: 'ping', host: '-c 1 127.0.0.1' });
     check('Un destino con caracteres de comando u opciones: rechazado sin ejecutar', inj.status === 400 && /no es válido/.test(inj.j.error) && inj2.status === 400 && !/root:/.test(inj.text));
+    // Un nombre que el DNS del servidor no conoce se resuelve con lo que la aplicacion ya sabe.
+    await post('/red/equipos/nuevo', { kind: 'servidor', name: `${TAG}-HOST`, ip: '127.0.0.1' });
+    const byName = await tool({ tool: 'ping', host: `${TAG}-host` });
+    check('Ping por nombre: usa la IP del inventario de Red y dice de dónde salió', byName.status === 200 && byName.j.ok === true && byName.j.ip === '127.0.0.1'
+      && /inventario de Red/.test(byName.j.output) && /responde/.test(byName.j.summary));
+    const noName = await tool({ tool: 'ping', host: 'zz-e2e-no-existe' });
+    check('Nombre que no existe en ninguna fuente: explica dónde se buscó y sugiere la IP', noName.status === 200 && noName.j.ok === false && /Se buscó en/.test(noName.j.output)
+      && /DNS del servidor/.test(noName.j.output) && /use la IP/.test(noName.j.summary));
+    const flow = await post('/red/herramientas/flujo', { tool: 'ping', host: '127.0.0.1' });
+    const events = flow.text.split('\n\n').filter((x) => x.startsWith('data: ')).map((x) => JSON.parse(x.slice(6)));
+    check('Salida en vivo: una línea por evento (el comando, cada respuesta) y el resumen al final', flow.status === 200 && events.length >= 6 && events[0].t === 'out' && events[0].s === '$ ping -c 4 127.0.0.1'
+      && events.filter((e) => e.t === 'out' && /bytes from/.test(e.s)).length === 4 && events[events.length - 1].t === 'end' && events[events.length - 1].r.ok === true);
+    const flowBad = await post('/red/herramientas/flujo', { tool: 'puertos', host: '8.8.8.8', ports: '53' });
+    check('Salida en vivo: un destino no permitido llega como error, sin ejecutar', /"t":"error"/.test(flowBad.text) && /red interna/.test(flowBad.text) && !/"t":"end"/.test(flowBad.text));
     const dn = await tool({ tool: 'dns', host: 'localhost' });
     check('DNS: resuelve un nombre', dn.status === 200 && dn.j.ok === true && /127\.0\.0\.1|::1/.test(dn.j.output));
     const pout = await tool({ tool: 'puertos', host: '8.8.8.8', ports: '53' });
