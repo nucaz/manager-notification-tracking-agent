@@ -45,7 +45,8 @@
           placeholder="<%= wcfg.hasWritePassword ? 'Configurada - dejar vacío para mantenerla' : '' %>">
         <div class="form-text">Se guarda cifrada. Nunca se vuelve a mostrar.</div></div>
       <% // OU del dominio en orden de arbol, con su profundidad; las ya gestionadas vienen marcadas.
-         const ouOnly = ouList.filter(function (o) { return o.kind === 'ou'; });
+         // Las OU y los contenedores Users y Computers (kind = contenedor).
+         const ouOnly = ouList.slice();
          const lc = function (s) { return String(s || '').toLowerCase(); };
          const ouKnown = new Set(ouOnly.map(function (o) { return lc(o.dn); }));
          const ouKids = {};
@@ -80,8 +81,9 @@
                 <% } else { %><span style="width: 1.1rem; flex: none"></span><% } %>
                 <input class="form-check-input m-0" type="checkbox" name="ad_managed_ou" value="<%= o.dn %>" id="ou_<%= o.id %>"
                   <%= chosen.has(lc(o.dn)) ? 'checked' : '' %> <%= dc ? 'disabled' : '' %> data-propio="<%= chosen.has(lc(o.dn)) ? '1' : '0' %>">
-                <label class="form-check-label flex-grow-1" for="ou_<%= o.id %>" title="<%= o.dn %>"><i class="bi bi-folder2"></i> <%= o.name %>
-                  <% if (dc) { %><span class="text-muted">(nunca: controladores de dominio)</span><% } %></label>
+                <label class="form-check-label flex-grow-1" for="ou_<%= o.id %>" title="<%= o.dn %>"><i class="bi <%= o.kind === 'ou' ? 'bi-folder2' : 'bi-box' %>"></i> <%= o.name %>
+                  <% if (dc) { %><span class="text-muted">(nunca: controladores de dominio)</span><% } %>
+                  <% if (o.kind !== 'ou') { %><span class="text-muted">(contenedor: <%= /^cn=computers,/i.test(o.dn) ? 'para mover a una unidad los equipos recién unidos' : 'tiene cuentas integradas y de sincronización; se delega solo sobre usuarios' %>)</span><% } %></label>
                 <span class="ou-marca"></span>
                 <span class="text-muted text-nowrap" style="font-variant-numeric: tabular-nums" title="Usuarios · equipos · grupos (directos)">
                   <i class="bi bi-person"></i> <%= o.users_count %> <i class="bi bi-pc-display ms-1"></i> <%= o.computers_count %> <i class="bi bi-people ms-1"></i> <%= o.groups_count %></span>

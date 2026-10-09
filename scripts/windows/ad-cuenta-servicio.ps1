@@ -97,6 +97,10 @@ $M = @{
     managedNote = 'Elija las OU de usuarios y equipos de la empresa. No elija Domain Controllers ni la OU donde están las cuentas de administración.'
     dcOuWarn = 'Se quitó "{0}": es la OU de los controladores de dominio.'
     selfOuWarn = 'Se quitó "{0}": ahí están las cuentas de servicio; la cuenta no debe poder cambiarse a sí misma ni a la de lectura.'
+    compQ = '¿Gestionar también el contenedor Computers? Solo equipos: sirve para mover a una OU los equipos recién unidos al dominio'
+    usersQ = '¿Gestionar también el contenedor Users? Solo usuarios (no grupos). Ahí hay cuentas integradas y de sincronización: las sensibles se protegen'
+    delegatedComp = 'Delegado en {0}: solo equipos.'
+    delegatedUsers = 'Delegado en {0}: solo usuarios (sin grupos).'
     selfOuNote = '"{0}" contiene las cuentas de servicio (incluida esta).'
     selfOuQ = '¿Gestionarla también? Esta cuenta y las del Gestor quedan protegidas con una denegación explícita, y en la OU de las cuentas la aplicación podrá crear y modificar usuarios pero no eliminarlos ni moverlos'
     protectQ = 'Cuentas de servicio a proteger (nombres separados por coma; agregue aquí la de lectura si no aparece)'
@@ -171,6 +175,10 @@ $M = @{
     managedNote = 'Choose the company user and computer OUs. Do not choose Domain Controllers or the OU holding admin accounts.'
     dcOuWarn = 'Removed "{0}": it is the domain controllers OU.'
     selfOuWarn = 'Removed "{0}": it holds the service accounts; the account must not be able to change itself or the read account.'
+    compQ = 'Also manage the Computers container? Computers only: lets the application move newly joined computers to an OU'
+    usersQ = 'Also manage the Users container? Users only (no groups). It holds built-in and sync accounts: the sensitive ones get protected'
+    delegatedComp = 'Delegated on {0}: computers only.'
+    delegatedUsers = 'Delegated on {0}: users only (no groups).'
     selfOuNote = '"{0}" holds the service accounts (including this one).'
     selfOuQ = 'Manage it too? This account and the Gestor accounts get an explicit deny, and in the accounts OU the application can create and modify users but not delete or move them'
     protectQ = 'Service accounts to protect (comma-separated names; add the read account here if it is missing)'
@@ -338,6 +346,9 @@ if ($interactive) {
       $sel2 = $OUs
       $OUs = @($sel2 | Where-Object { $c = $_; -not ($sel2 | Where-Object { $_ -ne $c -and $c.EndsWith(",$_") }) })
     } until ($OUs.Count -gt 0)
+    # Contenedores predeterminados (no son OU): se preguntan aparte y se delegan con menos permisos.
+    if (YesNo $M.compQ $true) { $OUs += $dom.ComputersContainer }
+    if (YesNo $M.usersQ $false) { $OUs += $dom.UsersContainer }
     $DNS = [switch](YesNo $M.dnsQ $true)
     $Papelera = [switch](YesNo $M.binWriteQ $true)
   } else {
@@ -355,10 +366,16 @@ $upn = $(if (-not $isNew -and $prev -and $prev.UserPrincipalName) { $prev.UserPr
 # (con o sin asistente: si las OU elegidas cubren a la cuenta, siempre se protege)
 $selfOuDn = $(if ($isNew) { $OUCuenta } elseif ($prev) { ($prev.DistinguishedName -split '(?<!\\),', 2)[1] } else { '' })
 $protect = @()
-if (-not $Lectura -and $selfOuDn -and @($OUs | Where-Object { CoversDn $_ $selfOuDn }).Count) {
-  # Las que creo este script llevan la descripcion "Gestor: ..." / the ones this script created
+$isCn = { param($a, $b) "$a".Equals("$b", [StringComparison]::OrdinalIgnoreCase) }
+$selfCovered = (-not $Lectura) -and $selfOuDn -and (@($OUs | Where-Object { CoversDn $_ $selfOuDn }).Count -gt 0)
+$usersChosen = (-not $Lectura) -and (@($OUs | Where-Object { & $isCn $_ $dom.UsersContainer }).Count -gt 0)
+if ($selfCovered -or $usersChosen) {
   $auto = @()
-  try { $auto = @(Get-ADUser -SearchBase $selfOuDn -SearchScope OneLevel -LDAPFilter '(description=Gestor:*)' | ForEach-Object { $_.SamAccountName }) } catch { }
+  # Las que creo este script llevan la descripcion "Gestor: ..." / the ones this script created
+  if ($selfCovered) { try { $auto += @(Get-ADUser -SearchBase $selfOuDn -SearchScope OneLevel -LDAPFilter '(description=Gestor:*)' | ForEach-Object { $_.SamAccountName }) } catch { } }
+  # En Users: sincronizacion con Microsoft 365, krbtgt y cuentas con SPN (de servicio); AdminSDHolder no las cubre a todas.
+  if ($usersChosen) { try { $auto += @(Get-ADUser -SearchBase $dom.UsersContainer -SearchScope OneLevel `
+    -LDAPFilter '(|(sAMAccountName=MSOL_*)(sAMAccountName=AAD_*)(sAMAccountName=krbtgt*)(servicePrincipalName=*)(description=Gestor:*))' | ForEach-Object { $_.SamAccountName }) } catch { } }
   $protect = @(@($Nombre) + $auto + $Proteger | Where-Object { $_ } | Sort-Object -Unique)
   if ($interactive) {
     $typed = Ask $M.protectQ ($protect -join ', ')
@@ -449,7 +466,18 @@ try {
     $gUser = ClassGuid 'user'; $gGroup = ClassGuid 'group'; $gComputer = ClassGuid 'computer'; $gOu = ClassGuid 'organizationalUnit'
     $gReset = RightGuid 'User-Force-Change-Password'   # "Restablecer contraseña" / "Reset Password"
     foreach ($ou in $OUs) {
-      try { Get-ADOrganizationalUnit -Identity $ou | Out-Null } catch { throw ($M.noOu -f $ou) }
+      try { Get-ADObject -Identity $ou | Out-Null } catch { throw ($M.noOu -f $ou) }
+      if (& $isCn $ou $dom.ComputersContainer) {
+        Allow $ou ($R::CreateChild -bor $R::DeleteChild) $gComputer $I::All $none
+        Allow $ou ($R::ReadProperty -bor $R::WriteProperty -bor $R::DeleteTree) $none $I::Descendents $gComputer
+        Log ($M.delegatedComp -f $ou); continue
+      }
+      if (& $isCn $ou $dom.UsersContainer) {
+        Allow $ou ($R::CreateChild -bor $R::DeleteChild) $gUser $I::All $none
+        Allow $ou ($R::ReadProperty -bor $R::WriteProperty -bor $R::DeleteTree) $none $I::Descendents $gUser
+        Allow $ou $R::ExtendedRight $gReset $I::Descendents $gUser
+        Log ($M.delegatedUsers -f $ou); continue
+      }
       # Usuarios: crear/eliminar; datos (deshabilitar, desbloquear, cambiar al entrar); eliminar con su contenido; restablecer contrasena.
       Allow $ou ($R::CreateChild -bor $R::DeleteChild) $gUser $I::All $none
       Allow $ou ($R::ReadProperty -bor $R::WriteProperty -bor $R::DeleteTree) $none $I::Descendents $gUser
@@ -468,8 +496,10 @@ try {
     # ---- se gestiona la OU de las cuentas de servicio: denegaciones explicitas (ganan a lo heredado)
     if ($protect.Count) {
       # Eliminar o mover un objeto tambien se permite desde la OU (DeleteChild): se niega ahi para usuarios.
-      Deny $selfOuDn $R::DeleteChild $gUser $I::None $none
-      Log ($M.noDelete -f $selfOuDn)
+      if ($selfCovered -and -not (& $isCn $selfOuDn $dom.UsersContainer)) {
+        Deny $selfOuDn $R::DeleteChild $gUser $I::None $none
+        Log ($M.noDelete -f $selfOuDn)
+      }
       foreach ($p in $protect) {
         $pa = Get-ADUser -LDAPFilter "(sAMAccountName=$p)"
         if (-not $pa) { Log ($M.protectMissing -f $p); continue }

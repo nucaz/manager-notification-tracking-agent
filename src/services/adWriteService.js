@@ -193,6 +193,8 @@ async function protection(ctx, e, { checkOu = true } = {}) {
   const uac = Number(str(e.userAccountControl) || 0);
   if (uac & UAC.SERVER_TRUST || uac & RODC) reasons.push('Es un controlador de dominio.');
   const sam = lower(str(e.sAMAccountName));
+  // Sincronizacion con Microsoft 365 (suele tener permiso de replicar el dominio) y krbtgt de los RODC: AdminSDHolder no las cubre.
+  if (/^(msol_|aad_|krbtgt)/.test(sam)) reasons.push('Es una cuenta de sincronización o del sistema.');
   const own = [ctx.cfg.readUser, ctx.cfg.writeUser].filter(Boolean).map((u) => lower(u).split('@')[0].split('\\').pop());
   if (sam && own.includes(sam)) reasons.push('Es una cuenta de servicio de esta aplicación.');
   if (sid && ctx.privSids.has(sid)) reasons.push('Es un grupo privilegiado.');
@@ -542,7 +544,10 @@ async function executeMany(items) {
 // No escribe nada. Devuelve [{ dn, classes }] solo de las OU con algo delegado.
 const DELEGATION_CLASSES = ['user', 'group', 'computer', 'organizationalunit'];
 async function delegatedOus(ctx) {
-  const rows = await search(ctx.client, ctx.base, { filter: '(objectClass=organizationalUnit)', attributes: ['distinguishedName', 'allowedChildClassesEffective'] });
+  // Las OU y los dos contenedores de primer nivel (Users y Computers), igual que la lectura.
+  const rows = (await search(ctx.client, ctx.base, { filter: '(|(objectClass=organizationalUnit)(&(objectClass=container)(|(cn=Users)(cn=Computers))))',
+    attributes: ['distinguishedName', 'objectClass', 'allowedChildClassesEffective'] }))
+    .filter((e) => classesOf(e).includes('organizationalunit') || lower(parentDn(str(e.distinguishedName || e.dn, 700))) === lower(ctx.base));
   return rows.map((e) => ({ dn: str(e.distinguishedName || e.dn, 700), classes: list(e.allowedChildClassesEffective).map(lower).filter((c) => DELEGATION_CLASSES.includes(c)) }))
     .filter((o) => o.classes.length);
 }

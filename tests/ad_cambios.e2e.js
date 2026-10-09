@@ -192,6 +192,14 @@ async function main() {
     const cfgPage = (await get('/ad/configuracion')).text;
     check('Tras el error, el formulario conserva lo elegido (casillas y cuenta) sin la contraseña', /value="OU=Servicios,[^"]*"[^>]*checked/.test(cfgPage)
       && cfgPage.includes(`value="${E.AD_TEST_WRITE_USER}"`) && !cfgPage.includes(E.AD_TEST_WRITE_PASSWORD));
+    // Contenedores: Computers esta delegado en el DC de prueba; Users no.
+    check('Detectar incluye el contenedor Computers (delegado) y no Users', detDns.includes(`cn=computers,${B}`.toLowerCase()) && !detDns.includes(`cn=users,${B}`.toLowerCase()));
+    await post('/ad/configuracion/escritura', { ...writeForm, ad_managed_ous: '', ad_managed_ou: [MANAGED, `CN=Users,${B}`], reauth_password: PASS });
+    check('El contenedor Users sin delegar: NO se guarda', !cfg.ad_writes_enabled && (await flashes()).includes('no tiene control delegado'));
+    await post('/ad/configuracion/escritura', { ...writeForm, ad_managed_ous: '', ad_managed_ou: [MANAGED, `CN=Computers,${B}`], reauth_password: PASS });
+    check('El contenedor Computers delegado: se guarda como gestionado', cfg.ad_writes_enabled === '1' && cfg.ad_managed_ous === `${MANAGED}\nCN=Computers,${B}`
+      && /value="CN=Computers,[^"]*"[^>]*checked/.test((await get('/ad/configuracion')).text));
+    cfg.ad_writes_enabled = '0';
     // Casillas: una OU dentro de otra elegida sobra (la de arriba la incluye).
     await post('/ad/configuracion/escritura', { ...writeForm, ad_managed_ous: '', ad_managed_ou: [MANAGED, `OU=Ventas,${MANAGED}`], reauth_password: PASS });
     check('Escritura verificada y guardada (cuenta delegada, OU gestionada)', cfg.ad_writes_enabled === '1' && cfg.ad_managed_ous === MANAGED
@@ -363,6 +371,15 @@ async function main() {
       && !arbol.includes(`op=computer_move&amp;id=${(await row('ad_computers', 'is_dc = 1', [])).id}&`));
     await doOp('computer_move', caja9.id, { to_ou_id: sistemas.id, reauth_password: PASS });
     check('Mover equipo a otra unidad organizativa gestionada', /CN=PC-CAJA-09,OU=Sistemas,OU=Depilzone/i.test(((await ldap('(sAMAccountName=PC-CAJA-09$)'))[0] || {}).dn));
+    // Un equipo recien unido (en CN=Computers) se mueve a una OU cuando el contenedor esta gestionado.
+    const nueva = await row('ad_computers', "name = 'PC-RECIEN-UNIDA'", []);
+    const fuera = await doOp('computer_move', nueva.id, { to_ou_id: sistemas.id, reauth_password: PASS });
+    check('Equipo en Computers sin gestionar el contenedor: rechazado', /fuera de las unidades/.test(fuera.text + (await flashes()))
+      && /CN=Computers/i.test(((await ldap('(sAMAccountName=PC-RECIEN-UNIDA$)'))[0] || {}).dn));
+    cfg.ad_managed_ous = `${MANAGED}\nCN=Computers,${B}`;
+    await doOp('computer_move', nueva.id, { to_ou_id: sistemas.id, reauth_password: PASS });
+    check('Equipo en Computers con el contenedor gestionado: se mueve a la OU', /CN=PC-RECIEN-UNIDA,OU=Sistemas,OU=Depilzone/i.test(((await ldap('(sAMAccountName=PC-RECIEN-UNIDA$)'))[0] || {}).dn));
+    cfg.ad_managed_ous = MANAGED;
     const mdc = await doOp('computer_move', (await row('ad_computers', 'is_dc = 1', [])).id, { to_ou_id: sistemas.id, reauth_password: PASS });
     check('Mover un controlador de dominio: rechazado', /controlador de dominio|fuera de las unidades/.test(mdc.text + (await flashes()))
       && /OU=Domain Controllers/i.test(((await ldap('(&(objectClass=computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))'))[0] || {}).dn));

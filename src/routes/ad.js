@@ -635,6 +635,7 @@ router.post('/configuracion/escritura', isSuperAdmin, verifyCsrfToken, async (re
       await adWriteService.testWrite({ ...current, managedOus, writeUser, bindUser: writeUser || current.readUser, password });
     }
     await settingsService.setMany(pairs);
+    delete req.session.adWriteDraft; // lo guardado manda: no se muestra un borrador de un intento anterior
     await auditService.log(req, { user: req.session.user, action: 'ad_configuracion_escritura', target: 'directorio activo',
       detail: `${enabled ? 'cambios encendidos' : 'cambios apagados'}; cuenta ${writeUser || '(la de lectura)'}${newPassword ? ', contraseña cambiada' : ''}; OU: ${managedOus.join(' | ')}` });
     req.flash('success', enabled ? 'Cambios en el dominio encendidos: cuenta y unidades organizativas verificadas.' : 'Cambios en el dominio apagados.');

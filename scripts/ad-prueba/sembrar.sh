@@ -52,6 +52,9 @@ st user create svc-escritor "$UPW" --userou="OU=Servicios" --description="Cuenta
 SID=$(samba-tool user show svc-escritor --attributes=objectSid -H ldap://127.0.0.1 -U Administrator --password="$PW" 2>/dev/null | sed -n 's/^objectSid: //p')
 acl() { samba-tool dsacl set --objectdn="$1" --sddl="$2" -H ldap://127.0.0.1 -U Administrator --password="$PW" >/dev/null 2>&1 || true; }
 acl "OU=Depilzone,$B" "(A;CI;GA;;;$SID)"
+# El contenedor Computers tambien (equipos recien unidos que hay que mover a una OU); Users no.
+acl "CN=Computers,$B" "(A;CI;GA;;;$SID)"
+st computer create PC-RECIEN-UNIDA --description="Equipo recien unido, aun en Computers"
 acl "DC=prueba.local,CN=MicrosoftDNS,DC=DomainDnsZones,$B" "(A;CI;GA;;;$SID)"
 acl "DC=0.10.10.in-addr.arpa,CN=MicrosoftDNS,DC=DomainDnsZones,$B" "(A;CI;GA;;;$SID)" 2>/dev/null || true
 acl "$B" "(OA;;CR;45ec5156-db7e-47bb-b53f-dbeb2d03c40f;;$SID)"
