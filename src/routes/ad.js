@@ -567,9 +567,12 @@ router.get('/configuracion', isSuperAdmin, async (req, res, next) => {
   try {
     const cfg = await adService.config();
     const wcfg = await adWriteService.config();
+    // Si el ultimo guardado fallo, se vuelve a mostrar lo que se habia elegido (nunca la contrasena).
+    const draft = req.session.adWriteDraft || null;
+    delete req.session.adWriteDraft;
     res.render('ad/config', { title: 'Directorio activo: conexión', tab: 'configuracion', ...(await base(req)),
       cfg: { ...cfg, password: cfg.password ? 'set' : '' }, test: null,
-      wcfg: { enabled: wcfg.enabled, managedOus: wcfg.managedOus, writeUser: wcfg.writeUser, hasWritePassword: wcfg.hasWritePassword },
+      wcfg: { enabled: wcfg.enabled, managedOus: wcfg.managedOus, writeUser: wcfg.writeUser, hasWritePassword: wcfg.hasWritePassword, ...(draft || {}) },
       ouList: await adService.ous(), reauth: await adChangeService.reauthKind(req.session.user.id) });
   } catch (err) {
     next(err);
@@ -578,14 +581,48 @@ router.get('/configuracion', isSuperAdmin, async (req, res, next) => {
 
 // Cambios en el dominio: interruptor, OU gestionadas y cuenta de escritura.
 // Se prueba antes de guardar (inicio de sesion y que las OU existan).
+// OU elegidas: casillas (ad_managed_ou) + las escritas a mano (ad_managed_ous, una por linea).
+// Una OU dentro de otra elegida sobra: la de arriba ya la incluye.
+function managedOusFrom(body) {
+  const picked = [].concat(body.ad_managed_ou || []).map(String);
+  const typed = String(body.ad_managed_ous || '').split(/\r?\n/);
+  const seen = new Map();
+  [...picked, ...typed].map((x) => x.trim().slice(0, 700)).filter(Boolean).forEach((dn) => { if (!seen.has(dn.toLowerCase())) seen.set(dn.toLowerCase(), dn); });
+  const all = [...seen.values()];
+  return all.filter((dn) => !all.some((o) => o !== dn && adWriteService.under(dn, o))).slice(0, 50);
+}
+
+// Lee CON la cuenta de escritura en que OU tiene control delegado (no escribe nada).
+const detectHits = new Map(); // userId -> [marcas de tiempo]
+router.post('/configuracion/escritura/detectar', isSuperAdmin, verifyCsrfToken, async (req, res) => {
+  const id = req.session.user.id;
+  const recent = (detectHits.get(id) || []).filter((t) => t > Date.now() - 10 * 60000);
+  if (recent.length >= 20) return res.status(429).json({ error: 'Demasiadas detecciones seguidas. Espere unos minutos.' });
+  detectHits.set(id, [...recent, Date.now()]);
+  try {
+    const current = await adWriteService.config();
+    const writeUser = String(req.body.ad_write_user || '').trim().slice(0, 255);
+    const typed = req.body.ad_write_password ? String(req.body.ad_write_password) : '';
+    const password = writeUser
+      ? (typed || (writeUser.toLowerCase() === String(current.writeUser).toLowerCase() ? (await settingsService.getAll()).ad_write_password : ''))
+      : (await adService.config()).password;
+    if (!current.url || !current.caPem) throw new Error('Primero conecte el directorio activo (arriba).');
+    if (writeUser && !password) throw new Error('Escriba la contraseña de la cuenta de escritura para detectar sus unidades.');
+    const r = await adWriteService.detectDelegation({ ...current, bindUser: writeUser || current.readUser, password });
+    return res.json({ account: writeUser || current.readUser, ous: r.ous });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
 router.post('/configuracion/escritura', isSuperAdmin, verifyCsrfToken, async (req, res, next) => {
+  const managedOus = managedOusFrom(req.body);
+  const writeUser = String(req.body.ad_write_user || '').trim().slice(0, 255);
+  const enabled = req.body.ad_writes_enabled === '1';
   try {
     await adChangeService.verifyReauth(req);
     const current = await adWriteService.config();
-    const managedOus = [...new Set(String(req.body.ad_managed_ous || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean))].slice(0, 50);
-    const writeUser = String(req.body.ad_write_user || '').trim().slice(0, 255);
     const newPassword = req.body.ad_write_password ? String(req.body.ad_write_password) : '';
-    const enabled = req.body.ad_writes_enabled === '1';
     const pairs = { ad_writes_enabled: enabled ? '1' : '0', ad_managed_ous: managedOus.join('\n'), ad_write_user: writeUser };
     if (newPassword) pairs.ad_write_password = newPassword;
     if (!writeUser) pairs.ad_write_password = '';
@@ -603,6 +640,7 @@ router.post('/configuracion/escritura', isSuperAdmin, verifyCsrfToken, async (re
   } catch (err) {
     if (err.sqlMessage) return next(err);
     req.flash('error', err.message);
+    req.session.adWriteDraft = { enabled, managedOus, writeUser };
   }
   return res.redirect('/ad/configuracion');
 });

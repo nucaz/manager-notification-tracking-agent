@@ -37,18 +37,62 @@
       <div class="form-check form-switch mb-3">
         <input class="form-check-input" type="checkbox" role="switch" id="ad_writes_enabled" name="ad_writes_enabled" value="1" <%= wcfg.enabled ? 'checked' : '' %>>
         <label class="form-check-label" for="ad_writes_enabled"><strong>Permitir cambios en el dominio</strong></label></div>
-      <div class="mb-3"><label class="form-label" for="ad_managed_ous">Unidades organizativas gestionadas (una por línea) *</label>
-        <textarea class="form-control font-monospace small" id="ad_managed_ous" name="ad_managed_ous" rows="4" list="ad_ou_lista"
-          placeholder="OU=Depilzone,DC=depilzone,DC=local"><%= wcfg.managedOus.join(String.fromCharCode(10)) %></textarea>
-        <div class="form-text">Solo se cambia lo que está dentro de estas unidades (y sus sub-unidades). Las cuentas privilegiadas nunca, estén donde estén.
-          <% if (ouList.length) { %>Disponibles: <% ouList.filter(function (o) { return o.kind === 'ou'; }).slice(0, 40).forEach(function (o, i) { %><%= i ? ' · ' : '' %><code><%= o.dn %></code><% }); %><% } %></div></div>
       <div class="mb-3"><label class="form-label" for="ad_write_user">Cuenta de escritura (recomendado: distinta de la de lectura)</label>
-        <input class="form-control font-monospace" id="ad_write_user" name="ad_write_user" placeholder="svc-gestor-escritura@depilzone.local" value="<%= wcfg.writeUser %>">
+        <input class="form-control font-monospace" id="ad_write_user" name="ad_write_user" placeholder="svc-gestor-escritura@ad.depilzone.com.pe" value="<%= wcfg.writeUser %>">
         <div class="form-text">Vacío = usa la cuenta de lectura (que entonces necesita la delegación de escritura).</div></div>
       <div class="mb-3"><label class="form-label" for="ad_write_password">Contraseña de la cuenta de escritura</label>
         <input class="form-control" type="password" id="ad_write_password" name="ad_write_password" autocomplete="new-password"
           placeholder="<%= wcfg.hasWritePassword ? 'Configurada - dejar vacío para mantenerla' : '' %>">
         <div class="form-text">Se guarda cifrada. Nunca se vuelve a mostrar.</div></div>
+      <% // OU del dominio en orden de arbol, con su profundidad; las ya gestionadas vienen marcadas.
+         const ouOnly = ouList.filter(function (o) { return o.kind === 'ou'; });
+         const lc = function (s) { return String(s || '').toLowerCase(); };
+         const ouKnown = new Set(ouOnly.map(function (o) { return lc(o.dn); }));
+         const ouKids = {};
+         ouOnly.forEach(function (o) { const k = ouKnown.has(lc(o.parent_dn)) ? lc(o.parent_dn) : ''; (ouKids[k] = ouKids[k] || []).push(o); });
+         const ouRows = [];
+         const walk = function (k, depth) { (ouKids[k] || []).sort(function (a, b) { return a.name.localeCompare(b.name, 'es'); })
+           .forEach(function (o) { ouRows.push({ o: o, depth: depth }); walk(lc(o.dn), depth + 1); }); };
+         walk('', 0);
+         const chosen = new Set(wcfg.managedOus.map(lc));
+         const typedOnly = wcfg.managedOus.filter(function (dn) { return !ouKnown.has(lc(dn)); }); %>
+      <div class="mb-3">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+          <span class="form-label mb-0">Unidades organizativas gestionadas *</span>
+          <span class="badge text-bg-secondary" id="ou_contador"></span>
+          <div class="ms-auto d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="ou_detectar"><i class="bi bi-search"></i> Detectar las delegadas a la cuenta</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="ou_todas">Todas</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="ou_ninguna">Ninguna</button>
+          </div>
+        </div>
+        <div class="alert small py-2 mb-2" id="ou_aviso" role="status" hidden></div>
+        <% if (ouRows.length) { %>
+          <input type="search" class="form-control form-control-sm mb-2" id="ou_filtro" placeholder="Filtrar unidades…" style="max-width: 20rem" aria-label="Filtrar unidades">
+          <div class="border rounded" style="max-height: 22rem; overflow: auto" id="ou_lista">
+            <% ouRows.forEach(function (r) { const o = r.o; const dc = /^ou=domain controllers,/i.test(o.dn); %>
+              <div class="ou-fila d-flex align-items-center gap-2 px-2 py-1 border-bottom small" data-dn="<%= lc(o.dn) %>" data-padre="<%= lc(o.parent_dn) %>"
+                data-texto="<%= lc(o.name + ' ' + o.dn) %>" style="padding-left: <%= 0.5 + r.depth * 1.25 %>rem !important">
+                <input class="form-check-input m-0" type="checkbox" name="ad_managed_ou" value="<%= o.dn %>" id="ou_<%= o.id %>"
+                  <%= chosen.has(lc(o.dn)) ? 'checked' : '' %> <%= dc ? 'disabled' : '' %> data-propio="<%= chosen.has(lc(o.dn)) ? '1' : '0' %>">
+                <label class="form-check-label flex-grow-1" for="ou_<%= o.id %>" title="<%= o.dn %>"><i class="bi bi-folder2"></i> <%= o.name %>
+                  <% if (dc) { %><span class="text-muted">(nunca: controladores de dominio)</span><% } %></label>
+                <span class="ou-marca"></span>
+                <span class="text-muted text-nowrap" style="font-variant-numeric: tabular-nums" title="Usuarios · equipos · grupos (directos)">
+                  <i class="bi bi-person"></i> <%= o.users_count %> <i class="bi bi-pc-display ms-1"></i> <%= o.computers_count %> <i class="bi bi-people ms-1"></i> <%= o.groups_count %></span>
+              </div>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="small text-muted">Lea el dominio primero (Resumen → Leer ahora) para elegir de la lista.</div>
+        <% } %>
+        <div class="form-text">Solo se cambia lo que está dentro de las unidades marcadas y sus sub-unidades (al marcar una, sus sub-unidades quedan incluidas).
+          Las cuentas privilegiadas y los controladores de dominio nunca, estén donde estén. <strong>Detectar</strong> entra con la cuenta de escritura y marca
+          las unidades donde el dominio le dio control delegado; no cambia nada en el dominio.</div>
+        <details class="mt-2" <%= typedOnly.length ? 'open' : '' %>><summary class="small">Escribir un DN a mano (una por línea)</summary>
+          <textarea class="form-control font-monospace small mt-1" id="ad_managed_ous" name="ad_managed_ous" rows="3"
+            placeholder="OU=Sedes,DC=ad,DC=empresa,DC=com"><%= typedOnly.join(String.fromCharCode(10)) %></textarea></details>
+      </div>
       <%- include('_reauth') %>
       <div><button class="btn btn-warning"><i class="bi bi-shield-check"></i> Probar y guardar</button></div>
     </form>
@@ -82,4 +126,77 @@
     </div>
   </div>
 </div>
+<script>
+(function () {
+  const form = document.getElementById('ad_escritura');
+  if (!form) return;
+  const filas = Array.from(form.querySelectorAll('.ou-fila'));
+  const caja = function (f) { return f.querySelector('input[type=checkbox]'); };
+  const porDn = {};
+  filas.forEach(function (f) { porDn[f.dataset.dn] = f; });
+  const esDc = function (f) { return /^ou=domain controllers,/.test(f.dataset.dn); };
+  // Una OU queda "incluida" si alguna de arriba esta marcada por el usuario.
+  const ancestroMarcado = function (f) {
+    for (let p = porDn[f.dataset.padre]; p; p = porDn[p.dataset.padre]) if (caja(p).dataset.propio === '1') return true;
+    return false;
+  };
+  const contador = document.getElementById('ou_contador');
+  const pintar = function () {
+    let n = 0;
+    filas.forEach(function (f) {
+      const c = caja(f);
+      if (esDc(f)) return;
+      const inc = ancestroMarcado(f);
+      c.disabled = inc;
+      c.checked = inc || c.dataset.propio === '1';
+      f.classList.toggle('text-body-secondary', inc);
+      f.title = inc ? 'Incluida por la unidad de arriba' : '';
+      if (!inc && c.checked) n++;
+    });
+    if (contador) contador.textContent = n ? n + ' elegida(s)' : 'ninguna elegida';
+  };
+  filas.forEach(function (f) { caja(f).addEventListener('change', function () { this.dataset.propio = this.checked ? '1' : '0'; pintar(); }); });
+  const marcar = function (fn) { filas.forEach(function (f) { if (!esDc(f)) caja(f).dataset.propio = fn(f) ? '1' : '0'; }); pintar(); };
+  const raiz = function (f) { return !porDn[f.dataset.padre]; };
+  document.getElementById('ou_todas').addEventListener('click', function () { marcar(raiz); });
+  document.getElementById('ou_ninguna').addEventListener('click', function () { marcar(function () { return false; }); });
+  const filtro = document.getElementById('ou_filtro');
+  if (filtro) filtro.addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    filas.forEach(function (f) { f.hidden = !!q && f.dataset.texto.indexOf(q) < 0; });
+  });
+  // Detectar: lee con la cuenta de escritura donde tiene control delegado y marca las de arriba.
+  const aviso = document.getElementById('ou_aviso');
+  const decir = function (tipo, txt) { aviso.className = 'alert small py-2 mb-2 alert-' + tipo; aviso.textContent = txt; aviso.hidden = false; };
+  const boton = document.getElementById('ou_detectar');
+  boton.addEventListener('click', function () {
+    boton.disabled = true;
+    decir('secondary', 'Consultando al controlador de dominio con la cuenta de escritura…');
+    const datos = new URLSearchParams();
+    datos.set('_csrf', form.querySelector('input[name=_csrf]').value);
+    datos.set('ad_write_user', form.querySelector('#ad_write_user').value);
+    datos.set('ad_write_password', form.querySelector('#ad_write_password').value);
+    fetch('/ad/configuracion/escritura/detectar', { method: 'POST', body: datos, credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.json().catch(function () { return { error: 'Respuesta inesperada del servidor (' + r.status + ').' }; }); })
+      .then(function (j) {
+        if (j.error) { decir('danger', j.error); return; }
+        const deleg = new Set(j.ous.map(function (o) { return o.dn.toLowerCase(); }));
+        filas.forEach(function (f) {
+          const m = f.querySelector('.ou-marca');
+          m.innerHTML = deleg.has(f.dataset.dn) ? '<span class="badge text-bg-success">delegada</span>' : '';
+        });
+        if (!deleg.size) { decir('warning', 'La cuenta ' + j.account + ' no tiene control delegado en ninguna unidad organizativa. Delegue con scripts/windows/ad-cuenta-servicio.ps1 (opción 2).'); return; }
+        // Las de arriba: delegadas cuyo padre no lo esta (sin la de controladores de dominio).
+        marcar(function (f) { return deleg.has(f.dataset.dn) && !deleg.has(f.dataset.padre) && !esDc(f); });
+        const arriba = filas.filter(function (f) { return caja(f).dataset.propio === '1'; }).length;
+        const fuera = j.ous.filter(function (o) { return !porDn[o.dn.toLowerCase()]; }).length;
+        decir('success', 'La cuenta ' + j.account + ' tiene control delegado en ' + deleg.size + ' unidad(es); se marcaron ' + arriba
+          + ' (cada una incluye sus sub-unidades).' + (fuera ? ' ' + fuera + ' no aparecen en la lista: lea el dominio de nuevo.' : '') + ' Revise y guarde.');
+      })
+      .catch(function () { decir('danger', 'No se pudo consultar. Revise la conexión e intente de nuevo.'); })
+      .finally(function () { boton.disabled = false; });
+  });
+  pintar();
+})();
+</script>
 <%- include('../partials/foot') %>

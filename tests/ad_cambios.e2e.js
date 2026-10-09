@@ -175,7 +175,25 @@ async function main() {
     check('Sin confirmar la identidad no se guarda la escritura', !cfg.ad_writes_enabled && (await flashes()).includes('contraseña de confirmación no es correcta'));
     await post('/ad/configuracion/escritura', { ...writeForm, ad_managed_ous: `OU=NoExiste,${B}`, reauth_password: PASS });
     check('Una OU gestionada que no existe: se prueba y NO se guarda', !cfg.ad_writes_enabled && (await flashes()).includes('no existen'));
-    await post('/ad/configuracion/escritura', { ...writeForm, reauth_password: PASS });
+    // Detectar: el DC dice en que OU puede crear la cuenta de escritura (sin escribir nada).
+    const det = await post('/ad/configuracion/escritura/detectar', { ad_write_user: E.AD_TEST_WRITE_USER, ad_write_password: E.AD_TEST_WRITE_PASSWORD });
+    const detJ = JSON.parse(det.text || '{}');
+    const detDns = (detJ.ous || []).map((o) => o.dn.toLowerCase());
+    check('Detectar las OU delegadas: OU=Depilzone y sus sub-unidades, no OU=Servicios', det.status === 200 && detDns.includes(MANAGED.toLowerCase())
+      && detDns.includes(`ou=ventas,${MANAGED}`.toLowerCase()) && !detDns.includes(`ou=servicios,${B}`.toLowerCase())
+      && detJ.ous.find((o) => o.dn.toLowerCase() === MANAGED.toLowerCase()).classes.includes('user'));
+    const detBad = await post('/ad/configuracion/escritura/detectar', { ad_write_user: E.AD_TEST_WRITE_USER, ad_write_password: 'no-es-esta' });
+    check('Detectar con una contraseña errónea: error claro, sin lista', detBad.status === 400 && /error/.test(detBad.text) && !/"ous"/.test(detBad.text));
+    user = ADMIN;
+    check('Un administrador no puede usar Detectar', (await post('/ad/configuracion/escritura/detectar', { ad_write_user: E.AD_TEST_WRITE_USER, ad_write_password: E.AD_TEST_WRITE_PASSWORD })).location === '/');
+    user = SUPER;
+    await post('/ad/configuracion/escritura', { ...writeForm, ad_managed_ous: '', ad_managed_ou: [MANAGED, `OU=Servicios,${B}`], reauth_password: PASS });
+    check('Una OU sin delegación para la cuenta: NO se guarda y dice cuál', !cfg.ad_writes_enabled && (await flashes()).includes('no tiene control delegado'));
+    const cfgPage = (await get('/ad/configuracion')).text;
+    check('Tras el error, el formulario conserva lo elegido (casillas y cuenta) sin la contraseña', /value="OU=Servicios,[^"]*"[^>]*checked/.test(cfgPage)
+      && cfgPage.includes(`value="${E.AD_TEST_WRITE_USER}"`) && !cfgPage.includes(E.AD_TEST_WRITE_PASSWORD));
+    // Casillas: una OU dentro de otra elegida sobra (la de arriba la incluye).
+    await post('/ad/configuracion/escritura', { ...writeForm, ad_managed_ous: '', ad_managed_ou: [MANAGED, `OU=Ventas,${MANAGED}`], reauth_password: PASS });
     check('Escritura verificada y guardada (cuenta delegada, OU gestionada)', cfg.ad_writes_enabled === '1' && cfg.ad_managed_ous === MANAGED
       && cfg.ad_write_password === E.AD_TEST_WRITE_PASSWORD && !(await get('/ad/configuracion')).text.includes(E.AD_TEST_WRITE_PASSWORD));
 
@@ -296,7 +314,8 @@ async function main() {
     check('Superadmin da un permiso temporal (1 hora, con confirmación)', grant && grant.operations === 'bloquear,contrasenas' && !grant.revoked_at);
     user = ADMIN;
     const fg = await get(`/ad/cambios/nuevo?op=user_disable&id=${luciaRow.id}`);
-    check('Con permiso, el formulario avisa que se ejecuta de inmediato y pide el código 2FA', fg.text.includes('permiso temporal') && fg.text.includes('reauth_code'));
+    check('Con permiso, el formulario avisa que se ejecuta de inmediato y pide el código 2FA (con su cuenta regresiva)', fg.text.includes('permiso temporal') && fg.text.includes('reauth_code')
+      && fg.text.includes('id="reauth_reloj"') && fg.text.includes('cambia cada 30 segundos'));
     await post('/ad/cambios', { op: 'user_disable', id: luciaRow.id, nonce: nonceOf(fg.text), reason: '', reauth_code: '000000' });
     check('Código 2FA equivocado: no se ejecuta', ((await uac('lucia.prueba')) & 2) === 0);
     await doOp('user_disable', luciaRow.id, await reauthAdmin());

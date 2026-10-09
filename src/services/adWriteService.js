@@ -533,6 +533,25 @@ async function executeMany(items) {
 }
 
 // Prueba la cuenta de escritura (solo inicia sesion y lee la raiz) y que las OU gestionadas existan.
+// Que puede crear la cuenta en cada OU, segun el propio DC: el atributo
+// calculado allowedChildClassesEffective, leido CON la cuenta de escritura.
+// No escribe nada. Devuelve [{ dn, classes }] solo de las OU con algo delegado.
+const DELEGATION_CLASSES = ['user', 'group', 'computer', 'organizationalunit'];
+async function delegatedOus(ctx) {
+  const rows = await search(ctx.client, ctx.base, { filter: '(objectClass=organizationalUnit)', attributes: ['distinguishedName', 'allowedChildClassesEffective'] });
+  return rows.map((e) => ({ dn: str(e.distinguishedName || e.dn, 700), classes: list(e.allowedChildClassesEffective).map(lower).filter((c) => DELEGATION_CLASSES.includes(c)) }))
+    .filter((o) => o.classes.length);
+}
+
+async function detectDelegation(cfgIn) {
+  const ctx = await open(cfgIn);
+  try {
+    return { baseDn: ctx.base, ous: await delegatedOus(ctx) };
+  } finally {
+    await ctx.client.unbind().catch(() => {});
+  }
+}
+
 async function testWrite(cfgIn) {
   const ctx = await open(cfgIn);
   try {
@@ -543,6 +562,13 @@ async function testWrite(cfgIn) {
       if (!r.length) missing.push(dn);
     }
     if (missing.length) throw new Error(`Estas unidades organizativas no existen o la cuenta no las ve: ${missing.join('; ')}`);
+    // Si el DC informa la delegacion, toda OU elegida debe tenerla (si no, cada cambio fallaria ahi).
+    const delegated = await delegatedOus(ctx).catch(() => null);
+    if (delegated && delegated.length) {
+      const set = new Set(delegated.map((o) => lower(o.dn)));
+      const without = cfgIn.managedOus.filter((dn) => !set.has(lower(dn)));
+      if (without.length) throw new Error(`La cuenta de escritura no tiene control delegado en: ${without.join('; ')}. Quítelas o delegue en ellas (scripts/windows/ad-cuenta-servicio.ps1).`);
+    }
     return { baseDn: ctx.base };
   } finally {
     await ctx.client.unbind().catch(() => {});
@@ -578,6 +604,6 @@ function scheduleResync() {
 }
 
 module.exports = {
-  OPS, GROUPS, USER_FIELDS, GROUP_TYPES, options, config, notReady, inManaged, under, validateParams, executeMany, testWrite, readLive, generatePassword,
+  OPS, GROUPS, USER_FIELDS, GROUP_TYPES, options, config, notReady, inManaged, under, validateParams, executeMany, testWrite, detectDelegation, readLive, generatePassword,
   _: { guidFilter, escapeRdn, firstRdn, explainWrite },
 };
