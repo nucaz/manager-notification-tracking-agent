@@ -28,7 +28,7 @@
    const ouMenu = function (o) {
      const q2 = encodeURIComponent(o.dn);
      const m = [['Ver usuarios (' + o.users_count + ')', 'bi-person', '/ad/usuarios?q=' + q2], ['Ver equipos (' + o.computers_count + ')', 'bi-pc-display', '/ad/equipos?q=' + q2],
-       ['Ver grupos (' + o.groups_count + ')', 'bi-people', '/ad/grupos?q=' + q2]];
+       ['Ver grupos (' + o.groups_count + ')', 'bi-people', '/ad/grupos?q=' + q2], ['Ver directivas (GPO) que le aplican', 'bi-file-earmark-ruled', '/ad/gpo/aplicacion?q=' + q2]];
      if (mngd(o.dn)) {
        m.push(['-'], ['Crear usuario aquí…', 'bi-person-plus', '/ad/cambios/nuevo?op=user_create&id=' + o.id], ['Crear grupo aquí…', 'bi-people', '/ad/cambios/nuevo?op=group_create&id=' + o.id],
          ['Crear equipo aquí…', 'bi-pc-display', '/ad/cambios/nuevo?op=computer_create&id=' + o.id], ['Crear sub-unidad…', 'bi-folder-plus', '/ad/cambios/nuevo?op=ou_create&id=' + o.id]);

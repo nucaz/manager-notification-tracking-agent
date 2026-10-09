@@ -1,7 +1,7 @@
 <%# Encabezado comun del directorio activo: pestañas, ultima lectura y "Leer ahora". %>
 <% const sum = run && run.summary; const TABS = [['resumen', '/ad', 'Resumen', 'bi-speedometer2'], ['usuarios', '/ad/usuarios', 'Usuarios', 'bi-person'],
      ['grupos', '/ad/grupos', 'Grupos', 'bi-people'], ['unidades', '/ad/unidades', 'Unidades organizativas', 'bi-diagram-3'],
-     ['equipos', '/ad/equipos', 'Equipos', 'bi-pc-display'], ['dns', '/ad/dns', 'DNS', 'bi-hdd-network'], ['papelera', '/ad/papelera', 'Papelera', 'bi-trash']];
+     ['equipos', '/ad/equipos', 'Equipos', 'bi-pc-display'], ['gpo', '/ad/gpo', 'Directivas (GPO)', 'bi-file-earmark-ruled'], ['dns', '/ad/dns', 'DNS', 'bi-hdd-network'], ['papelera', '/ad/papelera', 'Papelera', 'bi-trash']];
    if (locals.canChange) TABS.push(['cambios', '/ad/cambios', 'Cambios', 'bi-clipboard-check']); %>
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
   <div>

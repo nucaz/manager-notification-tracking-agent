@@ -197,6 +197,38 @@ async function test(cfgIn) {
   }
 }
 
+// ------------------------------ directivas de grupo ------------------------------
+// "{GUID}" o "GUID" -> guid en minusculas, sin llaves (o '' si no lo es).
+const braces = (v) => { const m = /\{?([0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})\}?/.exec(String(v || '')); return m ? m[1].toLowerCase() : ''; };
+// gPLink: "[LDAP://cn={GUID},cn=policies,...;N][...]". N: 1 = vinculo deshabilitado, 2 = exigido (3 = ambos).
+// En el texto, el ULTIMO es el de mayor precedencia.
+function parseGpLink(raw) {
+  const out = [];
+  const re = /\[LDAP:\/\/([^;\]]+);(\d+)\]/gi;
+  let m;
+  while ((m = re.exec(String(raw || '')))) {
+    const guid = braces(m[1]);
+    if (guid) out.push({ guid, dn: m[1], disabled: !!(Number(m[2]) & 1), enforced: !!(Number(m[2]) & 2) });
+  }
+  return out;
+}
+// gPC*ExtensionNames: "[{CSE}{herramienta}...][...]": el primer GUID de cada grupo es la extension con configuracion.
+function parseGpExt(raw) {
+  const out = [];
+  const re = /\[\{([0-9A-Fa-f-]{36})\}/g;
+  let m;
+  while ((m = re.exec(String(raw || '')))) {
+    const g = m[1].toLowerCase();
+    if (!/^0{8}-/.test(g) && !out.includes(g)) out.push(g);
+  }
+  return out;
+}
+// msWMI-Parm2: "1;3;10;61;WQL;root\\CIMv2;Select ...;" -> solo las consultas.
+function wmiQuery(raw) {
+  const parts = String(raw || '').split(';WQL;').slice(1).map((p) => { const i = p.indexOf(';'); const q = i > -1 ? p.slice(i + 1) : p; return q.replace(/;\d*;?\d*;?\d*$/, '').replace(/;$/, '').trim(); });
+  return parts.filter(Boolean).join(' | ').slice(0, 2000) || null;
+}
+
 // ------------------------------ lectura completa ------------------------------
 async function sync(user = null) {
   const cfg = await config();
@@ -241,7 +273,7 @@ async function sync(user = null) {
       attributes: ['objectGUID', 'objectSid', 'cn', 'sAMAccountName', 'distinguishedName', 'groupType', 'description', 'member'] });
     // ---- OUs y contenedores de primer nivel
     const ous = await search(client, base, { filter: '(|(objectClass=organizationalUnit)(&(objectClass=container)(|(cn=Users)(cn=Computers))))',
-      explicitBufferAttributes: ['objectGUID'], attributes: ['objectGUID', 'ou', 'cn', 'distinguishedName', 'description', 'objectClass'] });
+      explicitBufferAttributes: ['objectGUID'], attributes: ['objectGUID', 'ou', 'cn', 'distinguishedName', 'description', 'objectClass', 'gPOptions'] });
     // ---- equipos
     const computers = await search(client, base, { filter: '(objectClass=computer)', explicitBufferAttributes: ['objectGUID'],
       attributes: ['objectGUID', 'cn', 'dNSHostName', 'operatingSystem', 'operatingSystemVersion', 'description', 'distinguishedName', 'userAccountControl',
@@ -321,6 +353,23 @@ async function sync(user = null) {
       dnsOk = false;
       notes.push(`No se pudieron leer las zonas DNS integradas en AD: ${err.message}`);
     }
+    // Directivas de grupo: objetos, paquetes de software, filtros WMI y vinculos (dominio, OU y sitios).
+    let gpo = null;
+    try {
+      const policies = `CN=Policies,CN=System,${base}`;
+      gpo = {
+        gpos: await search(client, policies, { scope: 'one', filter: '(objectClass=groupPolicyContainer)',
+          attributes: ['cn', 'displayName', 'distinguishedName', 'gPCFileSysPath', 'versionNumber', 'flags', 'gPCMachineExtensionNames', 'gPCUserExtensionNames',
+            'gPCWQLFilter', 'whenCreated', 'whenChanged'] }),
+        packages: await search(client, policies, { filter: '(objectClass=packageRegistration)', attributes: ['displayName', 'msiFileList', 'distinguishedName'] }).catch(() => []),
+        wmi: await search(client, `CN=SOM,CN=WMIPolicy,CN=System,${base}`, { scope: 'one', filter: '(objectClass=msWMI-Som)',
+          attributes: ['msWMI-ID', 'msWMI-Name', 'msWMI-Parm2'] }).catch(() => []),
+        holders: await search(client, base, { filter: '(gPLink=*)', attributes: ['distinguishedName', 'gPLink', 'objectClass', 'ou', 'name'] }),
+        sites: await search(client, `CN=Sites,${configNc}`, { scope: 'one', filter: '(&(objectClass=site)(gPLink=*))', attributes: ['distinguishedName', 'gPLink', 'cn'] }).catch(() => []),
+      };
+    } catch (err) {
+      notes.push(`No se pudieron leer las directivas de grupo (GPO): ${err.message}`);
+    }
     const cert = await peerCertificate(cfg);
     await client.unbind().catch(() => {});
     client = null;
@@ -339,12 +388,13 @@ async function sync(user = null) {
       for (const o of ous) {
         const kind = list(o.objectClass).map((x) => String(x).toLowerCase()).includes('organizationalunit') ? 'ou' : 'contenedor';
         await conn.query(
-          `INSERT INTO ad_ous (object_guid, name, dn, parent_dn, kind, description, users_count, computers_count, groups_count, seen_at, removed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+          `INSERT INTO ad_ous (object_guid, name, dn, parent_dn, kind, description, users_count, computers_count, groups_count, gp_block, seen_at, removed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
            ON DUPLICATE KEY UPDATE name = VALUES(name), dn = VALUES(dn), parent_dn = VALUES(parent_dn), kind = VALUES(kind), description = VALUES(description),
-             users_count = VALUES(users_count), computers_count = VALUES(computers_count), groups_count = VALUES(groups_count), seen_at = VALUES(seen_at), removed_at = NULL`,
+             users_count = VALUES(users_count), computers_count = VALUES(computers_count), groups_count = VALUES(groups_count), gp_block = VALUES(gp_block),
+             seen_at = VALUES(seen_at), removed_at = NULL`,
           [guidOf(o.objectGUID), str(o.ou) || str(o.cn) || rdnValue(o.dn), o.dn, parentDn(o.dn), kind, str(o.description),
-            count(users, o.dn), count(computers, o.dn), count(groups, o.dn), stamp]
+            count(users, o.dn), count(computers, o.dn), count(groups, o.dn), Number(str(o.gPOptions) || 0) & 1 ? 1 : 0, stamp]
         );
       }
 
@@ -451,6 +501,53 @@ async function sync(user = null) {
         for (const [id, ips] of ipsByComputer) await conn.query('UPDATE ad_computers SET ips = ? WHERE id = ?', [ips.join(', ').slice(0, 255), id]);
       }
 
+      // Directivas de grupo: se reemplazan (los vinculos caen con ellas).
+      if (gpo) {
+        const wmiById = new Map(gpo.wmi.map((w) => [braces(str(w['msWMI-ID'], 60)), w]));
+        const pkgs = new Map();
+        for (const p of gpo.packages) {
+          const m = /,CN=(Machine|User),CN=\{([0-9A-Fa-f-]{36})\},CN=Policies,/i.exec(p.dn);
+          if (!m) continue;
+          const k = m[2].toLowerCase();
+          pkgs.set(k, [...(pkgs.get(k) || []), { name: str(p.displayName, 255) || rdnValue(p.dn), path: (list(p.msiFileList).map(String)[0] || '').replace(/^\d+:/, '').slice(0, 500),
+            scope: m[1].toLowerCase() === 'machine' ? 'equipo' : 'usuario' }]);
+        }
+        await conn.query('DELETE FROM ad_gpo_links');
+        await conn.query('DELETE FROM ad_gpos');
+        const idByGuid = new Map();
+        for (const g of gpo.gpos) {
+          const guid = braces(str(g.cn, 60));
+          if (!guid) continue;
+          const ver = Number(str(g.versionNumber) || 0);
+          const flags = Number(str(g.flags) || 0);
+          const wf = /\{([0-9A-Fa-f-]{36})\}/.exec(str(g.gPCWQLFilter, 300) || '');
+          const w = wf ? wmiById.get(wf[1].toLowerCase()) : null;
+          const [r] = await conn.query(
+            `INSERT INTO ad_gpos (gpo_guid, name, dn, sysvol_path, computer_version, user_version, computer_enabled, user_enabled, computer_ext, user_ext,
+               wmi_filter, wmi_query, software_json, when_created, when_changed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [guid, str(g.displayName, 255) || guid, g.dn, str(g.gPCFileSysPath, 500), ver & 0xffff, (ver >>> 16) & 0xffff, flags & 2 ? 0 : 1, flags & 1 ? 0 : 1,
+              parseGpExt(str(g.gPCMachineExtensionNames, 20000)).join(',') || null, parseGpExt(str(g.gPCUserExtensionNames, 20000)).join(',') || null,
+              w ? str(w['msWMI-Name'], 255) : (wf ? `Filtro ${wf[1]} (no encontrado)` : null), w ? wmiQuery(str(w['msWMI-Parm2'], 5000)) : null,
+              pkgs.has(guid) ? JSON.stringify(pkgs.get(guid)) : null, sqlDate(genTime(g.whenCreated)), sqlDate(genTime(g.whenChanged))]
+          );
+          idByGuid.set(guid, r.insertId);
+        }
+        const linkRows = [];
+        const addLinks = (dn, kind, name, raw) => {
+          const links = parseGpLink(str(raw, 60000));
+          links.forEach((l, i) => linkRows.push([idByGuid.get(l.guid) || null, l.guid, String(dn).slice(0, 700), kind, String(name || rdnValue(dn)).slice(0, 255),
+            links.length - i, l.enforced ? 1 : 0, l.disabled ? 0 : 1]));
+        };
+        for (const h of gpo.holders) {
+          const isOu = list(h.objectClass).map((x) => String(x).toLowerCase()).includes('organizationalunit');
+          addLinks(h.dn, isOu ? 'ou' : 'dominio', isOu ? (str(h.ou) || rdnValue(h.dn)) : domainDns, h.gPLink);
+        }
+        for (const st of gpo.sites) addLinks(st.dn, 'sitio', str(st.cn) || rdnValue(st.dn), st.gPLink);
+        for (let i = 0; i < linkRows.length; i += 500) {
+          await conn.query('INSERT INTO ad_gpo_links (gpo_id, gpo_guid, target_dn, target_kind, target_name, link_order, enforced, link_enabled) VALUES ?', [linkRows.slice(i, i + 500)]);
+        }
+      }
+
       // Papelera
       if (deletedOk) {
         await conn.query('DELETE FROM ad_deleted');
@@ -469,7 +566,7 @@ async function sync(user = null) {
         domain: domainDns, baseDn: base, dc: str(root.dnsHostName), domainLevel, recycleBin, policy, dcs: dcResults, cert,
         deletedEmpty: deletedOk && deleted.length === 0,
         counts: { users: users.length, groups: groups.length, ous: ous.length, computers: computers.length, deleted: deletedOk ? deleted.length : null,
-          dns: dnsOk ? dnsNodes.length : null },
+          dns: dnsOk ? dnsNodes.length : null, gpos: gpo ? gpo.gpos.length : null },
         privileged: privGroups.map((p) => ({ key: p.key, label: p.label })), notes,
       };
       await conn.query("UPDATE ad_sync_runs SET finished_at = NOW(), status = ?, summary_json = ? WHERE id = ?",
@@ -623,5 +720,5 @@ function escapeDn(dn) {
 module.exports = {
   PRIVILEGED, PRIVILEGED_LABEL, IDLE_DAYS, config, validateConfig, test, sync, peerCertificate,
   lastRun, users, user, computers, groups, group, ous, deleted, dns, overview,
-  _: { fileTime, genTime, guidOf, sidOf, parseDnsRecord, parentDn, rdnValue, escapeDn, hostOf, connect, search, explain, str, list, UAC, IN_CHAIN, SHOW_DELETED },
+  _: { parseGpLink, parseGpExt, wmiQuery, fileTime, genTime, guidOf, sidOf, parseDnsRecord, parentDn, rdnValue, escapeDn, hostOf, connect, search, explain, str, list, UAC, IN_CHAIN, SHOW_DELETED },
 };

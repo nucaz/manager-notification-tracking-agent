@@ -59,4 +59,61 @@ acl "DC=prueba.local,CN=MicrosoftDNS,DC=DomainDnsZones,$B" "(A;CI;GA;;;$SID)"
 acl "DC=0.10.10.in-addr.arpa,CN=MicrosoftDNS,DC=DomainDnsZones,$B" "(A;CI;GA;;;$SID)" 2>/dev/null || true
 acl "$B" "(OA;;CR;45ec5156-db7e-47bb-b53f-dbeb2d03c40f;;$SID)"
 acl "CN=Deleted Objects,$B" "(A;;LCRPWP;;;$SID)"
+
+# Directivas de grupo de prueba, directo en la base del DC (no hace falta SYSVOL
+# para lo que lee la aplicacion): una exigida con filtro WMI, una con scripts,
+# software y unidades de red, y una vacia sin vincular. OU=Sistemas bloquea la
+# herencia y OU=Depilzone tiene un vinculo deshabilitado y otro huerfano.
+L=/var/lib/samba/private/sam.ldb
+P="CN=Policies,CN=System,$B"
+gpo() { # guid nombre flags version extensiones-de-equipo extensiones-de-usuario
+  { echo "dn: CN={$1},$P"; echo "objectClass: groupPolicyContainer"; echo "displayName: $2"
+    echo "gPCFileSysPath: \\\\prueba.local\\sysvol\\prueba.local\\Policies\\{$1}"; echo "gPCFunctionalityVersion: 2"
+    echo "flags: $3"; echo "versionNumber: $4"
+    [ -n "$5" ] && echo "gPCMachineExtensionNames: $5"; [ -n "$6" ] && echo "gPCUserExtensionNames: $6"; true; } | ldbadd -H $L >/dev/null 2>&1 || true
+}
+G1=11111111-1111-1111-1111-111111111111; G2=22222222-2222-2222-2222-222222222222; G3=33333333-3333-3333-3333-333333333333
+gpo $G1 "Bloqueo de pantalla" 0 131075 "[{35378EAC-683F-11D2-A89A-00C04FBBCFA2}{D02B1F72-3407-48AE-BA88-E8213C6761F1}]" ""
+gpo $G2 "Scripts de inicio y software" 0 65538 "[{42B5FAAE-6536-11D2-AE5A-0000F87571E3}{40B6664F-4972-11D1-A7CA-0000F87571E3}][{C6DC5466-785A-11D2-84D0-00C04FB169F7}{942A8E4F-A261-11D1-A760-00C04FB9603F}]" "[{5794DAFD-BE60-433F-88A2-1A31939AC01F}{2EA1A81B-48E5-45E9-8BB7-A6E3AC170006}]"
+gpo $G3 "Sin vincular y vacia" 3 0 "" ""
+ldbadd -H $L >/dev/null 2>&1 <<EOF || true
+dn: CN=Machine,CN={$G2},$P
+objectClass: container
+
+dn: CN=Class Store,CN=Machine,CN={$G2},$P
+objectClass: classStore
+
+dn: CN=aaaaaaaa-0000-0000-0000-000000000001,CN=Class Store,CN=Machine,CN={$G2},$P
+objectClass: packageRegistration
+displayName: 7-Zip 24 (x64)
+msiFileList: 0:\\\\srv-archivos\\software\\7z2408-x64.msi
+packageFlags: 1610612736
+
+dn: CN={44444444-4444-4444-4444-444444444444},CN=SOM,CN=WMIPolicy,CN=System,$B
+objectClass: msWMI-Som
+msWMI-ID: {44444444-4444-4444-4444-444444444444}
+msWMI-Name: Solo Windows 11
+msWMI-Parm2: 1;3;10;61;WQL;root\\CIMv2;Select * from Win32_OperatingSystem where Version like "10.0.2%";
+EOF
+ldbmodify -H $L >/dev/null 2>&1 <<EOF || true
+dn: OU=Depilzone,$B
+changetype: modify
+replace: gPLink
+gPLink: [LDAP://cn={99999999-9999-9999-9999-999999999999},cn=policies,cn=system,$B;0][LDAP://cn={$G2},cn=policies,cn=system,$B;1][LDAP://cn={$G1},cn=policies,cn=system,$B;2]
+
+dn: OU=Ventas,OU=Depilzone,$B
+changetype: modify
+replace: gPLink
+gPLink: [LDAP://cn={$G2},cn=policies,cn=system,$B;0]
+
+dn: OU=Sistemas,OU=Depilzone,$B
+changetype: modify
+replace: gPOptions
+gPOptions: 1
+
+dn: CN={$G1},$P
+changetype: modify
+replace: gPCWQLFilter
+gPCWQLFilter: [prueba.local;{44444444-4444-4444-4444-444444444444};0]
+EOF
 echo SEMBRADO

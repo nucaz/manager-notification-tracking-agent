@@ -14,6 +14,7 @@ const { verifyCsrfToken } = require('../middleware/csrf');
 const adService = require('../services/adService');
 const adWriteService = require('../services/adWriteService');
 const adChangeService = require('../services/adChangeService');
+const adGpoService = require('../services/adGpoService');
 const clinicService = require('../services/clinicService');
 const settingsService = require('../services/settingsService');
 const auditService = require('../services/auditService');
@@ -122,6 +123,16 @@ const FILTERS = {
     dc: ['Controladores de dominio', (c) => c.is_dc],
   },
   grupos: { privilegiados: ['Grupos privilegiados', (g) => g.privileged] },
+  gpo: {
+    sin_vincular: ['Sin vincular (no se aplican en ningún sitio)', (g) => !g.links.length],
+    vacias: ['Vacías (nunca se les configuró nada)', (g) => !g.computer_version && !g.user_version],
+    deshabilitadas: ['Deshabilitadas por completo', (g) => g.status === 'Deshabilitada'],
+    scripts: ['Con scripts o tareas programadas', (g) => g.kinds.includes('script')],
+    software: ['Con despliegue de software', (g) => g.kinds.includes('software') || g.software.length > 0],
+    restricciones: ['Con restricciones', (g) => g.kinds.includes('restriccion')],
+    seguridad: ['Con configuración de seguridad', (g) => g.kinds.includes('seguridad')],
+    por_revisar: ['Con algo por revisar', (g) => g.notes.length > 0],
+  },
   dns: { huerfanos: ['Registros de host sin equipo en AD', (r) => !r.computer_id && ['A', 'AAAA'].includes(r.rtype) && !SPECIAL_DNS(r)] },
 };
 const SEARCH = {
@@ -129,6 +140,8 @@ const SEARCH = {
   grupos: (g) => [g.name, g.sam, g.description, g.dn],
   equipos: (c) => [c.name, c.dns_host, c.os, c.ips, c.description, c.dn],
   dns: (r) => [r.zone, r.name, r.data, r.computer_name],
+  gpo: (g) => [g.name, g.gpo_guid, g.wmi_filter, g.status, ...g.links.map((l) => l.target_name), ...g.links.map((l) => l.target_dn),
+    ...g.computer.map((e) => e.label), ...g.user.map((e) => e.label), ...g.software.map((s) => `${s.name} ${s.path}`)],
   papelera: (d) => [d.name, d.sam, d.last_known_parent, d.object_class],
 };
 function listFilter(kind, req, items) {
@@ -157,11 +170,11 @@ function listFilter(kind, req, items) {
 
 router.get('/', async (req, res, next) => {
   try {
-    const [b, ov] = await Promise.all([base(req), adService.overview()]);
+    const [b, ov, gpoOv] = await Promise.all([base(req), adService.overview(), adGpoService.overview()]);
     // Antiguedad de la ultima conexion de los usuarios habilitados.
     const tramos = Object.fromEntries(clinicService.BUCKETS.map((x) => [x.key, 0]));
     ov.lastSeen.forEach((u) => { tramos[clinicService.bucketOf(u.last_seen)] += 1; });
-    res.render('ad/index', { title: 'Directorio activo', tab: 'resumen', ...b, ov, tramos, ...VIEW });
+    res.render('ad/index', { title: 'Directorio activo', tab: 'resumen', ...b, ov, gpoOv, tramos, ...VIEW });
   } catch (err) {
     next(err);
   }
@@ -238,6 +251,40 @@ router.get('/dns', async (req, res, next) => {
     res.render('ad/dns', { title: 'Directorio activo: DNS', tab: 'dns', ...(await base(req)), ...listFilter('dns', req, await adService.dns()), ...VIEW });
   } catch (err) {
     next(err);
+  }
+});
+
+// ------------------------------ directivas de grupo (solo lectura) ------------------------------
+router.get('/gpo', async (req, res, next) => {
+  try {
+    res.render('ad/gpos', { title: 'Directorio activo: directivas (GPO)', tab: 'gpo', ...(await base(req)), ...listFilter('gpo', req, await adGpoService.list()),
+      gpoOv: await adGpoService.overview(), orphans: await adGpoService.orphanLinks(), KINDS: adGpoService.KINDS, FILTROS: FILTERS.gpo, ...VIEW });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Donde aplica cada directiva: dominio y cada unidad, con lo vinculado y lo heredado.
+router.get('/gpo/aplicacion', async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim().slice(0, 100);
+    res.render('ad/gpo_apply', { title: 'Directorio activo: dónde aplican las GPO', tab: 'gpo', ...(await base(req)), app: await adGpoService.application(), q,
+      KINDS: adGpoService.KINDS, ...VIEW });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/gpo/:guid([0-9a-fA-F-]{36})', async (req, res, next) => {
+  try {
+    const item = await adGpoService.get(req.params.guid);
+    if (!item) {
+      req.flash('error', 'Esa directiva ya no está en la última lectura del dominio.');
+      return res.redirect('/ad/gpo');
+    }
+    return res.render('ad/gpo', { title: `Directorio activo: ${item.name}`, tab: 'gpo', ...(await base(req)), item, KINDS: adGpoService.KINDS, ...VIEW });
+  } catch (err) {
+    return next(err);
   }
 });
 

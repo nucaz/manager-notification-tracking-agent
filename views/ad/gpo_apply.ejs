@@ -1,0 +1,73 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% // Dominio y cada unidad: lo que tiene vinculado y lo que le llega, en orden de precedencia.
+   const esc = function (t) { return String(t === null || t === undefined ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+   const needle = String(q || '').toLowerCase();
+   const hit = function (n) { return !needle || [n.name, n.dn, n.path].concat(n.effective.map(function (e) { return e.gpo.name; })).some(function (v) { return v && String(v).toLowerCase().indexOf(needle) > -1; }); };
+   const kinds = function (g) { return g.kinds.map(function (k) { const K = KINDS[k] || KINDS.otro; return '<i class="bi ' + K[1] + ' text-' + K[2] + '" title="' + K[0] + '"></i>'; }).join(' '); };
+   const eff = function (n) {
+     if (!n.effective.length) return '<div class="small text-muted ps-4 pb-2">No le llega ninguna directiva.</div>';
+     return '<ol class="small mb-2 ps-5">' + n.effective.map(function (e) {
+       return '<li><a href="/ad/gpo/' + e.gpo.gpo_guid + '">' + esc(e.gpo.name) + '</a> ' + kinds(e.gpo)
+         + (e.enforced ? ' <span class="badge text-bg-dark fw-normal">exigido</span>' : '')
+         + (e.inherited ? ' <span class="text-muted">· heredada de ' + esc(e.from) + '</span>' : ' <span class="badge text-bg-success-subtle text-success-emphasis border fw-normal">vinculada aquí</span>')
+         + (e.gpo.wmi_filter ? ' <span class="text-muted">· filtro WMI: ' + esc(e.gpo.wmi_filter) + '</span>' : '') + '</li>';
+     }).join('') + '</ol>';
+   };
+   const off = function (n) { // vinculos que estan pero no cuentan
+     const x = n.links.filter(function (l) { return !l.link_enabled || !l.gpo || l.gpo.status === 'Deshabilitada'; });
+     if (!x.length) return '';
+     return '<div class="small text-muted ps-4 pb-2">Vinculadas aquí pero sin efecto: ' + x.map(function (l) {
+       return esc(l.gpo ? l.gpo.name : '{' + l.gpo_guid + '} (ya no existe)') + ' (' + (!l.gpo ? 'vínculo huérfano' : (!l.link_enabled ? 'vínculo deshabilitado' : 'directiva deshabilitada')) + ')'; }).join('; ') + '</div>';
+   };
+   const shown = app.nodes.filter(hit); %>
+<div class="mb-2"><a href="/ad/gpo" class="small"><i class="bi bi-arrow-left"></i> Directivas</a></div>
+<div class="card p-3">
+  <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
+    <label class="visually-hidden" for="ad_q">Buscar unidad o directiva</label>
+    <input type="search" class="form-control form-control-sm" id="ad_q" name="q" value="<%= q %>" placeholder="Unidad o directiva…" style="max-width: 20rem">
+    <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
+    <% if (q) { %><span class="small text-muted"><%= shown.length %> de <%= app.nodes.length %> unidades</span> <a class="small" href="/ad/gpo/aplicacion">Quitar búsqueda</a><% } %>
+    <span class="ms-auto d-flex gap-2">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-arbol="abrir"><i class="bi bi-arrows-expand"></i> Expandir todo</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-arbol="cerrar"><i class="bi bi-arrows-collapse"></i> Contraer todo</button>
+    </span>
+  </form>
+  <p class="small text-muted mb-2">Para cada unidad, las directivas que reciben sus usuarios y equipos, <strong>la primera es la que gana</strong> si dos configuran lo mismo.
+    Se calcula con las reglas de Windows: lo vinculado más abajo gana; "exigido" se impone siempre; una unidad con la herencia bloqueada no recibe lo no exigido de arriba.
+    No se consideran el filtrado de seguridad de cada directiva (a qué grupos se aplica) ni los filtros WMI, que pueden excluir a algunos usuarios o equipos.</p>
+
+  <div id="gpo_arbol">
+    <% if (!needle || app.domain.effective.some(function (e) { return e.gpo.name.toLowerCase().indexOf(needle) > -1; })) { %>
+      <details open class="border-bottom"><summary class="py-1"><i class="bi bi-globe text-primary"></i> <strong><%= app.domain.name %></strong> <span class="text-muted small">(dominio: llega a todo)</span>
+        <span class="badge text-bg-secondary fw-normal"><%= app.domain.effective.length %></span></summary>
+        <%- eff(app.domain) %><%- off(app.domain) %></details>
+    <% } %>
+    <% shown.forEach(function (n) { %>
+      <details class="border-bottom" <%= needle ? 'open' : '' %> data-dn="<%= n.dn.toLowerCase() %>">
+        <summary class="py-1" style="padding-left: <%= (n.depth - 1) * 1.25 %>rem">
+          <i class="bi <%= n.kind === 'ou' ? 'bi-folder2 text-warning' : 'bi-box text-secondary' %>"></i> <strong><%= n.name %></strong>
+          <span class="badge text-bg-secondary fw-normal" title="Directivas que le llegan"><%= n.effective.length %></span>
+          <% if (n.links.length) { %><span class="badge text-bg-success-subtle text-success-emphasis border fw-normal"><%= n.links.length %> vinculada(s) aquí</span><% } %>
+          <% if (n.gp_block) { %><span class="badge text-bg-warning fw-normal"><i class="bi bi-sign-stop"></i> herencia bloqueada</span><% } %>
+          <span class="text-muted small ms-2" style="font-variant-numeric: tabular-nums"><i class="bi bi-person"></i> <%= n.users_count %> <i class="bi bi-pc-display ms-1"></i> <%= n.computers_count %></span>
+        </summary>
+        <div style="padding-left: <%= (n.depth - 1) * 1.25 %>rem"><%- eff(n) %><%- off(n) %></div>
+      </details>
+    <% }); %>
+    <% if (!app.nodes.length) { %><p class="text-muted mb-0">Sin datos: lea el dominio.</p><% } else if (!shown.length) { %><p class="text-muted mb-0 mt-2">Ninguna unidad coincide con la búsqueda.</p><% } %>
+  </div>
+  <% if (app.sites.length) { %>
+    <div class="small mt-3"><strong><i class="bi bi-geo-alt"></i> Vinculadas a sitios</strong> (se aplican según la red donde esté el equipo, antes que las del dominio):
+      <%= app.sites.map(function (s) { return (s.gpo ? s.gpo.name : '{' + s.gpo_guid + '}') + ' → ' + s.target_name; }).join('; ') %>.</div>
+  <% } %>
+</div>
+<script>
+document.querySelectorAll('[data-arbol]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var open = b.getAttribute('data-arbol') === 'abrir';
+    document.querySelectorAll('#gpo_arbol details').forEach(function (d) { d.open = open; });
+  });
+});
+</script>
+<%- include('../partials/foot') %>

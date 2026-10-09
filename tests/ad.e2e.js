@@ -48,6 +48,8 @@ async function main() {
     await pool.query('DELETE FROM ad_groups WHERE dn LIKE ?', [like]);
     await pool.query('DELETE FROM ad_ous WHERE dn LIKE ?', [like]);
     await pool.query("DELETE FROM ad_dns_records WHERE zone LIKE '%prueba.local'");
+    await pool.query('DELETE FROM ad_gpo_links WHERE target_dn LIKE ? OR target_dn = ?', [like, like.slice(1)]);
+    await pool.query('DELETE FROM ad_gpos WHERE dn LIKE ?', [like]);
     await pool.query('DELETE FROM ad_computers WHERE dn LIKE ?', [like]);
     await pool.query('DELETE FROM ad_deleted WHERE last_known_parent LIKE ?', [like]);
     await pool.query("DELETE FROM ad_sync_runs WHERE dc LIKE '%prueba.local'");
@@ -186,6 +188,49 @@ async function main() {
     check('Equipos sin DNS desde el enlace (los mismos que cuenta el resumen)', fe.text.includes(`>${noDns.n} equipos.`) && !fe.text.includes('PC-VENTAS-01')
       && fe.text.includes('Habilitados sin registro DNS'));
     check('DNS sin equipo desde el enlace', (await get('/ad/dns?f=huerfanos')).text.includes('pc-fantasma') && !(await get('/ad/dns?f=huerfanos')).text.includes('>intranet<'));
+    // ---------------- directivas de grupo ----------------
+    const gl = T.parseGpLink('[LDAP://cn={22222222-2222-2222-2222-222222222222},cn=policies,cn=system,DC=x;1][LDAP://CN={11111111-1111-1111-1111-111111111111},CN=Policies,CN=System,DC=x;2]');
+    check('gPLink: orden, vínculo deshabilitado y exigido', gl.length === 2 && gl[0].guid.startsWith('2222') && gl[0].disabled && !gl[0].enforced && gl[1].enforced && !gl[1].disabled);
+    check('Extensiones: el primer GUID de cada grupo, sin el grupo de solo herramientas', T.parseGpExt('[{00000000-0000-0000-0000-000000000000}{AAAA1111-0000-0000-0000-000000000000}][{42B5FAAE-6536-11D2-AE5A-0000F87571E3}{40B6664F-4972-11D1-A7CA-0000F87571E3}]').join() === '42b5faae-6536-11d2-ae5a-0000f87571e3');
+    const gpoSvc = require('../src/services/adGpoService');
+    const gpos = await gpoSvc.list();
+    const byName = (n) => gpos.find((g) => g.name === n);
+    const g1 = byName('Bloqueo de pantalla');
+    const g2 = byName('Scripts de inicio y software');
+    const g3 = byName('Sin vincular y vacia');
+    check('GPO leídas del dominio (las dos predeterminadas y las de prueba)', gpos.length >= 5 && byName('Default Domain Policy') && g1 && g2 && g3);
+    check('GPO: versiones de usuario y de equipo, y estado', g1.user_version === 2 && g1.computer_version === 3 && g1.status === 'Habilitada' && g3.status === 'Deshabilitada');
+    check('GPO: tipo de configuración por sus extensiones', g1.kinds.join() === 'restriccion' && g2.kinds.includes('script') && g2.kinds.includes('software')
+      && g2.user.some((e) => e.label === 'Unidades de red'));
+    check('GPO: paquete de software que despliega', g2.software.length === 1 && g2.software[0].name === '7-Zip 24 (x64)' && g2.software[0].scope === 'equipo' && /7z2408-x64\.msi$/.test(g2.software[0].path));
+    check('GPO: filtro WMI con su consulta', g1.wmi_filter === 'Solo Windows 11' && /Win32_OperatingSystem/.test(g1.wmi_query));
+    check('GPO: vínculos con orden, exigido y deshabilitado', g1.links.length === 1 && g1.links[0].enforced === 1 && g1.links[0].link_order === 1 && g1.links[0].target_name === 'Depilzone'
+      && g2.links.length === 2 && g2.links.some((l) => l.target_name === 'Depilzone' && !l.link_enabled && l.link_order === 2) && g2.links.some((l) => l.target_name === 'Ventas' && l.link_enabled));
+    check('GPO: avisos de higiene (sin vincular, vacía)', g3.notes.some((n) => /Sin vincular/.test(n)) && g3.notes.some((n) => /Vacía/.test(n)) && !g1.notes.length);
+    check('GPO: vínculo huérfano (apunta a una directiva borrada)', (await gpoSvc.orphanLinks()).some((o) => o.gpo_guid.startsWith('99999999')));
+    const gapp = await gpoSvc.application();
+    const node = (n) => gapp.nodes.find((x) => x.name === n && /Depilzone/.test(x.dn));
+    const names = (n) => n.effective.map((e) => e.gpo.name).join(' > ');
+    check('Dónde aplica: el dominio recibe la directiva predeterminada', names(gapp.domain) === 'Default Domain Policy');
+    check('Dónde aplica: lo exigido gana, luego lo vinculado más abajo, luego lo heredado', names(node('Ventas')) === 'Bloqueo de pantalla > Scripts de inicio y software > Default Domain Policy'
+      && node('Ventas').effective[0].enforced && node('Ventas').effective[0].inherited && !node('Ventas').effective[1].inherited);
+    check('Dónde aplica: el vínculo deshabilitado no cuenta', names(node('Depilzone')) === 'Bloqueo de pantalla > Default Domain Policy');
+    check('Dónde aplica: la herencia bloqueada deja solo lo exigido', node('Sistemas').gp_block === 1 && names(node('Sistemas')) === 'Bloqueo de pantalla');
+    const pg = await get('/ad/gpo');
+    check('Pestaña de directivas: lista, tipos y aviso de vínculo huérfano', pg.text.includes('>Bloqueo de pantalla<') && pg.text.includes('Restricciones') && pg.text.includes('Sin vincular')
+      && pg.text.includes('ya no existe') && pg.text.includes('exigido'));
+    check('Directivas: filtro "sin vincular" y búsqueda por software', (await get('/ad/gpo?f=sin_vincular')).text.includes('>Sin vincular y vacia<')
+      && !(await get('/ad/gpo?f=sin_vincular')).text.includes('>Bloqueo de pantalla<') && (await get('/ad/gpo?q=7-zip')).text.includes('>Scripts de inicio y software<')
+      && !(await get('/ad/gpo?q=7-zip')).text.includes('>Bloqueo de pantalla<'));
+    const pd = await get(`/ad/gpo/${g2.gpo_guid}`);
+    check('Detalle de una directiva: qué trae, software y dónde está vinculada', pd.text.includes('Scripts (inicio') && pd.text.includes('7-Zip 24 (x64)') && pd.text.includes('Unidades de red')
+      && pd.text.includes('>Ventas<') && pd.text.includes('Deshabilitado'));
+    const pap = await get('/ad/gpo/aplicacion');
+    check('Pantalla "dónde aplican": árbol con herencia bloqueada y vínculo sin efecto', pap.text.includes('herencia bloqueada') && pap.text.includes('heredada de Depilzone')
+      && pap.text.includes('vínculo deshabilitado') && pap.text.includes('vínculo huérfano'));
+    check('Reportes de directivas y de dónde aplican', (await get('/reportes?modulo=ad_gpos')).text.includes('Bloqueo de pantalla')
+      && (await get('/reportes?modulo=ad_gpo_aplicacion')).text.includes('Depilzone / Ventas'));
+    check('Resumen: cifras de directivas con enlace', (await get('/ad')).text.includes('id="ad_resumen_gpo"') && (await get('/ad')).text.includes('/ad/gpo?f=sin_vincular'));
     const fo = await get('/ad/unidades?q=Ventas');
     check('Unidades: árbol plegable y búsqueda por rama', fo.text.includes('<details') && fo.text.includes('Expandir todo') && fo.text.includes('>Ventas<')
       && !fo.text.includes('>Sistemas<'));

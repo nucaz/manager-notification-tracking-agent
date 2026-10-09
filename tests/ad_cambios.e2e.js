@@ -92,6 +92,8 @@ async function main() {
     await pool.query('DELETE FROM ad_group_members WHERE member_dn LIKE ?', [like]);
     for (const t of ['ad_users', 'ad_groups', 'ad_ous', 'ad_computers']) await pool.query(`DELETE FROM ${t} WHERE dn LIKE ?`, [like]);
     await pool.query("DELETE FROM ad_dns_records WHERE zone LIKE '%prueba.local' OR zone LIKE '%in-addr.arpa'");
+    await pool.query('DELETE FROM ad_gpo_links WHERE target_dn LIKE ?', [like]);
+    await pool.query('DELETE FROM ad_gpos WHERE dn LIKE ?', [like]);
     await pool.query('DELETE FROM ad_deleted WHERE last_known_parent LIKE ?', [like]);
     await pool.query("DELETE FROM ad_sync_runs WHERE dc LIKE '%prueba.local'");
     await pool.query("DELETE FROM audit_log WHERE action LIKE 'ad\\_%' AND (user_email LIKE 'e2e-ad-%@prueba.invalid' OR target LIKE '%prueba.local%' OR target = 'directorio activo')");

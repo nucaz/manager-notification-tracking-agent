@@ -1,0 +1,68 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_tabs') %>
+<% const extList = function (list) { return list.map(function (e) { const K = KINDS[e.kind] || KINDS.otro;
+     return '<li><i class="bi ' + K[1] + ' text-' + K[2] + '"></i> ' + e.label.replace(/&/g, '&amp;').replace(/</g, '&lt;') + ' <span class="text-muted">· ' + K[0] + '</span></li>'; }).join(''); }; %>
+<div class="mb-2"><a href="/ad/gpo" class="small"><i class="bi bi-arrow-left"></i> Directivas</a></div>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-3">
+      <h5 class="mb-1"><i class="bi bi-file-earmark-ruled"></i> <%= item.name %></h5>
+      <div class="small text-muted font-monospace mb-2">{<%= item.gpo_guid.toUpperCase() %>}</div>
+      <% if (item.notes.length) { %><div class="alert alert-warning small py-2"><i class="bi bi-exclamation-triangle"></i> <%= item.notes.join(' ') %></div><% } %>
+      <dl class="row small mb-0">
+        <dt class="col-sm-4">Estado</dt><dd class="col-sm-8"><%= item.status %></dd>
+        <dt class="col-sm-4">Versión</dt><dd class="col-sm-8">Equipo <%= item.computer_version %> · Usuario <%= item.user_version %>
+          <span class="text-muted">(cuántas veces se cambió cada parte)</span></dd>
+        <dt class="col-sm-4">Creada</dt><dd class="col-sm-8"><%= item.when_created ? String(item.when_created).slice(0, 16) : '—' %></dd>
+        <dt class="col-sm-4">Modificada</dt><dd class="col-sm-8"><%= item.when_changed ? String(item.when_changed).slice(0, 16) : '—' %></dd>
+        <dt class="col-sm-4">Filtro WMI</dt><dd class="col-sm-8"><% if (item.wmi_filter) { %><%= item.wmi_filter %>
+          <% if (item.wmi_query) { %><div class="font-monospace text-muted"><%= item.wmi_query %></div><% } %><% } else { %>Ninguno (aplica a todos los equipos del alcance)<% } %></dd>
+        <dt class="col-sm-4">Carpeta en SYSVOL</dt><dd class="col-sm-8 font-monospace text-break"><%= item.sysvol_path || '—' %></dd>
+      </dl>
+    </div>
+
+    <div class="card p-3 mt-3">
+      <h6>Qué trae</h6>
+      <div class="row small">
+        <div class="col-md-6">
+          <div class="fw-semibold"><i class="bi bi-pc-display"></i> Configuración de equipo <%= item.computer_enabled ? '' : '(deshabilitada)' %></div>
+          <% if (item.computer.length) { %><ul class="list-unstyled mb-2"><%- extList(item.computer) %></ul><% } else { %><div class="text-muted mb-2">Nada configurado.</div><% } %>
+        </div>
+        <div class="col-md-6">
+          <div class="fw-semibold"><i class="bi bi-person"></i> Configuración de usuario <%= item.user_enabled ? '' : '(deshabilitada)' %></div>
+          <% if (item.user.length) { %><ul class="list-unstyled mb-2"><%- extList(item.user) %></ul><% } else { %><div class="text-muted mb-2">Nada configurado.</div><% } %>
+        </div>
+      </div>
+      <% if (item.software.length) { %>
+        <div class="fw-semibold small mt-1"><i class="bi bi-box-seam"></i> Software que despliega</div>
+        <div class="table-responsive"><table class="table table-sm small mb-0" data-tabla="no">
+          <thead><tr><th>Paquete</th><th>Para</th><th>Instalador</th></tr></thead>
+          <tbody><% item.software.forEach(function (s) { %><tr><td><%= s.name %></td><td><%= s.scope %></td><td class="font-monospace text-break"><%= s.path || '—' %></td></tr><% }); %></tbody>
+        </table></div>
+      <% } %>
+      <div class="form-text">Se muestra el tipo de configuración y los paquetes de software, que el dominio publica en el directorio. Los nombres de los scripts y el valor
+        de cada ajuste están en la carpeta de SYSVOL indicada arriba.</div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card p-3">
+      <h6>Dónde está vinculada</h6>
+      <% if (!item.links.length) { %><p class="small text-muted mb-0">En ningún sitio: esta directiva no se aplica a nadie.</p><% } else { %>
+        <div class="table-responsive"><table class="table table-sm small mb-0" data-tabla="no">
+          <thead><tr><th>Dónde</th><th>Orden</th><th>Vínculo</th></tr></thead>
+          <tbody><% item.links.forEach(function (l) { %>
+            <tr><td title="<%= l.target_dn %>"><i class="bi <%= l.target_kind === 'ou' ? 'bi-folder2' : (l.target_kind === 'sitio' ? 'bi-geo-alt' : 'bi-globe') %>"></i>
+                <% if (l.target_kind === 'ou') { %><a href="/ad/gpo/aplicacion?q=<%= encodeURIComponent(l.target_dn) %>"><%= l.target_name %></a><% } else { %><%= l.target_name %><% } %>
+                <span class="text-muted">(<%= ({ ou: 'unidad', dominio: 'dominio', sitio: 'sitio' })[l.target_kind] %>)</span></td>
+              <td><%= l.link_order %></td>
+              <td><%= l.link_enabled ? 'Habilitado' : 'Deshabilitado' %><% if (l.enforced) { %> <span class="badge text-bg-dark fw-normal">exigido</span><% } %></td></tr>
+          <% }); %></tbody>
+        </table></div>
+        <div class="form-text">Orden 1 gana dentro de ese contenedor. "Exigido" se impone aunque más abajo se bloquee la herencia. Una directiva vinculada a una unidad
+          llega también a todas sus sub-unidades. <a href="/ad/gpo/aplicacion">Ver dónde aplica cada una</a>.</div>
+      <% } %>
+    </div>
+  </div>
+</div>
+<%- include('../partials/foot') %>

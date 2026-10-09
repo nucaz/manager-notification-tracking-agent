@@ -449,6 +449,69 @@ const adEquipos = {
   },
 };
 
+// Directivas de grupo: que trae cada una y donde esta vinculada (una fila por GPO).
+const adGpos = {
+  label: 'Directivas de grupo (GPO)',
+  group: 'Directorio activo',
+  module: 'directorio',
+  columns: [
+    { key: 'name', label: 'Directiva' }, { key: 'status', label: 'Estado' }, { key: 'vinculos', label: 'Vinculada en' }, { key: 'n_vinculos', label: 'N.º de vínculos' },
+    { key: 'equipo', label: 'Configuración de equipo' }, { key: 'usuario', label: 'Configuración de usuario' }, { key: 'scripts', label: 'Scripts o tareas' },
+    { key: 'software', label: 'Software que despliega' }, { key: 'restricciones', label: 'Restricciones' }, { key: 'wmi_filter', label: 'Filtro WMI' },
+    { key: 'versiones', label: 'Versión (equipo / usuario)' }, { key: 'modificada', label: 'Modificada' }, { key: 'revisar', label: 'Por revisar' }, { key: 'gpo_guid', label: 'GUID' },
+  ],
+  print: [
+    { key: 'name', label: 'Directiva', w: 1.3 }, { key: 'status', label: 'Estado', w: 0.7 }, { key: 'vinculos', label: 'Vinculada en', w: 1.5 },
+    { key: 'equipo', label: 'Equipo', w: 1.3 }, { key: 'usuario', label: 'Usuario', w: 1.3 },
+  ],
+  barcodes: [],
+  selects: [{ key: 'status', label: 'Estado' }, { key: 'scripts', label: 'Scripts o tareas' }, { key: 'restricciones', label: 'Restricciones' }],
+  groupBy: [{ key: 'status', label: 'Por estado' }],
+  async load() {
+    const adGpoService = require('./adGpoService');
+    const names = (l) => l.map((e) => e.label).join('; ');
+    return (await adGpoService.list()).map((g) => ({
+      ...g, vinculos: g.links.map((l) => `${l.target_name}${l.enforced ? ' (exigido)' : ''}${l.link_enabled ? '' : ' (vínculo deshabilitado)'}`).join('; ') || 'Sin vincular',
+      n_vinculos: g.links.length, equipo: names(g.computer), usuario: names(g.user),
+      scripts: g.kinds.includes('script') ? 'Sí' : 'No', restricciones: g.kinds.includes('restriccion') ? 'Sí' : 'No',
+      software: g.software.map((s) => `${s.name} (${s.scope}): ${s.path}`).join('; '), wmi_filter: g.wmi_filter || '',
+      versiones: `${g.computer_version} / ${g.user_version}`, modificada: dateTime(g.when_changed), revisar: g.notes.join(' '),
+    }));
+  },
+};
+
+// Donde aplica cada directiva: una fila por unidad y GPO que le llega, en orden de precedencia.
+const adGpoAplicacion = {
+  label: 'Dónde aplican las directivas (GPO)',
+  group: 'Directorio activo',
+  module: 'directorio',
+  columns: [
+    { key: 'unidad', label: 'Unidad organizativa' }, { key: 'usuarios', label: 'Usuarios' }, { key: 'equipos', label: 'Equipos' }, { key: 'orden', label: 'Precedencia' },
+    { key: 'directiva', label: 'Directiva' }, { key: 'origen', label: 'Vinculada en' }, { key: 'tipo', label: 'Llega por' }, { key: 'exigido', label: 'Exigido' },
+    { key: 'contenido', label: 'Qué trae' }, { key: 'bloqueo', label: 'Herencia bloqueada' },
+  ],
+  print: [
+    { key: 'unidad', label: 'Unidad organizativa', w: 1.6 }, { key: 'orden', label: 'N.º', w: 0.3 }, { key: 'directiva', label: 'Directiva', w: 1.4 },
+    { key: 'origen', label: 'Vinculada en', w: 1 }, { key: 'contenido', label: 'Qué trae', w: 1.6 },
+  ],
+  barcodes: [],
+  selects: [{ key: 'unidad', label: 'Unidad organizativa' }, { key: 'directiva', label: 'Directiva' }, { key: 'tipo', label: 'Llega por' }, { key: 'exigido', label: 'Exigido' }],
+  groupBy: [{ key: 'unidad', label: 'Por unidad organizativa' }, { key: 'directiva', label: 'Por directiva' }],
+  async load() {
+    const adGpoService = require('./adGpoService');
+    const app = await adGpoService.application();
+    const rows = [];
+    const add = (unidad, o, block) => o.effective.forEach((e) => rows.push({
+      unidad, usuarios: o.users_count === undefined ? '' : o.users_count, equipos: o.computers_count === undefined ? '' : o.computers_count, orden: e.order,
+      directiva: e.gpo.name, origen: e.from, tipo: e.inherited ? 'Herencia' : 'Vínculo directo', exigido: e.enforced ? 'Sí' : 'No',
+      contenido: [...new Set([...e.gpo.computer, ...e.gpo.user].map((x) => x.label))].join('; '), bloqueo: block ? 'Sí' : 'No',
+    }));
+    add(`${app.domain.name} (dominio)`, app.domain, false);
+    app.nodes.forEach((n) => add(n.path, n, !!n.gp_block));
+    return rows;
+  },
+};
+
 // Cambios pedidos y ejecutados en el dominio (fase 2): quien pidio, quien
 // aprobo, por que via y con que resultado.
 const adCambios = {
@@ -544,6 +607,8 @@ const REPORTS = {
   ad_privilegiados: adPrivilegiados,
   ad_equipos: adEquipos,
   ad_cambios: adCambios,
+  ad_gpos: adGpos,
+  ad_gpo_aplicacion: adGpoAplicacion,
   repositorios,
 };
 

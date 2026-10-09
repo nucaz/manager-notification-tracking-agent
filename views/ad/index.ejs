@@ -91,6 +91,14 @@
         <a href="/ad/dns">DNS</a>: <%= ov.dns.total %> registros · <a class="<%= ov.dns.withoutComputer ? 'link-warning fw-semibold' : '' %>" href="/ad/dns?f=huerfanos"><%= ov.dns.withoutComputer %> sin equipo en AD</a>
         · <a href="/ad/papelera">Papelera</a>: <%= ov.deleted %> objeto(s)
       </div>
+      <% if (locals.gpoOv && gpoOv.total) { %><div class="small mt-1" id="ad_resumen_gpo">
+        <a href="/ad/gpo">Directivas (GPO)</a>: <%= gpoOv.total %>
+        · <a class="<%= gpoOv.unlinked ? 'link-warning fw-semibold' : '' %>" href="/ad/gpo?f=sin_vincular"><%= gpoOv.unlinked %> sin vincular</a>
+        · <a href="/ad/gpo?f=vacias"><%= gpoOv.empty %> vacías</a>
+        · <a href="/ad/gpo?f=scripts"><%= gpoOv.scripts %> con scripts</a>
+        · <a href="/ad/gpo?f=software"><%= gpoOv.software %> con software</a>
+        · <a href="/ad/gpo/aplicacion">dónde aplican</a>
+      </div><% } %>
     </div>
   </div>
 </div>

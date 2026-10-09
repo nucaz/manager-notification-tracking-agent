@@ -142,7 +142,9 @@ READMEs.
   ejecutar, no con la foto. Búsquedas por GUID: con `EqualityFilter` y un
   Buffer, nunca con un filtro de texto. Probar contra
   `scripts/ad-prueba/levantar.sh` (`tests/ad.e2e.js` y luego
-  `tests/ad_cambios.e2e.js`, que modifica el DC), nunca contra un dominio real.
+  `tests/ad_cambios.e2e.js`, que modifica el DC), nunca contra un dominio real. Las directivas de grupo (GPO) se leen por LDAP en la misma lectura (`adGpoService.js`, tablas `ad_gpos` y
+  `ad_gpo_links`, que se reemplazan): qué existe, tipo de configuración por sus extensiones, software, filtro WMI,
+  vínculos y precedencia calculada; el contenido de SYSVOL no se lee y no hay escritura de GPO.
 - **Tablas de listado (estándar en toda la app)**: toda tabla con
   `<thead>` dentro de `.table-responsive` recibe sola, de
   `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por
