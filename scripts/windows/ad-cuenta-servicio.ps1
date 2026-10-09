@@ -48,6 +48,8 @@
   ES: Borrar los registros DNS de un equipo eliminado.  EN: Delete the DNS records of a deleted computer.
 .PARAMETER Papelera
   ES: Lectura: ver la papelera. Escritura: ademas, restaurar.  EN: Read: view the recycle bin. Write: also restore.  (-RecycleBin)
+.PARAMETER Proteger
+  ES: Otras cuentas a proteger cuando se gestiona la OU de las cuentas de servicio.  EN: Other accounts to protect when the service-accounts OU is managed.  (-Protect)
 .PARAMETER SoloPermisos
   ES: La cuenta ya existe: solo aplica los permisos.  EN: The account exists: only apply permissions.  (-PermissionsOnly)
 .PARAMETER Informe
@@ -63,6 +65,7 @@ param(
   [switch] $DNS,
   [Alias('RecycleBin')] [switch] $Papelera,
   [Alias('PermissionsOnly')] [switch] $SoloPermisos,
+  [Alias('Protect')] [string[]] $Proteger = @(),
   [Alias('Report')] [string] $Informe = '',
   [Alias('Language')] [ValidateSet('', 'es', 'en')] [string] $Idioma = ''
 )
@@ -94,6 +97,13 @@ $M = @{
     managedNote = 'Elija las OU de usuarios y equipos de la empresa. No elija Domain Controllers ni la OU donde están las cuentas de administración.'
     dcOuWarn = 'Se quitó "{0}": es la OU de los controladores de dominio.'
     selfOuWarn = 'Se quitó "{0}": ahí están las cuentas de servicio; la cuenta no debe poder cambiarse a sí misma ni a la de lectura.'
+    selfOuNote = '"{0}" contiene las cuentas de servicio (incluida esta).'
+    selfOuQ = '¿Gestionarla también? Esta cuenta y las del Gestor quedan protegidas con una denegación explícita, y en la OU de las cuentas la aplicación podrá crear y modificar usuarios pero no eliminarlos ni moverlos'
+    protectQ = 'Cuentas de servicio a proteger (nombres separados por coma; agregue aquí la de lectura si no aparece)'
+    sProtect = 'Cuentas protegidas'
+    protected = 'Protegida {0}: esta cuenta no puede modificarla, restablecer su contraseña ni eliminarla.'
+    protectMissing = 'No se encontró la cuenta a proteger: {0} (no se protegió).'
+    noDelete = 'En {0} la cuenta puede crear y modificar usuarios, pero no eliminarlos ni moverlos (protege a las cuentas de servicio).'
     dnsQ = '¿Permitir borrar los registros DNS de un equipo eliminado?'
     binReadQ = '¿Permitir ver la papelera de AD?'
     binWriteQ = '¿Permitir ver y restaurar de la papelera de AD?'
@@ -161,6 +171,13 @@ $M = @{
     managedNote = 'Choose the company user and computer OUs. Do not choose Domain Controllers or the OU holding admin accounts.'
     dcOuWarn = 'Removed "{0}": it is the domain controllers OU.'
     selfOuWarn = 'Removed "{0}": it holds the service accounts; the account must not be able to change itself or the read account.'
+    selfOuNote = '"{0}" holds the service accounts (including this one).'
+    selfOuQ = 'Manage it too? This account and the Gestor accounts get an explicit deny, and in the accounts OU the application can create and modify users but not delete or move them'
+    protectQ = 'Service accounts to protect (comma-separated names; add the read account here if it is missing)'
+    sProtect = 'Protected accounts'
+    protected = 'Protected {0}: this account cannot modify it, reset its password or delete it.'
+    protectMissing = 'Account to protect not found: {0} (not protected).'
+    noDelete = 'In {0} the account can create and modify users, but not delete or move them (protects the service accounts).'
     dnsQ = 'Allow deleting the DNS records of a deleted computer?'
     binReadQ = 'Allow viewing the AD recycle bin?'
     binWriteQ = 'Allow viewing and restoring from the AD recycle bin?'
@@ -220,6 +237,10 @@ function YesNo([string] $q, [bool] $default = $true) {
   $a = Read-Host "$q $(if ($default) { $M.yn } else { $M.ynNo })"
   if ([string]::IsNullOrWhiteSpace($a)) { return $default }
   return $a.Trim().ToLower().StartsWith($M.yes) -or $a.Trim().ToLower().StartsWith('y') -or $a.Trim().ToLower().StartsWith('s')
+}
+# ¿$dn es $ou o esta dentro de ella? (sin distinguir mayusculas) / is $dn $ou or inside it?
+function CoversDn([string] $ou, [string] $dn) {
+  $dn.Equals($ou, [StringComparison]::OrdinalIgnoreCase) -or $dn.EndsWith(",$ou", [StringComparison]::OrdinalIgnoreCase)
 }
 # "3,5,7-9" -> 3,5,7,8,9
 function ParseList([string] $text, [int] $max) {
@@ -303,8 +324,16 @@ if ($interactive) {
       # OU donde vive la cuenta (nueva o existente) y sus superiores: no se gestionan.
       $selfOu = $(if ($isNew) { $OUCuenta } else { ($prev.DistinguishedName -split '(?<!\\),', 2)[1] })
       foreach ($x in @($OUs | Where-Object { $_ -eq $dcOu })) { Say 'dcOuWarn' $x 'Yellow' }
-      foreach ($x in @($OUs | Where-Object { $_ -ne $dcOu -and ($selfOu -eq $_ -or $selfOu.EndsWith(",$_")) })) { Say 'selfOuWarn' $x 'Yellow' }
-      $OUs = @($OUs | Where-Object { $_ -ne $dcOu -and -not ($selfOu -eq $_ -or $selfOu.EndsWith(",$_")) })
+      $OUs = @($OUs | Where-Object { $_ -ne $dcOu })
+      # La OU de las cuentas de servicio (y las de arriba): se pregunta. Si se gestiona, mas abajo se protegen las cuentas.
+      $selfHit = @($OUs | Where-Object { CoversDn $_ $selfOu })
+      if ($selfHit.Count) {
+        foreach ($x in $selfHit) { Say 'selfOuNote' $x 'Yellow' }
+        if (-not (YesNo $M.selfOuQ $false)) {
+          foreach ($x in $selfHit) { Say 'selfOuWarn' $x 'Yellow' }
+          $OUs = @($OUs | Where-Object { -not (CoversDn $_ $selfOu) })
+        }
+      }
       # Una OU dentro de otra elegida ya hereda los permisos: se deja solo la de arriba.
       $sel2 = $OUs
       $OUs = @($sel2 | Where-Object { $c = $_; -not ($sel2 | Where-Object { $_ -ne $c -and $c.EndsWith(",$_") }) })
@@ -321,6 +350,21 @@ if ($interactive) {
   if (-not $OUCuenta) { $OUCuenta = $dom.UsersContainer }
 }
 $upn = $(if (-not $isNew -and $prev -and $prev.UserPrincipalName) { $prev.UserPrincipalName } else { "$Nombre@$($dom.DNSRoot)" })
+
+# ---- cuentas a proteger si se gestiona la OU donde viven las cuentas de servicio
+# (con o sin asistente: si las OU elegidas cubren a la cuenta, siempre se protege)
+$selfOuDn = $(if ($isNew) { $OUCuenta } elseif ($prev) { ($prev.DistinguishedName -split '(?<!\\),', 2)[1] } else { '' })
+$protect = @()
+if (-not $Lectura -and $selfOuDn -and @($OUs | Where-Object { CoversDn $_ $selfOuDn }).Count) {
+  # Las que creo este script llevan la descripcion "Gestor: ..." / the ones this script created
+  $auto = @()
+  try { $auto = @(Get-ADUser -SearchBase $selfOuDn -SearchScope OneLevel -LDAPFilter '(description=Gestor:*)' | ForEach-Object { $_.SamAccountName }) } catch { }
+  $protect = @(@($Nombre) + $auto + $Proteger | Where-Object { $_ } | Sort-Object -Unique)
+  if ($interactive) {
+    $typed = Ask $M.protectQ ($protect -join ', ')
+    $protect = @(@($Nombre) + ($typed -split '[,; ]+') | Where-Object { $_ } | Sort-Object -Unique)
+  }
+}
 
 # ---- 4) contrasena / password (solo si se crea / only when creating)
 $pw = $null
@@ -347,6 +391,7 @@ Write-Host ("  {0}: {1}" -f $M.sAccount, $upn)
 Write-Host ("  {0}: {1}" -f $M.sMode, $(if ($isNew) { $M.mCreate } else { $M.mPerms }))
 if ($isNew) { Write-Host ("  {0}: {1}" -f $M.sWhere, $OUCuenta) }
 if (-not $Lectura) { Write-Host ("  {0}:" -f $M.sManaged); $OUs | ForEach-Object { Write-Host "      $_" }; Write-Host ("  {0}: {1}" -f $M.sDns, [bool]$DNS) }
+if ($protect.Count) { Write-Host ("  {0}: {1}" -f $M.sProtect, ($protect -join ', ')) }
 Write-Host ("  {0}: {1}" -f $M.sBin, [bool]$Papelera)
 if ($interactive -and -not (YesNo $M.confirmQ $false)) { Say 'cancelled' $null 'Yellow'; return }
 
@@ -364,14 +409,16 @@ function RightGuid([string] $cn) {
 $R = [System.DirectoryServices.ActiveDirectoryRights]
 $I = [System.DirectoryServices.ActiveDirectorySecurityInheritance]
 $none = [guid]::Empty
-function Allow([string] $dn, $rights, [guid] $objectType, $inheritance, [guid] $inheritedType) {
+function Allow([string] $dn, $rights, [guid] $objectType, $inheritance, [guid] $inheritedType) { Rule 'Allow' $dn $rights $objectType $inheritance $inheritedType }
+function Deny([string] $dn, $rights, [guid] $objectType, $inheritance, [guid] $inheritedType) { Rule 'Deny' $dn $rights $objectType $inheritance $inheritedType }
+function Rule([string] $type, [string] $dn, $rights, [guid] $objectType, $inheritance, [guid] $inheritedType) {
   $path = "AD:\$dn"
   $acl = Get-Acl -Path $path
   # Tipos explicitos: con valores sin tipo PowerShell no encuentra el constructor de 6 argumentos.
   $rule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule -ArgumentList @(
     [System.Security.Principal.IdentityReference] $script:sid,
     [System.DirectoryServices.ActiveDirectoryRights] $rights,
-    [System.Security.AccessControl.AccessControlType]::Allow,
+    [System.Security.AccessControl.AccessControlType] $type,
     [guid] $objectType,
     [System.DirectoryServices.ActiveDirectorySecurityInheritance] $inheritance,
     [guid] $inheritedType)
@@ -418,6 +465,19 @@ try {
       Log ($M.delegated -f $ou)
     }
     Write-Host "  $($M.adminSd)" -ForegroundColor Gray
+    # ---- se gestiona la OU de las cuentas de servicio: denegaciones explicitas (ganan a lo heredado)
+    if ($protect.Count) {
+      # Eliminar o mover un objeto tambien se permite desde la OU (DeleteChild): se niega ahi para usuarios.
+      Deny $selfOuDn $R::DeleteChild $gUser $I::None $none
+      Log ($M.noDelete -f $selfOuDn)
+      foreach ($p in $protect) {
+        $pa = Get-ADUser -LDAPFilter "(sAMAccountName=$p)"
+        if (-not $pa) { Log ($M.protectMissing -f $p); continue }
+        Deny $pa.DistinguishedName ($R::WriteProperty -bor $R::Delete -bor $R::DeleteTree -bor $R::WriteDacl -bor $R::WriteOwner) $none $I::None $none
+        Deny $pa.DistinguishedName $R::ExtendedRight $none $I::None $none   # incluye restablecer la contrasena / includes reset password
+        Log ($M.protected -f $p)
+      }
+    }
   }
 
   # ---- DNS (sin DnsAdmins / without DnsAdmins)

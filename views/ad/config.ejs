@@ -175,6 +175,8 @@
       if (q) oculta = f.dataset.texto.indexOf(q) < 0;
       else for (let p = porDn[f.dataset.padre]; p; p = porDn[p.dataset.padre]) if (cerradas.has(p.dataset.dn)) { oculta = true; break; }
       f.hidden = oculta;
+      f.classList.toggle('d-flex', !oculta);
+      f.classList.toggle('d-none', oculta);
       const b = f.querySelector('.ou-plegar');
       if (b) {
         const abierta = !cerradas.has(f.dataset.dn);
