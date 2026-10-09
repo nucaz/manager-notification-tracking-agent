@@ -27,7 +27,8 @@
             <td class="text-nowrap" data-valor="<%= c.last_seen || '' %>"><%= c.last_seen ? String(c.last_seen).slice(0, 16) : 'Nunca' %></td>
             <td class="<%= c.enabled && !c.is_dc && /año|Nunca/.test(b) ? 'text-danger fw-semibold' : '' %>"><%= b %></td>
             <td class="font-monospace"><%= c.ips || (c.is_dc ? '—' : 'Sin DNS') %></td>
-            <td title="<%= c.dn %>"><%= ouOf(c.ou_dn) %></td>
+            <td title="<%= c.dn %>"><%= ouOf(c.ou_dn) %><% if (sel && !c.is_dc && writes.managedOus.some(function (o) { return c.dn.toLowerCase().endsWith(',' + o.toLowerCase()); })) { %>
+              <a class="ms-1" href="/ad/cambios/nuevo?op=computer_move&id=<%= c.id %>" title="Mover a otra unidad organizativa" aria-label="Mover <%= c.name %> a otra unidad"><i class="bi bi-folder-symlink"></i></a><% } %></td>
             <td><%= c.dns_host || '—' %></td>
             <td><%= c.os_version || '—' %></td>
             <td><%= c.description || '—' %></td>

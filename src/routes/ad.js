@@ -296,7 +296,8 @@ async function buildChange(req, op) {
     case 'user_reset_password':
       params = { mustChange: b.mustChange === '1', unlock: b.unlock === '1' };
       break;
-    case 'user_move': {
+    case 'user_move':
+    case 'computer_move': {
       const [ou] = await snapshot('ou', b.to_ou_id);
       if (!ou || !adWriteService.inManaged(wcfg.managedOus, ou.dn)) throw new Error('Elija una unidad organizativa de destino gestionada.');
       params = { toOuGuid: ou.object_guid, toOuDn: ou.dn };
@@ -357,7 +358,7 @@ router.get('/cambios/nuevo', canWrite, async (req, res, next) => {
     const pre = row ? precheck(kind, row, b.writes.managedOus) : [];
     const mode = await adChangeService.modeFor(req.session.user, op);
     const extra = {};
-    if (kind === 'ou' || op === 'user_move') extra.ouOptions = await managedOuOptions(b.writes.managedOus);
+    if (kind === 'ou' || op === 'user_move' || op === 'computer_move') extra.ouOptions = await managedOuOptions(b.writes.managedOus);
     if (op === 'user_update' && row && !pre.length && b.writes.ready) {
       try { extra.live = await adWriteService.readLive(row.object_guid, Object.keys(adWriteService.USER_FIELDS)); } catch (err) { extra.liveError = err.message; }
     }

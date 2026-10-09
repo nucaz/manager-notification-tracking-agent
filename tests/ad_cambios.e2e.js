@@ -355,6 +355,18 @@ async function main() {
     await doOp('group_delete', cajeros.id, { reauth_password: PASS });
     check('Eliminar grupo', (await ldap('(sAMAccountName=Cajeros-Prueba)')).length === 0);
 
+    // Mover un equipo a otra unidad gestionada; un controlador de dominio, nunca.
+    const caja9 = await row('ad_computers', "name = 'PC-CAJA-09'", []);
+    const arbol = (await get('/ad/unidades')).text;
+    check('Árbol de unidades: menú de acciones con Mover para el equipo gestionado y sin él para el DC',
+      arbol.includes(`op=computer_move&amp;id=${caja9.id}`) && arbol.includes('id="ad_arbol"') && arbol.includes('ou-mas')
+      && !arbol.includes(`op=computer_move&amp;id=${(await row('ad_computers', 'is_dc = 1', [])).id}&`));
+    await doOp('computer_move', caja9.id, { to_ou_id: sistemas.id, reauth_password: PASS });
+    check('Mover equipo a otra unidad organizativa gestionada', /CN=PC-CAJA-09,OU=Sistemas,OU=Depilzone/i.test(((await ldap('(sAMAccountName=PC-CAJA-09$)'))[0] || {}).dn));
+    const mdc = await doOp('computer_move', (await row('ad_computers', 'is_dc = 1', [])).id, { to_ou_id: sistemas.id, reauth_password: PASS });
+    check('Mover un controlador de dominio: rechazado', /controlador de dominio|fuera de las unidades/.test(mdc.text + (await flashes()))
+      && /OU=Domain Controllers/i.test(((await ldap('(&(objectClass=computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))'))[0] || {}).dn));
+
     // Lote: eliminar un equipo con su DNS (A y PTR); el DC queda fuera.
     const old = await row('ad_computers', "name = 'PC-ANTIGUA'", []);
     const dc = await row('ad_computers', 'is_dc = 1', []);

@@ -64,6 +64,8 @@
             <button type="button" class="btn btn-sm btn-outline-primary" id="ou_detectar"><i class="bi bi-search"></i> Detectar las delegadas a la cuenta</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="ou_todas">Todas</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="ou_ninguna">Ninguna</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="ou_abrir" title="Expandir todo"><i class="bi bi-arrows-expand"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="ou_cerrar" title="Contraer todo"><i class="bi bi-arrows-collapse"></i></button>
           </div>
         </div>
         <div class="alert small py-2 mb-2" id="ou_aviso" role="status" hidden></div>
@@ -73,6 +75,9 @@
             <% ouRows.forEach(function (r) { const o = r.o; const dc = /^ou=domain controllers,/i.test(o.dn); %>
               <div class="ou-fila d-flex align-items-center gap-2 px-2 py-1 border-bottom small" data-dn="<%= lc(o.dn) %>" data-padre="<%= lc(o.parent_dn) %>"
                 data-texto="<%= lc(o.name + ' ' + o.dn) %>" style="padding-left: <%= 0.5 + r.depth * 1.25 %>rem !important">
+                <% if ((ouKids[lc(o.dn)] || []).length) { %><button type="button" class="btn btn-sm btn-link p-0 text-body-secondary ou-plegar" aria-expanded="true"
+                  aria-label="Expandir o contraer <%= o.name %>" style="width: 1.1rem"><i class="bi bi-chevron-down"></i></button>
+                <% } else { %><span style="width: 1.1rem; flex: none"></span><% } %>
                 <input class="form-check-input m-0" type="checkbox" name="ad_managed_ou" value="<%= o.dn %>" id="ou_<%= o.id %>"
                   <%= chosen.has(lc(o.dn)) ? 'checked' : '' %> <%= dc ? 'disabled' : '' %> data-propio="<%= chosen.has(lc(o.dn)) ? '1' : '0' %>">
                 <label class="form-check-label flex-grow-1" for="ou_<%= o.id %>" title="<%= o.dn %>"><i class="bi bi-folder2"></i> <%= o.name %>
@@ -160,11 +165,39 @@
   const raiz = function (f) { return !porDn[f.dataset.padre]; };
   document.getElementById('ou_todas').addEventListener('click', function () { marcar(raiz); });
   document.getElementById('ou_ninguna').addEventListener('click', function () { marcar(function () { return false; }); });
+  // Ramas plegables: una fila se oculta si alguna de arriba esta contraida. Al filtrar se ve todo lo que coincide.
   const filtro = document.getElementById('ou_filtro');
-  if (filtro) filtro.addEventListener('input', function () {
-    const q = this.value.trim().toLowerCase();
-    filas.forEach(function (f) { f.hidden = !!q && f.dataset.texto.indexOf(q) < 0; });
+  const cerradas = new Set();
+  const mostrar = function () {
+    const q = filtro ? filtro.value.trim().toLowerCase() : '';
+    filas.forEach(function (f) {
+      let oculta = false;
+      if (q) oculta = f.dataset.texto.indexOf(q) < 0;
+      else for (let p = porDn[f.dataset.padre]; p; p = porDn[p.dataset.padre]) if (cerradas.has(p.dataset.dn)) { oculta = true; break; }
+      f.hidden = oculta;
+      const b = f.querySelector('.ou-plegar');
+      if (b) {
+        const abierta = !cerradas.has(f.dataset.dn);
+        b.setAttribute('aria-expanded', abierta ? 'true' : 'false');
+        b.firstElementChild.className = 'bi ' + (abierta ? 'bi-chevron-down' : 'bi-chevron-right');
+      }
+    });
+  };
+  const conHijas = filas.filter(function (f) { return f.querySelector('.ou-plegar'); });
+  conHijas.forEach(function (f) {
+    f.querySelector('.ou-plegar').addEventListener('click', function () {
+      if (cerradas.has(f.dataset.dn)) cerradas.delete(f.dataset.dn); else cerradas.add(f.dataset.dn);
+      mostrar();
+    });
   });
+  const abrirHasta = function (f) { for (let p = porDn[f.dataset.padre]; p; p = porDn[p.dataset.padre]) cerradas.delete(p.dataset.dn); };
+  document.getElementById('ou_abrir').addEventListener('click', function () { cerradas.clear(); mostrar(); });
+  document.getElementById('ou_cerrar').addEventListener('click', function () { conHijas.forEach(function (f) { cerradas.add(f.dataset.dn); }); mostrar(); });
+  if (filtro) filtro.addEventListener('input', mostrar);
+  // Al entrar: todo contraido, salvo el camino hasta lo ya elegido.
+  conHijas.forEach(function (f) { cerradas.add(f.dataset.dn); });
+  filas.forEach(function (f) { if (caja(f).dataset.propio === '1') abrirHasta(f); });
+  mostrar();
   // Detectar: lee con la cuenta de escritura donde tiene control delegado y marca las de arriba.
   const aviso = document.getElementById('ou_aviso');
   const decir = function (tipo, txt) { aviso.className = 'alert small py-2 mb-2 alert-' + tipo; aviso.textContent = txt; aviso.hidden = false; };
@@ -188,6 +221,8 @@
         if (!deleg.size) { decir('warning', 'La cuenta ' + j.account + ' no tiene control delegado en ninguna unidad organizativa. Delegue con scripts/windows/ad-cuenta-servicio.ps1 (opción 2).'); return; }
         // Las de arriba: delegadas cuyo padre no lo esta (sin la de controladores de dominio).
         marcar(function (f) { return deleg.has(f.dataset.dn) && !deleg.has(f.dataset.padre) && !esDc(f); });
+        filas.forEach(function (f) { if (caja(f).dataset.propio === '1') abrirHasta(f); });
+        mostrar();
         const arriba = filas.filter(function (f) { return caja(f).dataset.propio === '1'; }).length;
         const fuera = j.ous.filter(function (o) { return !porDn[o.dn.toLowerCase()]; }).length;
         decir('success', 'La cuenta ' + j.account + ' tiene control delegado en ' + deleg.size + ' unidad(es); se marcaron ' + arriba

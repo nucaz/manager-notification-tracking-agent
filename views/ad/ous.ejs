@@ -10,6 +10,32 @@
    const kidsOf = function (o) { return (byParent[String(o.dn).toLowerCase()] || []).sort(function (a, b) { return a.name.localeCompare(b.name, 'es'); }); };
    const needle = String(q || '').toLowerCase();
    const hit = function (o) { return !needle || [o.name, o.dn, o.description].some(function (v) { return v && String(v).toLowerCase().indexOf(needle) > -1; }); };
+   // Menu de acciones (clic derecho o el boton de tres puntos): [texto, icono, destino, peligro].
+   // Un destino que empieza con "js:" lo resuelve la pagina (expandir, contraer, copiar).
+   const mngd = function (dn) { return locals.canChange && writes.ready && writes.managedOus.some(function (m) { const d = String(dn).toLowerCase(), x = m.toLowerCase(); return d === x || d.endsWith(',' + x); }); };
+   const ctx = function (items) { return ' data-ctx="' + esc(JSON.stringify(items)) + '"'; };
+   const mas = '<button type="button" class="btn btn-sm btn-link p-0 text-body-secondary ou-mas" aria-label="Acciones" title="Acciones (también con clic derecho)"><i class="bi bi-three-dots-vertical"></i></button>';
+   const pcMenu = function (c) {
+     const m = [['Ver en la lista de equipos', 'bi-pc-display', '/ad/equipos?q=' + encodeURIComponent(c.name)]];
+     if (mngd(c.dn) && !c.is_dc) {
+       m.push(['-'], ['Mover a otra unidad…', 'bi-folder-symlink', '/ad/cambios/nuevo?op=computer_move&id=' + c.id],
+         c.enabled ? ['Deshabilitar…', 'bi-slash-circle', '/ad/cambios/nuevo?op=computer_disable&id=' + c.id] : ['Habilitar…', 'bi-check-circle', '/ad/cambios/nuevo?op=computer_enable&id=' + c.id],
+         ['Eliminar con su DNS…', 'bi-trash', '/ad/cambios/nuevo?op=computer_delete&id=' + c.id, 1]);
+     }
+     m.push(['-'], ['Copiar el nombre', 'bi-clipboard', 'js:copiar:' + c.name]);
+     return m;
+   };
+   const ouMenu = function (o) {
+     const q2 = encodeURIComponent(o.dn);
+     const m = [['Ver usuarios (' + o.users_count + ')', 'bi-person', '/ad/usuarios?q=' + q2], ['Ver equipos (' + o.computers_count + ')', 'bi-pc-display', '/ad/equipos?q=' + q2],
+       ['Ver grupos (' + o.groups_count + ')', 'bi-people', '/ad/grupos?q=' + q2]];
+     if (mngd(o.dn)) {
+       m.push(['-'], ['Crear usuario aquí…', 'bi-person-plus', '/ad/cambios/nuevo?op=user_create&id=' + o.id], ['Crear grupo aquí…', 'bi-people', '/ad/cambios/nuevo?op=group_create&id=' + o.id],
+         ['Crear equipo aquí…', 'bi-pc-display', '/ad/cambios/nuevo?op=computer_create&id=' + o.id], ['Crear sub-unidad…', 'bi-folder-plus', '/ad/cambios/nuevo?op=ou_create&id=' + o.id]);
+     }
+     m.push(['-'], ['Expandir esta rama', 'bi-arrows-expand', 'js:abrir'], ['Contraer esta rama', 'bi-arrows-collapse', 'js:cerrar'], ['Copiar el DN', 'bi-clipboard', 'js:copiar:' + o.dn]);
+     return m;
+   };
    // Equipos de cada unidad (directos), para verlos al expandirla.
    const pcsBy = {};
    (locals.computers || []).forEach(function (c) { const k = String(c.ou_dn || '').toLowerCase(); (pcsBy[k] = pcsBy[k] || []).push(c); });
@@ -25,7 +51,7 @@
      const rows = list.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'es'); }).map(function (c) {
        const b = bucket(c.last_seen);
        const old = c.enabled && !c.is_dc && /año|Nunca/.test(b);
-       return '<li class="d-flex flex-wrap align-items-center gap-2 py-1 small border-bottom' + (pcHit(c) ? ' bg-warning-subtle' : '') + '">'
+       return '<li class="d-flex flex-wrap align-items-center gap-2 py-1 small border-bottom' + (pcHit(c) ? ' bg-warning-subtle' : '') + '"' + ctx(pcMenu(c)) + '>'
          + '<i class="bi ' + (c.is_dc ? 'bi-hdd-rack text-primary' : 'bi-pc-display') + '"></i>'
          + '<a class="font-monospace" href="/ad/equipos?q=' + encodeURIComponent(c.name) + '">' + esc(c.name) + '</a>'
          + (c.is_dc ? ' <span class="badge text-bg-primary">DC</span>' : '')
@@ -33,7 +59,7 @@
          + '<span class="text-muted">' + esc(c.os || 'Sin sistema operativo') + '</span>'
          + '<span class="ms-auto d-inline-flex gap-3" style="font-variant-numeric: tabular-nums">'
          + '<span class="font-monospace">' + esc(c.ips || (c.is_dc ? '' : 'Sin DNS')) + '</span>'
-         + '<span class="' + (old ? 'text-danger fw-semibold' : 'text-muted') + '" title="Última conexión">' + esc(b) + '</span></span></li>';
+         + '<span class="' + (old ? 'text-danger fw-semibold' : 'text-muted') + '" title="Última conexión">' + esc(b) + '</span></span>' + mas + '</li>';
      }).join('');
      return '<li class="ou-equipos"><details' + (needle && list.some(pcHit) ? ' open' : '') + '><summary class="ou-rama small text-muted py-1">'
        + '<div class="d-inline"><i class="bi bi-pc-display"></i> Equipos (' + list.length + (list.length < all.length ? ' de ' + all.length : '') + ')</div></summary>'
@@ -49,14 +75,14 @@
    const count = function (n, what, href) { return n ? '<a href="' + href + '">' + n + ' ' + what + '</a>' : '0 ' + what; };
    const line = function (o) {
      const q2 = encodeURIComponent(o.dn);
-     return '<div class="d-flex flex-wrap align-items-center gap-2 py-1 border-bottom' + (needle && hit(o) ? ' bg-warning-subtle' : '') + '">'
+     return '<div class="d-flex flex-wrap align-items-center gap-2 py-1 border-bottom' + (needle && hit(o) ? ' bg-warning-subtle' : '') + '"' + ctx(ouMenu(o)) + '>'
        + '<i class="bi ' + (o.kind === 'ou' ? 'bi-folder2-open text-warning' : 'bi-box text-secondary') + '"></i>'
        + '<strong>' + esc(o.name) + '</strong>'
        + (o.kind === 'ou' ? '' : ' <span class="badge text-bg-light border">contenedor</span>')
        + (mng(o.dn) ? ' <span class="badge text-bg-success-subtle text-success-emphasis border" title="Unidad gestionada: se pueden hacer cambios">gestionada</span>' + crear(o) : '')
        + '<span class="small text-muted ms-auto" style="font-variant-numeric: tabular-nums">'
        + count(o.users_count, 'usuarios', '/ad/usuarios?q=' + q2) + ' · ' + count(o.computers_count, 'equipos', '/ad/equipos?q=' + q2) + ' · '
-       + count(o.groups_count, 'grupos', '/ad/grupos?q=' + q2) + '</span></div>'
+       + count(o.groups_count, 'grupos', '/ad/grupos?q=' + q2) + '</span>' + mas + '</div>'
        + (o.description ? '<div class="small text-muted ps-4">' + esc(o.description) + '</div>' : '');
    };
    const draw = function (o, level) {
@@ -87,7 +113,8 @@
       <button type="button" class="btn btn-sm btn-outline-secondary" data-arbol="cerrar"><i class="bi bi-arrows-collapse"></i> Contraer todo</button>
     </span>
   </form>
-  <p class="small text-muted mb-2"><%= items.length %> unidades organizativas y contenedores. Las cifras son lo que contiene cada una directamente; clic en ellas para verlos. Al expandir una unidad se ven sus equipos.</p>
+  <p class="small text-muted mb-2"><%= items.length %> unidades organizativas y contenedores. Las cifras son lo que contiene cada una directamente; clic en ellas para verlos. Al expandir una unidad se ven sus equipos.
+    <strong>Clic derecho</strong> (o <i class="bi bi-three-dots-vertical"></i>) sobre una unidad o un equipo abre sus acciones.</p>
   <ul class="list-unstyled mb-0" id="ad_arbol"><%- tree %></ul>
   <% if (!items.length) { %><p class="text-muted mb-0">Sin datos: lea el dominio.</p><% } else if (!shown) { %><p class="text-muted mb-0">Ninguna unidad coincide con la búsqueda.</p><% } %>
 </div>
@@ -98,6 +125,79 @@ document.querySelectorAll('[data-arbol]').forEach(function (b) {
     document.querySelectorAll('#ad_arbol details').forEach(function (d) { d.open = open; });
   });
 });
+// Menu de acciones: clic derecho sobre una fila con data-ctx, o su boton de tres puntos.
+(function () {
+  var menu = document.createElement('ul');
+  menu.className = 'dropdown-menu shadow';
+  menu.id = 'ad_menu';
+  menu.setAttribute('role', 'menu');
+  menu.style.position = 'fixed';
+  menu.style.zIndex = 1080;
+  document.body.appendChild(menu);
+  var fila = null;
+  function cerrar() { menu.classList.remove('show'); fila = null; }
+  function abrir(el, x, y) {
+    var items = JSON.parse(el.getAttribute('data-ctx'));
+    fila = el;
+    menu.textContent = '';
+    items.forEach(function (it) {
+      var li = document.createElement('li');
+      if (it[0] === '-') { li.innerHTML = '<hr class="dropdown-divider">'; menu.appendChild(li); return; }
+      var js = String(it[2]).indexOf('js:') === 0;
+      var a = document.createElement(js ? 'button' : 'a');
+      a.className = 'dropdown-item small' + (it[3] ? ' text-danger' : '');
+      a.setAttribute('role', 'menuitem');
+      if (js) { a.type = 'button'; a.setAttribute('data-js', it[2].slice(3)); } else a.href = it[2];
+      var i = document.createElement('i'); i.className = 'bi ' + it[1] + ' me-2';
+      a.appendChild(i); a.appendChild(document.createTextNode(it[0]));
+      li.appendChild(a); menu.appendChild(li);
+    });
+    menu.classList.add('show');
+    // Dentro de la ventana.
+    var w = menu.offsetWidth, h = menu.offsetHeight;
+    menu.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 4)) + 'px';
+    menu.style.top = Math.max(4, Math.min(y, window.innerHeight - h - 4)) + 'px';
+    var first = menu.querySelector('.dropdown-item'); if (first) first.focus();
+  }
+  var arbol = document.getElementById('ad_arbol');
+  arbol.addEventListener('contextmenu', function (ev) {
+    var el = ev.target.closest('[data-ctx]');
+    if (!el) return;
+    ev.preventDefault();
+    abrir(el, ev.clientX, ev.clientY);
+  });
+  arbol.addEventListener('click', function (ev) {
+    var b = ev.target.closest('.ou-mas');
+    if (!b) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var r = b.getBoundingClientRect();
+    abrir(b.closest('[data-ctx]'), r.left, r.bottom);
+  });
+  menu.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-js]');
+    if (!b) return;
+    var js = b.getAttribute('data-js');
+    var nodo = fila && fila.closest('li.ou-nodo');
+    if (js === 'abrir' || js === 'cerrar') {
+      if (nodo) nodo.querySelectorAll('details').forEach(function (d) { if (!d.closest('.ou-equipos') || js === 'cerrar') d.open = js === 'abrir'; });
+    } else if (js.indexOf('copiar:') === 0 && navigator.clipboard) {
+      navigator.clipboard.writeText(js.slice(7)).catch(function () {});
+    }
+    cerrar();
+  });
+  document.addEventListener('click', function (ev) { if (!menu.contains(ev.target) && !ev.target.closest('.ou-mas')) cerrar(); });
+  document.addEventListener('keydown', function (ev) {
+    if (!menu.classList.contains('show')) return;
+    if (ev.key === 'Escape') { cerrar(); return; }
+    if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+    ev.preventDefault();
+    var its = Array.prototype.slice.call(menu.querySelectorAll('.dropdown-item'));
+    var k = its.indexOf(document.activeElement) + (ev.key === 'ArrowDown' ? 1 : -1);
+    its[(k + its.length) % its.length].focus();
+  });
+  window.addEventListener('scroll', cerrar, true);
+  window.addEventListener('resize', cerrar);
+})();
 // Los enlaces dentro de una rama no la contraen.
 document.querySelectorAll('#ad_arbol summary a').forEach(function (a) { a.addEventListener('click', function (ev) { ev.stopPropagation(); }); });
 </script>

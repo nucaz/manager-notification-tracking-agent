@@ -28,9 +28,10 @@
       <% } %>
 
       <%# ---------------- campos por operacion ---------------- %>
-      <% if (kind === 'ou' || op === 'user_move') { const sel = op === 'user_move' ? val('to_ou_id') : val('ou_id', row ? String(row.id) : ''); %>
-        <div class="mb-3"><label class="form-label" for="ou_sel"><%= op === 'user_move' ? 'Mover a' : (op === 'ou_create' ? 'Crear dentro de' : 'Unidad organizativa') %> *</label>
-          <select class="form-select" id="ou_sel" name="<%= op === 'user_move' ? 'to_ou_id' : 'ou_id' %>" required>
+      <% const isMove = op === 'user_move' || op === 'computer_move'; %>
+      <% if (kind === 'ou' || isMove) { const sel = isMove ? val('to_ou_id', locals.toOuId || '') : val('ou_id', row ? String(row.id) : ''); %>
+        <div class="mb-3"><label class="form-label" for="ou_sel"><%= isMove ? 'Mover a' : (op === 'ou_create' ? 'Crear dentro de' : 'Unidad organizativa') %> *</label>
+          <select class="form-select" id="ou_sel" name="<%= isMove ? 'to_ou_id' : 'ou_id' %>" required>
             <option value="">Elija…</option>
             <% (locals.ouOptions || []).forEach(function (o) { %>
               <option value="<%= o.id %>" <%= String(o.id) === String(sel) ? 'selected' : '' %>><%= o.dn %></option>

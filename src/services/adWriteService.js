@@ -42,6 +42,7 @@ const OPS = {
   computer_create: { label: 'Crear equipo', target: 'ou', group: 'equipos', icon: 'bi-pc-display' },
   computer_disable: { label: 'Deshabilitar equipo', target: 'equipo', group: 'equipos', icon: 'bi-slash-circle', bulk: true },
   computer_enable: { label: 'Habilitar equipo', target: 'equipo', group: 'equipos', icon: 'bi-check-circle', bulk: true },
+  computer_move: { label: 'Mover equipo a otra unidad organizativa', target: 'equipo', group: 'equipos', icon: 'bi-folder-symlink' },
   computer_delete: { label: 'Eliminar equipo y sus registros DNS', target: 'equipo', group: 'eliminar', icon: 'bi-trash', bulk: true, danger: true },
   ou_create: { label: 'Crear unidad organizativa', target: 'ou', group: 'crear', icon: 'bi-folder-plus' },
   object_restore: { label: 'Restaurar de la papelera', target: 'eliminado', group: 'restaurar', icon: 'bi-arrow-counterclockwise' },
@@ -264,6 +265,7 @@ function validateParams(op, p = {}) {
       out.unlock = p.unlock !== false && p.unlock !== '0';
       break;
     case 'user_move':
+    case 'computer_move':
       if (!p.toOuGuid) throw new Error('Elija la unidad organizativa de destino.');
       out.toOuGuid = clean(p.toOuGuid, 36);
       out.toOuDn = clean(p.toOuDn, 700);
@@ -374,12 +376,14 @@ async function run(ctx, op, targetGuid, params) {
       await ctx.client.modify(e.dn, changes);
       return { message: `Datos de ${str(e.sAMAccountName)} actualizados: ${Object.keys(p.changes).map((k) => USER_FIELDS[k]).join(', ')}.` };
     }
-    case 'user_move': {
+    case 'user_move':
+    case 'computer_move': {
       const e = await findByGuid(ctx, targetGuid);
-      if (kindOf(e) !== 'usuario') throw new Error('El objeto no es un usuario.');
+      const want = op === 'user_move' ? 'usuario' : 'equipo';
+      if (kindOf(e) !== want) throw new Error(`El objeto no es un ${want}.`);
       await guard(ctx, e);
       const ou = await destinationOu(ctx, p.toOuGuid);
-      if (lower(parentDn(e.dn)) === lower(ou.dn)) throw new Error('El usuario ya está en esa unidad organizativa.');
+      if (lower(parentDn(e.dn)) === lower(ou.dn)) throw new Error(`El ${want} ya está en esa unidad organizativa.`);
       await ctx.client.modifyDN(e.dn, `${firstRdn(e.dn)},${ou.dn}`);
       return { message: `${str(e.sAMAccountName)} movido a ${ou.dn}.` };
     }
