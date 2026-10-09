@@ -36,9 +36,8 @@ READMEs.
   se conocen de antemano.
 - Si vas a escribir o modificar un script de instalación/despliegue en
   bash, sigue `.claude/skills/shell-docker-verification/SKILL.md`
-  (o el agente `deploy-script-verifier`, si tu herramienta soporta
-  subagentes de Claude Code) — verificar contra un contenedor Ubuntu
-  real es obligatorio, no opcional.
+  (o el agente `deploy-script-verifier`) — verificar contra un
+  contenedor Ubuntu real es obligatorio, no opcional.
 - Si vas a agregar un campo de credencial/API key nueva, sigue
   `.claude/skills/encrypt-secrets-at-rest/SKILL.md`.
 - Si vas a agregar backup/restore de algo, sigue
@@ -110,6 +109,59 @@ READMEs.
   relacionados (ej. país + código de llamada + dígitos esperados, ver
   `phone_country_codes`), usar una tabla propia en vez de forzarlo
   dentro de un `value` de texto.
+  Excepción: los usuarios de Clinic apuntan a `catalog_items` (sede, área)
+  por clave foránea; por eso "Unificar valores" mueve también esas FK
+  (`fk: true` en `catalogMergeService.PLACES`).
+- **Crédito del desarrollador (no tocar)**: "Juan Carlos Aguirre Alvarado
+  - Develop Infraestructura TI Ciberseguridad" va fijo al pie de todas las
+  páginas (`views/partials/credito.ejs`, incluido por `partials/foot.ejs` y
+  las pantallas sueltas), en DevOps Sidecar (`templates/base.html`) y en
+  los PDF de Reportes. Nunca se vuelve configurable ni se quita; toda
+  pantalla nueva con `</body>` lo incluye. Lo vigila `tests/credito.test.js`.
+- **Roles** (`src/middleware/auth.js`): `lector` ve todo sin cambiar;
+  `editor` escribe en los módulos; `admin` gestiona los módulos, catálogos,
+  auditoría e historial de chat pero **no** lo crítico; `superadmin` todo.
+  Lo crítico (credenciales de conexión, usuarios, permisos, respaldos,
+  mantenimiento de la base, IA, conexión de M365, DevOps) va con
+  `isSuperAdmin`. Nunca queda la app sin un superadmin activo. Lo vigila
+  `tests/roles.e2e.js`.
+- **Tema claro / oscuro / del sistema**: `views/partials/tema.ejs` (en el
+  `<head>` de toda página) pone `data-bs-theme`; el selector está en
+  `partials/tema_selector.ejs`. Colores propios solo por variables
+  (`--app-*` en `style.css`, o las de Bootstrap `--bs-*`), nunca un color
+  claro fijo. Lo vigila `tests/tema.dom.js`.
+- **Directorio activo** (`src/services/adService.js`): solo LDAPS con la
+  CA validada, cuenta de servicio sin privilegios, conexión solo para
+  superadmin y probada antes de guardar. `adService.js` solo lee (la
+  prueba busca operaciones de escritura); TODA escritura va en
+  `adWriteService.js` y pasa por `adChangeService.js` (superadmin directo,
+  el resto con aprobación o permiso temporal, con re-autenticación). Las
+  protecciones (OU gestionadas, privilegiados por SID y por cadena,
+  adminCount, RID < 1000, DC, cuentas propias) se comprueban EN VIVO al
+  ejecutar, no con la foto. Búsquedas por GUID: con `EqualityFilter` y un
+  Buffer, nunca con un filtro de texto. Probar contra
+  `scripts/ad-prueba/levantar.sh` (`tests/ad.e2e.js` y luego
+  `tests/ad_cambios.e2e.js`, que modifica el DC), nunca contra un dominio real. Las directivas de grupo (GPO) se leen por LDAP en la misma lectura (`adGpoService.js`, tablas `ad_gpos` y
+  `ad_gpo_links`, que se reemplazan): qué existe, tipo de configuración por sus extensiones, software, filtro WMI,
+  vínculos y precedencia calculada; el contenido de SYSVOL no se lee y no hay escritura de GPO.
+- **Tablas de listado (estándar en toda la app)**: toda tabla con
+  `<thead>` dentro de `.table-responsive` recibe sola, de
+  `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por
+  columna** (embudo), mover y estirar columnas y registros por página. No
+  hace falta código por pantalla; `data-tabla="no"` la excluye y
+  `data-orden="no"` saca una columna del orden. Si la tabla **pagina en
+  el servidor** (`data-tabla="servidor"` o `.pagination` en su tarjeta),
+  el orden y los filtros deben ir al servidor: declare en cada `<th>`
+  `data-orden="clave"` (→ `?orden=&dir=`), `data-filtro="param"` con
+  `data-opciones='[["valor","texto"]]'` (→ `?param=v1,v2`) o
+  `data-filtro-texto="param"`, y el servicio los acepta (ver
+  `clinicService.filtersOf`). Botón **Columnas** (mostrar/ocultar; un
+  `<th data-oculta>` es una columna extra que viene oculta y se puede
+  agregar). El buscador (`name="q"`, `public/js/ui.js`) es angosto y
+  sugiere mientras se escribe, desde la tabla o desde
+  `data-sugerencias="/url"` (JSON) si la tabla pagina en el servidor. Un
+  aviso informativo con `data-aviso="clave"` lleva "No volver a mostrar"
+  (vuelve si su texto cambia). Prueba: `tests/tablas.dom.js` (jsdom).
 - **Valores sugeridos/autogenerados** (ej. correlativo de código de
   activo): siempre calculados de los datos reales en el momento
   (`MAX` sobre lo ya existente + 1), nunca con un contador aparte en

@@ -623,6 +623,15 @@ Las contraseñas las genera la aplicación (16 caracteres) y se muestran
 cifradas hasta que el solicitante las ve (24 horas como máximo). Todo
 queda en Auditoría y en el reporte *Cambios en el directorio activo*.
 
+**Directivas de grupo (GPO)**, solo lectura: la pestaña *Directivas (GPO)* lista cada
+directiva con su estado, qué tipo de configuración trae (scripts, despliegue de
+software, restricciones, seguridad, preferencias), los paquetes MSI que despliega, su
+filtro WMI y dónde está vinculada. *Dónde aplican* calcula, por unidad organizativa,
+qué directivas le llegan y en qué orden (vínculo exigido, herencia bloqueada, vínculo
+deshabilitado). Reportes: *Directivas de grupo* y *Dónde aplican las directivas*. Todo
+sale del directorio por LDAP; el contenido de cada directiva (nombre de los scripts,
+valores) está en SYSVOL y no se lee, y tampoco el filtrado de seguridad.
+
 **Cuentas de servicio**: `scripts/windows/ad-cuenta-servicio.ps1`, en un DC como
 administrador del dominio y sin parámetros: detecta el dominio, pregunta si la
 cuenta es de lectura o de escritura, muestra las OU y sugiere dónde crearla,
