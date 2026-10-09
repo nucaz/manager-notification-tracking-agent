@@ -10,23 +10,26 @@
       <div id="formError" class="alert alert-danger d-none"></div>
       <form id="repoForm">
         <div class="mb-2">
-          <label class="form-label">Nombre (identificador único)</label>
-          <input type="text" name="name" class="form-control" required placeholder="mi-proyecto">
+          <label class="form-label" for="repo_url">URL del repositorio</label>
+          <input type="text" name="github_url" id="repo_url" class="form-control" required placeholder="https://github.com/org/repo.git" autocomplete="off">
         </div>
         <div class="mb-2">
-          <label class="form-label">URL de GitHub</label>
-          <input type="text" name="github_url" class="form-control" required placeholder="https://github.com/org/repo.git">
+          <label class="form-label" for="repo_name">Nombre (identificador único)</label>
+          <input type="text" name="name" id="repo_name" class="form-control" placeholder="Se toma de la URL si lo deja vacío" maxlength="120" autocomplete="off">
+          <div class="form-text">Un nombre corto, no la URL: letras, números, espacios, punto o guiones.</div>
         </div>
         <div class="mb-2">
           <label class="form-label">Token de acceso (solo si es privado)</label>
-          <input type="password" name="github_token" class="form-control" placeholder="ghp_...">
-          <div class="form-text">Personal Access Token de GitHub con permiso de lectura (repo:read).</div>
+          <input type="password" name="github_token" class="form-control" placeholder="ghp_..." autocomplete="new-password">
+          <div class="form-text">Token personal de la cuenta que tiene acceso al repositorio (propio o compartido). En GitHub: token <strong>classic</strong> con el permiso
+            <code>repo</code>. Se guarda cifrado.</div>
         </div>
         <div class="mb-2">
           <label class="form-label">Sincronizar cada (minutos)</label>
           <input type="number" name="sync_interval_minutes" class="form-control" value="60" min="5" max="10080" required>
         </div>
-        <button type="submit" class="btn btn-primary">Agregar y clonar ahora</button>
+        <button type="submit" class="btn btn-primary" id="repoSubmit">Agregar y clonar ahora</button>
+        <div class="form-text" id="repoEstado" aria-live="polite"></div>
       </form>
     </div>
   </div>
@@ -69,30 +72,59 @@
 </div>
 
 <script>
-document.getElementById('repoForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
+// "https://github.com/org/mi-repo.git" -> "mi-repo"
+function nombreDeUrl(url) {
+  const ultimo = String(url || '').trim().replace(/\/+$/, '').split('/').pop().split(':').pop();
+  return ultimo.replace(/\.git$/i, '');
+}
+// El detalle de un error del servidor: texto, o la lista de validaciones de un 422.
+function detalleDe(data, status) {
+  const d = data && data.detail;
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d)) return d.map((x) => String(x.msg || '').replace(/^Value error, /, '')).filter(Boolean).join(' ');
+  if (status === 401 || status === 403) return 'La sesión venció o no tiene permiso. Vuelva a entrar desde la aplicación principal.';
+  return 'No se pudo agregar el repositorio (respuesta ' + status + ' del servidor).';
+}
+(function () {
+  const form = document.getElementById('repoForm');
   const errorBox = document.getElementById('formError');
-  errorBox.classList.add('d-none');
-  const form = e.target;
-  const payload = {
-    name: form.name.value,
-    github_url: form.github_url.value,
-    github_token: form.github_token.value || null,
-    sync_interval_minutes: parseInt(form.sync_interval_minutes.value, 10),
-  };
-  const res = await fetch('/api/repos', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+  const boton = document.getElementById('repoSubmit');
+  const estado = document.getElementById('repoEstado');
+  const campo = (n) => form.querySelector('[name="' + n + '"]');
+  const fallo = (msg) => { errorBox.textContent = msg; errorBox.classList.remove('d-none'); };
+  // Al escribir la URL, el nombre se propone solo (si aun no se escribio uno).
+  campo('github_url').addEventListener('input', function () {
+    const n = campo('name');
+    if (!n.dataset.manual) n.value = nombreDeUrl(this.value);
   });
-  if (res.ok) {
-    window.location.reload();
-  } else {
-    const data = await res.json().catch(() => ({}));
-    errorBox.textContent = data.detail || 'No se pudo agregar el repositorio.';
-    errorBox.classList.remove('d-none');
-  }
-});
+  campo('name').addEventListener('input', function () { this.dataset.manual = this.value ? '1' : ''; });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.classList.add('d-none');
+    const payload = {
+      name: campo('name').value.trim(),
+      github_url: campo('github_url').value.trim(),
+      github_token: campo('github_token').value.trim() || null,
+      sync_interval_minutes: parseInt(campo('sync_interval_minutes').value, 10) || 60,
+    };
+    boton.disabled = true;
+    estado.textContent = 'Agregando…';
+    try {
+      const res = await fetch('/api/repos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(payload) });
+      if (res.ok) {
+        estado.textContent = 'Agregado. Se está clonando; el resultado aparece en "Último sync".';
+        window.location.reload();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      fallo(detalleDe(data, res.status));
+    } catch (err) {
+      fallo('No se pudo enviar al servidor (' + (err && err.message ? err.message : 'sin conexión') + '). Recargue la página e intente de nuevo.');
+    }
+    boton.disabled = false;
+    estado.textContent = '';
+  });
+})();
 
 document.getElementById('reposTable').addEventListener('click', async (e) => {
   const btn = e.target.closest('button');

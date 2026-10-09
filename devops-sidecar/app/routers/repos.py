@@ -77,9 +77,13 @@ def latest_report(repo_id: int, db: Session = Depends(get_db)):
 
 @router.post("", response_model=schemas.RepoOut, status_code=201)
 def create_repo(payload: schemas.RepoCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    local_path = str(Path(settings.repos_base_path) / payload.name)
+    try:
+        name = payload.resolved_name()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    local_path = str(Path(settings.repos_base_path) / name)
     repo = models.Repo(
-        name=payload.name,
+        name=name,
         github_url=payload.github_url,
         github_token=crypto_service.encrypt(payload.github_token) if payload.github_token else None,
         local_path=local_path,
@@ -90,7 +94,7 @@ def create_repo(payload: schemas.RepoCreate, background_tasks: BackgroundTasks, 
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail=f'Ya existe un repositorio con el nombre "{payload.name}".')
+        raise HTTPException(status_code=409, detail=f'Ya existe un repositorio con el nombre "{name}".')
     db.refresh(repo)
 
     scheduler.schedule_repo_sync(repo)
