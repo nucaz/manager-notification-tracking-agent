@@ -623,6 +623,12 @@ Las contraseñas las genera la aplicación (16 caracteres) y se muestran
 cifradas hasta que el solicitante las ve (24 horas como máximo). Todo
 queda en Auditoría y en el reporte *Cambios en el directorio activo*.
 
+**Si GLPI o el directorio activo dejan de conectar "de la nada"** (tiempo agotado con una
+URL por nombre): suele ser el DNS del servidor, no la configuración. Un servidor que
+mezcla el DNS interno con DNS públicos puede resolver un nombre interno a una dirección
+pública. `docker-compose.dns.yml` hace que la aplicación pregunte siempre a los DNS que
+se indiquen (`APP_DNS_1`, `APP_DNS_2` en `.env`, y ese archivo agregado a `COMPOSE_FILE`).
+
 **Red: equipos, VLAN y herramientas.** Además de los diagramas, el módulo Red lleva el
 inventario de equipos de red con su MAC, IP, sede, área, ubicación, notas y VLAN:
 *Equipos* (PC, puntos de acceso, switches, routers, firewalls, impresoras, servidores),

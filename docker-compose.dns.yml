@@ -1,0 +1,22 @@
+# DNS propio para la aplicacion (opcional).
+#
+# Por defecto un contenedor usa el DNS del servidor donde corre. Si ese servidor
+# mezcla el DNS interno con DNS publicos (1.1.1.1, 8.8.8.8), los nombres
+# internos (GLPI, controladores de dominio) pueden resolverse a una direccion
+# publica o no resolverse, segun cual responda: GLPI y el directorio activo
+# dejan de conectar "de la nada".
+#
+# Con este archivo la aplicacion pregunta SIEMPRE a los DNS que usted indique
+# (los controladores de dominio, que ademas resuelven los nombres de Internet).
+# Los nombres de los otros contenedores (db, devops-sidecar) siguen funcionando.
+#
+# Uso, en el .env del servidor:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml:docker-compose.dns.yml
+#   APP_DNS_1=172.16.1.4
+#   APP_DNS_2=172.16.1.6
+# y luego: docker compose up -d app
+services:
+  app:
+    dns:
+      - ${APP_DNS_1:?Defina APP_DNS_1 en .env (IP del DNS interno)}
+      - ${APP_DNS_2:-${APP_DNS_1}}
