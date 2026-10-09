@@ -372,7 +372,8 @@ router.post('/herramientas/flujo', isAdmin, verifyCsrfToken, async (req, res) =>
   try {
     const r = await netToolsService.execute(tool, req.body.host, req.body.ports, { emit: (s) => send({ t: 'out', s }), signal: stop.signal });
     await auditTool(req, tool, r).catch(() => {});
-    send({ t: 'end', r: { ok: r.ok, summary: r.summary, host: r.host, ip: r.ip || null } });
+    // El resultado completo (saltos, puertos) para la tarjeta de resultados; la salida ya se envio linea por linea.
+    send({ t: 'end', r: { tool, ok: r.ok, summary: r.summary, host: r.host, ip: r.ip || null, hops: r.hops || null, rows: r.rows || null } });
   } catch (err) {
     send({ t: 'error', s: err.message });
   }

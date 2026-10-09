@@ -44,6 +44,11 @@
         <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" style="color: #9aa7b5" id="t_clear">Limpiar</button></div>
       <div class="red-term-cuerpo" id="t_out" role="log" aria-label="Salida de la prueba"><span class="tenue">Elija un equipo y una prueba. La salida aparece aquí mientras se ejecuta.</span></div>
     </div>
+    <div class="card p-3 mt-3">
+      <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="mb-0">Resultados</h6>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="t_res_clear">Limpiar</button></div>
+      <div id="t_res" aria-live="polite"><p class="small text-muted mb-0">Aquí queda el resultado de cada prueba, el más reciente arriba.</p></div>
+    </div>
   </div>
   <div class="col-lg-4">
     <div class="card p-3 small">
@@ -74,6 +79,51 @@
   var estado = document.getElementById('t_estado');
   var vacio = true;
   var control = null;
+  var res = document.getElementById('t_res');
+  var resVacio = true;
+  var salida = [];   // lineas de la prueba en curso, para la "Salida completa" de su tarjeta
+  var titulo = '';
+  document.getElementById('t_res_clear').addEventListener('click', function () { res.textContent = ''; resVacio = false; });
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  // Tarjeta de resultado: estado, resumen, tabla de saltos o de puertos abiertos y la salida completa.
+  function tarjeta(r) {
+    if (resVacio) { res.textContent = ''; resVacio = false; }
+    var card = el('div', 'border rounded p-2 mb-2');
+    var head = el('div', 'd-flex flex-wrap gap-2 align-items-center mb-1');
+    head.appendChild(el('span', 'badge ' + (r.error ? 'text-bg-danger' : (r.ok ? 'text-bg-success' : 'text-bg-warning')), r.error ? 'Error' : (r.ok ? 'OK' : 'Sin éxito')));
+    head.appendChild(el('strong', 'font-monospace', titulo));
+    if (r.ip && r.ip !== r.host) head.appendChild(el('span', 'small text-muted font-monospace', r.ip));
+    head.appendChild(el('span', 'small text-muted ms-auto', new Date().toLocaleTimeString()));
+    card.appendChild(head);
+    card.appendChild(el('div', 'small mb-1', r.error || r.summary));
+    if (r.hops && r.hops.length) {
+      var t = el('table', 'table table-sm small mb-1'); t.setAttribute('data-tabla', 'no');
+      var th = el('thead'); var trh = el('tr'); ['Salto', 'Equipo', 'Tiempo'].forEach(function (x) { trh.appendChild(el('th', '', x)); }); th.appendChild(trh); t.appendChild(th);
+      var hb = el('tbody');
+      r.hops.forEach(function (h) { var tr = el('tr'); tr.appendChild(el('td', '', String(h.hop))); tr.appendChild(el('td', 'font-monospace' + (h.address ? '' : ' text-muted'), h.address || 'sin respuesta')); tr.appendChild(el('td', '', h.time || '')); hb.appendChild(tr); });
+      t.appendChild(hb); card.appendChild(t);
+    }
+    if (r.rows && r.rows.length) {
+      var abiertos = r.rows.filter(function (x) { return x.state === 'abierto'; });
+      if (abiertos.length) {
+        var t2 = el('table', 'table table-sm small mb-1'); t2.setAttribute('data-tabla', 'no');
+        var th2 = el('thead'); var tr2 = el('tr'); ['Puerto', 'Estado', 'Servicio'].forEach(function (x) { tr2.appendChild(el('th', '', x)); }); th2.appendChild(tr2); t2.appendChild(th2);
+        var b2 = el('tbody');
+        abiertos.forEach(function (x) { var tr = el('tr'); tr.appendChild(el('td', 'font-monospace', String(x.port))); tr.appendChild(el('td', 'text-success fw-semibold', 'abierto')); tr.appendChild(el('td', '', x.service)); b2.appendChild(tr); });
+        t2.appendChild(b2); card.appendChild(t2);
+      }
+      var cerrados = r.rows.filter(function (x) { return x.state === 'cerrado'; }).length;
+      var mudos = r.rows.length - abiertos.length - cerrados;
+      card.appendChild(el('div', 'small text-muted mb-1', abiertos.length + ' abierto(s), ' + cerrados + ' cerrado(s), ' + mudos + ' sin respuesta (apagado o filtrado por un firewall).'));
+    }
+    if (salida.length) {
+      var d = el('details'); d.appendChild(el('summary', 'small', 'Salida completa'));
+      d.appendChild(el('pre', 'small mb-0 mt-1 p-2 bg-body-tertiary rounded', salida.join('\n')));
+      if (!r.hops && !r.rows) d.open = true;
+      card.appendChild(d);
+    }
+    res.insertBefore(card, res.firstChild);
+  }
   var cursor = document.createElement('span'); cursor.className = 'cursor';
   function sync() { box.hidden = tool.value !== 'puertos'; }
   tool.addEventListener('change', sync); sync();
@@ -101,9 +151,9 @@
     if (si) { out.appendChild(cursor); out.scrollTop = out.scrollHeight; } else if (cursor.parentNode) cursor.parentNode.removeChild(cursor);
   }
   function evento(ev) {
-    if (ev.t === 'out') { linea(ev.s); out.appendChild(cursor); }
-    else if (ev.t === 'end') linea((ev.r.ok ? '✔ ' : '✖ ') + ev.r.summary, ev.r.ok ? 'ok' : 'aviso');
-    else if (ev.t === 'error') linea('✖ ' + ev.s, 'mal');
+    if (ev.t === 'out') { linea(ev.s); salida.push(ev.s); out.appendChild(cursor); }
+    else if (ev.t === 'end') { linea((ev.r.ok ? '✔ ' : '✖ ') + ev.r.summary, ev.r.ok ? 'ok' : 'aviso'); tarjeta(ev.r); }
+    else if (ev.t === 'error') { linea('✖ ' + ev.s, 'mal'); tarjeta({ error: ev.s }); }
   }
   stop.addEventListener('click', function () { if (control) control.abort(); });
   form.addEventListener('submit', function (ev) {
@@ -112,12 +162,17 @@
     var datos = new URLSearchParams(new FormData(form));
     if (!vacio && out.childNodes.length) linea('');
     control = new AbortController();
+    salida = [];
+    titulo = tool.options[tool.selectedIndex].text.split(' — ')[0] + ' → ' + datos.get('host');
+    var cerrada = false;   // si la prueba no llego a su final (detenida o sin conexion), igual deja su tarjeta
+    var evOrig = evento;
     enMarcha(true);
     var fin = function () { control = null; enMarcha(false); };
     fetch('/red/herramientas/flujo', { method: 'POST', body: datos, credentials: 'same-origin', headers: { Accept: 'text/event-stream' }, signal: control.signal })
-      .then(function (res) {
-        if (!res.ok || !res.body) return res.json().catch(function () { return { error: 'Respuesta inesperada del servidor (' + res.status + ').' }; }).then(function (j) { linea('✖ ' + (j.error || 'No se pudo ejecutar.'), 'mal'); });
-        var lector = res.body.getReader();
+      .then(function (resp) {
+        if (!resp.ok || !resp.body) return resp.json().catch(function () { return { error: 'Respuesta inesperada del servidor (' + resp.status + ').' }; })
+          .then(function (j) { cerrada = true; linea('✖ ' + (j.error || 'No se pudo ejecutar.'), 'mal'); tarjeta({ error: j.error || 'No se pudo ejecutar.' }); });
+        var lector = resp.body.getReader();
         var deco = new TextDecoder();
         var resto = '';
         var leer = function () {
@@ -126,13 +181,17 @@
             resto += deco.decode(x.value, { stream: true });
             var partes = resto.split('\n\n');
             resto = partes.pop();
-            partes.forEach(function (p) { if (p.indexOf('data: ') === 0) { try { evento(JSON.parse(p.slice(6))); } catch (e) { /* trozo incompleto */ } } });
+            partes.forEach(function (p) { if (p.indexOf('data: ') === 0) { try { var e2 = JSON.parse(p.slice(6)); if (e2.t !== 'out') cerrada = true; evOrig(e2); } catch (e) { /* trozo incompleto */ } } });
             return leer();
           });
         };
         return leer();
       })
-      .catch(function (err) { linea(err && err.name === 'AbortError' ? '✖ Detenido.' : '✖ Se perdió la conexión con el servidor.', 'mal'); })
+      .catch(function (err) {
+        var m = err && err.name === 'AbortError' ? 'Detenido antes de terminar.' : 'Se perdió la conexión con el servidor.';
+        linea('✖ ' + m, 'mal');
+        if (!cerrada) { cerrada = true; tarjeta({ ok: false, summary: m }); }
+      })
       .then(fin, fin);
   });
 })();

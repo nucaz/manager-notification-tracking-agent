@@ -199,6 +199,10 @@ async function main() {
     const pdb = await tool({ tool: 'puertos', host: dbHost, ports: '3306,3307' });
     check('Puertos: en la red interna dice cuál está abierto y cuál no', pdb.status === 200 && pdb.j.rows.length === 2 && pdb.j.rows.find((x) => x.port === 3306).state === 'abierto'
       && pdb.j.rows.find((x) => x.port === 3307).state !== 'abierto' && /MySQL/.test(pdb.j.summary));
+    const flowP = await post('/red/herramientas/flujo', { tool: 'puertos', host: dbHost, ports: '3306,3307' });
+    const endP = flowP.text.split('\n\n').filter((x) => x.startsWith('data: ')).map((x) => JSON.parse(x.slice(6))).find((e) => e.t === 'end');
+    check('Salida en vivo: el final trae el resultado completo para la tarjeta (puertos con su estado)', endP && endP.r.tool === 'puertos' && endP.r.rows.length === 2
+      && endP.r.rows.find((x) => x.port === 3306).state === 'abierto' && /MySQL/.test(endP.r.summary) && endP.r.ip);
     const many = await tool({ tool: 'puertos', host: dbHost, ports: '1-1000' });
     check('Puertos: más del tope por consulta, rechazado', many.status === 400 && /máximo/.test(many.j.error));
     const tr = await tool({ tool: 'ruta', host: '127.0.0.1' });
