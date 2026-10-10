@@ -52,6 +52,14 @@
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <% if (edit) { %><input type="hidden" name="id" value="<%= edit.id %>"><% } %>
       <h6><%= edit ? 'Editar ' + edit.name : 'Nuevo controlador' %></h6>
+      <div class="mb-3 p-2 border rounded bg-body-tertiary">
+        <label class="form-label small mb-1" for="o_pegar"><i class="bi bi-magic"></i> Extraer el Omada ID de la dirección del controlador</label>
+        <div class="input-group input-group-sm">
+          <input class="form-control font-monospace" id="o_pegar" type="text" autocomplete="off" spellcheck="false" placeholder="Pegue aquí la dirección completa del navegador (https://…omadacId=…)">
+          <button class="btn btn-outline-primary" type="button" id="o_extraer">Extraer</button>
+        </div>
+        <div class="form-text" id="o_pegar_msg" aria-live="polite">Abra el controlador desde la nube de Omada, copie la dirección de la barra del navegador y péguela. Se llenan el Omada ID y la dirección de la interfaz; lo pegado no se envía ni se guarda.</div>
+      </div>
       <div class="mb-2"><label class="form-label small" for="o_name">Nombre *</label>
         <input class="form-control form-control-sm" id="o_name" name="name" value="<%= v('name') %>" maxlength="100" required placeholder="OC300 Pueblo Libre"></div>
       <div class="mb-2"><label class="form-label small" for="o_url">Dirección de la interfaz *</label>
@@ -78,4 +86,43 @@
     </form>
   </div>
 </div>
+<script>
+  // Extrae el Omada ID (omadacId=) de la direccion pegada y propone la direccion
+  // de la interfaz de la misma region. Todo ocurre en el navegador: el campo no
+  // tiene "name", asi que la direccion (que trae un token de sesion) no se envia.
+  (function () {
+    var box = document.getElementById('o_pegar');
+    var msg = document.getElementById('o_pegar_msg');
+    var id = document.getElementById('o_cid');
+    var url = document.getElementById('o_url');
+    function extraer() {
+      var text = box.value.trim();
+      if (!text) return;
+      var m = /[?&#]omadacId=([A-Za-z0-9]{8,64})/.exec(text);
+      box.value = '';
+      if (!m) {
+        msg.className = 'form-text text-danger';
+        msg.textContent = 'Esa dirección no trae omadacId=. Ábrala con el controlador ya cargado (después de pulsar el globo) y cópiela completa.';
+        return;
+      }
+      id.value = m[1];
+      var done = 'Omada ID extraído: ' + m[1] + '.';
+      // use1-omada-cloud.tplinkcloud.com -> https://use1-omada-northbound.tplinkcloud.com
+      var region = /^https:\/\/([a-z0-9]+)-omada-cloud\.tplinkcloud\.com(?:[/:?#]|$)/i.exec(text);
+      if (region) {
+        var proposed = 'https://' + region[1].toLowerCase() + '-omada-northbound.tplinkcloud.com';
+        if (!url.value.trim() || /-omada-northbound\.tplinkcloud\.com$/i.test(url.value.trim())) {
+          url.value = proposed;
+          done += ' Dirección de la interfaz: ' + proposed + '.';
+        }
+      }
+      msg.className = 'form-text text-success';
+      msg.textContent = done + ' Faltan el Client ID y el Client Secret.';
+      (document.getElementById('o_name').value ? document.getElementById('o_client') : document.getElementById('o_name')).focus();
+    }
+    document.getElementById('o_extraer').addEventListener('click', extraer);
+    box.addEventListener('paste', function () { setTimeout(extraer, 0); });
+    box.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); extraer(); } });
+  })();
+</script>
 <%- include('../partials/foot') %>

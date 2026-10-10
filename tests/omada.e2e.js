@@ -143,6 +143,8 @@ async function main() {
     check('Sin controladores: la pantalla abre e invita a configurar', page.status === 200 && page.text.includes('Aún no hay ningún controlador Omada') && page.text.includes('/red/omada/configuracion'));
     check('La pestaña Omada aparece en el módulo Red', (await get('/red/vlan')).text.includes('href="/red/omada"'));
 
+    page = await get('/red/omada/configuracion');
+    check('Configuración: campo para extraer el Omada ID de la dirección pegada, que no se envía', page.text.includes('id="o_pegar"') && !/id="o_pegar"[^>]*name=/.test(page.text) && page.text.includes('id="o_extraer"'));
     // ---------------- validaciones del formulario ----------------
     omada._.allowHttp = false;
     await post('/red/omada/configuracion', form());
