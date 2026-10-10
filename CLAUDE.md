@@ -153,8 +153,10 @@ READMEs.
   ruta usa `tracepath` porque `traceroute` exige privilegios que el contenedor no tiene. Prueba:
   `tests/red.e2e.js`.
 - **Red > Omada** (`omadaService.js`, job `syncOmada.js` cada 5 min): lee los controladores TP-Link Omada por
-  su Open API oficial (modo *client credentials*; cabecera `Authorization: AccessToken=…`). **Solo hace GET**
-  (más el POST del token): no cambia nada en el controlador. Cada OC300 es un controlador aparte
+  su Open API oficial (modo *client credentials*; cabecera `Authorization: AccessToken=…`). **La lectura solo
+  hace GET** (más el POST del token). Lo único que escribe en el controlador son las acciones sobre un cliente
+  (bloquear, desbloquear, reconectar; `clientAction`): solo admin, apagadas por defecto y habilitadas por
+  controlador (`allow_actions`), auditadas, y requieren rol Admin en la aplicación Open API. Cada OC300 es un controlador aparte
   (`omada_controllers`, secreto cifrado con `cryptoService`). Guarda copia de sitios, equipos y clientes, y una
   muestra de consumo por lectura (`omada_samples`, 30 días) de la que sale el gráfico, dibujado en el servidor
   como SVG. Cruza por MAC con el inventario de Red y puede registrar ahí los AP y switches sin pisar nada.

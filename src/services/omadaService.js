@@ -3,9 +3,12 @@
 // mostrar equipos, clientes y consumo sin depender de que el controlador
 // responda en ese momento.
 //
-// SOLO LECTURA: este servicio unicamente hace GET (mas el POST que pide el
-// token). No cambia nada en el controlador, aunque la aplicacion Open API
-// tuviera permisos de administrador; con un rol "Viewer" es suficiente.
+// LECTURA: la sincronizacion unicamente hace GET (mas el POST que pide el
+// token); con un rol "Viewer" es suficiente. Lo unico que cambia algo en el
+// controlador son las ACCIONES sobre un cliente (bloquear, desbloquear,
+// reconectar): estan apagadas por defecto, se habilitan por controlador
+// (allow_actions) y necesitan que la aplicacion Open API tenga un rol con
+// permiso de modificar clientes.
 //
 // Cada controlador (un OC300, o uno por software) tiene su propio
 // identificador (omadacId) y su propia aplicacion Open API en modo "Client".
@@ -27,6 +30,8 @@ const KINDS = { ap: ['Punto de acceso', 'bi-wifi'], switch: ['Switch', 'bi-hdd-n
 const RANGES = { 6: 'Últimas 6 horas', 24: 'Últimas 24 horas', 168: 'Últimos 7 días', 720: 'Últimos 30 días' };
 // Codigos de la API "el token vencio" y "el token no es valido": se pide otro y se repite una vez.
 const TOKEN_ERRORS = new Set([-44112, -44113]);
+
+const ACTIONS = { bloquear: ['block', 'bloqueado'], desbloquear: ['unblock', 'desbloqueado'], reconectar: ['reconnect', 'reconectado'] };
 
 const _ = { allowHttp: false }; // las pruebas usan un controlador simulado sin TLS
 const tokens = new Map();       // id del controlador -> { value, until }
@@ -60,19 +65,22 @@ function controllerInput(b, { isNew }) {
   try { url = new URL(String(b.base_url || '').trim()); } catch (e) { throw new Error('La dirección de la interfaz no es válida: debe ser como https://use1-omada-northbound.tplinkcloud.com'); }
   if (url.protocol !== 'https:' && !(_.allowHttp && url.protocol === 'http:')) throw new Error('La dirección de la interfaz debe empezar con https://');
   if (url.username || url.password || url.search || url.hash) throw new Error('La dirección de la interfaz no lleva usuario, parámetros ni #: solo https://servidor[:puerto]');
-  const omadacId = String(b.omadac_id || '').trim();
-  if (!/^[A-Za-z0-9]{8,64}$/.test(omadacId)) throw new Error('El Omada ID no es válido: son letras y números, sin espacios (aparece junto a la aplicación Open API).');
+  // Se puede pegar la direccion completa del controlador en la nube: de ahi solo se toma el omadacId.
+  const pasted = /[?&]omadacId=([A-Za-z0-9]+)/.exec(String(b.omadac_id || ''));
+  const omadacId = pasted ? pasted[1] : String(b.omadac_id || '').trim();
+  if (!/^[A-Za-z0-9]{8,64}$/.test(omadacId)) throw new Error('El Omada ID no es válido: son letras y números, sin espacios (es el valor de omadacId= en la dirección del controlador).');
   const clientId = String(b.client_id || '').trim();
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(clientId)) throw new Error('El Client ID no es válido: cópielo tal como aparece en la aplicación Open API.');
   const secret = String(b.client_secret || '').trim();
   if (isNew && !secret) throw new Error('Escriba el Client Secret de la aplicación Open API.');
   if (secret && !/^[\x21-\x7e]{8,200}$/.test(secret)) throw new Error('El Client Secret no es válido: cópielo completo, sin espacios.');
-  return { row: { name, base_url: url.origin, omadac_id: omadacId, client_id: clientId, verify_tls: b.verify_tls === '0' ? 0 : 1, enabled: b.enabled === '0' ? 0 : 1 }, secret };
+  return { row: { name, base_url: url.origin, omadac_id: omadacId, client_id: clientId, verify_tls: b.verify_tls === '0' ? 0 : 1, enabled: b.enabled === '0' ? 0 : 1,
+    allow_actions: [].concat(b.allow_actions || []).includes('1') ? 1 : 0 }, secret };
 }
 
 // Sin el secreto: lo que se puede mostrar.
 async function controllers() {
-  const [rows] = await pool.query(`SELECT c.id, c.name, c.base_url, c.omadac_id, c.client_id, c.verify_tls, c.enabled, c.last_sync_at, c.last_sync_ok, c.last_sync_detail,
+  const [rows] = await pool.query(`SELECT c.id, c.name, c.base_url, c.omadac_id, c.client_id, c.verify_tls, c.enabled, c.allow_actions, c.last_sync_at, c.last_sync_ok, c.last_sync_detail,
       (c.client_secret IS NOT NULL AND c.client_secret <> '') AS has_secret, (SELECT COUNT(*) FROM omada_sites s WHERE s.controller_id = c.id) AS sites
     FROM omada_controllers c ORDER BY c.name`);
   return rows;
@@ -173,6 +181,22 @@ async function get(c, path, params = {}) {
     return once(true);
   }
 }
+// Una accion (POST sin cuerpo) sobre un recurso del controlador.
+async function act(c, path) {
+  const once = async (fresh) => {
+    const tok = await token(c, { fresh });
+    let r;
+    try {
+      r = await axios.post(`${c.base_url}/openapi/v1/${encodeURIComponent(c.omadac_id)}${path}`, {},
+        { headers: { Authorization: `AccessToken=${tok}` }, timeout: TIMEOUT, httpsAgent: agentFor(c), maxRedirects: 0 });
+    } catch (err) { throw explain(err); }
+    return unwrap(r.data);
+  };
+  try { return await once(false); } catch (err) {
+    if (!TOKEN_ERRORS.has(err.code)) throw err;
+    return once(true);
+  }
+}
 // Listas paginadas: { totalRows, data }.
 async function getAll(c, path) {
   const out = [];
@@ -217,7 +241,7 @@ async function syncSite(c, s, now) {
       site_id: site.id, mac: m, name: clean(x.name || x.hostName, 150), vendor: clean(x.vendor, 100), device_type: clean(x.deviceType || x.deviceCategory, 40), ip: clean(x.ip, 45),
       wireless: isWifi ? 1 : 0, ssid: isWifi ? clean(x.ssid, 64) : null, via_mac: via, via_name: clean(isWifi ? x.apName : (x.switchName || x.gatewayName), 150),
       via_port: isWifi ? null : clean(x.portName || x.standardPort || x.port, 40), vlan: Number.isInteger(x.vid) ? x.vid : null, signal_pct: isWifi ? pct(x.signalLevel) : null,
-      down_bps: int(x.activity) * 8, up_bps: int(x.uploadActivity) * 8, traffic_down: int(x.trafficDown), traffic_up: int(x.trafficUp), active: 1, last_seen: now,
+      down_bps: int(x.activity) * 8, up_bps: int(x.uploadActivity) * 8, traffic_down: int(x.trafficDown), traffic_up: int(x.trafficUp), active: 1, blocked: x.blocked ? 1 : 0, last_seen: now,
     };
     await pool.query('INSERT INTO omada_clients SET ? ON DUPLICATE KEY UPDATE ?', [row, row]);
     total += 1;
@@ -283,7 +307,7 @@ async function sync() {
     const results = [];
     for (const r of rows) results.push(await syncController(r.id));
     await pool.query('DELETE FROM omada_samples WHERE taken_at < NOW() - INTERVAL ? DAY', [SAMPLE_DAYS]);
-    await pool.query('DELETE FROM omada_clients WHERE active = 0 AND (last_seen IS NULL OR last_seen < NOW() - INTERVAL ? DAY)', [CLIENT_DAYS]);
+    await pool.query('DELETE FROM omada_clients WHERE active = 0 AND blocked = 0 AND (last_seen IS NULL OR last_seen < NOW() - INTERVAL ? DAY)', [CLIENT_DAYS]);
     return { skipped: false, results };
   } finally {
     running = false;
@@ -311,8 +335,8 @@ async function clients({ siteId = 0, onlyActive = true } = {}) {
   const args = [];
   if (siteId) { where.push('k.site_id = ?'); args.push(siteId); }
   if (onlyActive) where.push('k.active = 1');
-  const [rows] = await pool.query(`SELECT k.*, s.name AS site_name, n.id AS inventory_id, n.name AS inventory_name, n.kind AS inventory_kind
-    FROM omada_clients k JOIN omada_sites s ON s.id = k.site_id
+  const [rows] = await pool.query(`SELECT k.*, s.name AS site_name, c.allow_actions, n.id AS inventory_id, n.name AS inventory_name, n.kind AS inventory_kind
+    FROM omada_clients k JOIN omada_sites s ON s.id = k.site_id JOIN omada_controllers c ON c.id = s.controller_id
     LEFT JOIN network_devices n ON n.id = (SELECT MIN(n2.id) FROM network_devices n2 WHERE n2.mac = k.mac OR n2.mac_wifi = k.mac)
     WHERE ${where.join(' AND ')} ORDER BY k.active DESC, (k.traffic_down + k.traffic_up) DESC, k.name`, args);
   return rows;
@@ -361,6 +385,30 @@ async function dashboard({ siteId = 0, hours = 24 } = {}) {
   };
 }
 
+// Bloquear, desbloquear o reconectar un cliente. Es lo unico que escribe en el controlador.
+async function clientAction(clientId, action) {
+  const a = ACTIONS[action];
+  if (!a) throw new Error('Acción no válida.');
+  const [[k]] = await pool.query(`SELECT k.id, k.mac, k.name, k.ip, s.site_key, s.name AS site_name, s.controller_id
+    FROM omada_clients k JOIN omada_sites s ON s.id = k.site_id WHERE k.id = ?`, [Number(clientId) || 0]);
+  if (!k) throw new Error('El cliente ya no está en la lista.');
+  const c = await withSecret(k.controller_id);
+  if (!c.allow_actions) throw new Error(`Las acciones están apagadas para el controlador ${c.name}. Un administrador las habilita en Configuración.`);
+  try {
+    await act(c, `/sites/${encodeURIComponent(k.site_key)}/clients/${k.mac.replace(/:/g, '-')}/${a[0]}`);
+  } catch (err) {
+    if (!err.omada) throw err;
+    const e = new Error(`${err.message} Si es un problema de permisos, la aplicación Open API de ese controlador necesita un rol que pueda modificar clientes (Admin), no Viewer.`);
+    e.omada = true;
+    throw e;
+  }
+  const block = action === 'bloquear' ? 1 : 0;
+  if (action !== 'reconectar') {
+    await pool.query('UPDATE omada_clients SET blocked = ?, active = IF(?, 0, active), down_bps = IF(?, 0, down_bps), up_bps = IF(?, 0, up_bps) WHERE id = ?', [block, block, block, block, k.id]);
+  }
+  return { name: k.name || k.mac, mac: k.mac, ip: k.ip, site: k.site_name, done: a[1] };
+}
+
 // Registra en el inventario de Red (pestaña Equipos) los AP, switches y
 // gateway que Omada conoce y que aun no estan (por MAC). No pisa nada.
 async function registerInInventory(user) {
@@ -380,5 +428,5 @@ async function registerInInventory(user) {
 
 module.exports = {
   STATUS, KINDS, RANGES, fmtBps, fmtBytes, controllers, controller, saveController, deleteController, test, sync, syncController,
-  sites, devices, clients, samples, dashboard, registerInInventory, _,
+  sites, devices, clients, samples, dashboard, registerInInventory, clientAction, ACTIONS, _,
 };

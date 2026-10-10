@@ -1514,6 +1514,7 @@ CREATE TABLE IF NOT EXISTS omada_controllers (
   client_secret TEXT NULL,                      -- cifrado (cryptoService)
   verify_tls TINYINT(1) NOT NULL DEFAULT 1,     -- 0 solo para un controlador local con certificado propio
   enabled TINYINT(1) NOT NULL DEFAULT 1,
+  allow_actions TINYINT(1) NOT NULL DEFAULT 0,  -- 1 = se puede bloquear/desbloquear clientes desde aqui
   last_sync_at DATETIME NULL,
   last_sync_ok TINYINT(1) NULL,
   last_sync_detail VARCHAR(500) NULL,
@@ -1589,6 +1590,7 @@ CREATE TABLE IF NOT EXISTS omada_clients (
   traffic_down BIGINT NOT NULL DEFAULT 0,       -- bytes de la sesion actual
   traffic_up BIGINT NOT NULL DEFAULT 0,
   active TINYINT(1) NOT NULL DEFAULT 1,
+  blocked TINYINT(1) NOT NULL DEFAULT 0,
   last_seen DATETIME NULL,
   CONSTRAINT fk_omada_cli_site FOREIGN KEY (site_id) REFERENCES omada_sites(id) ON DELETE CASCADE,
   UNIQUE KEY uniq_omada_cli (site_id, mac),

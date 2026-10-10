@@ -640,7 +640,7 @@ administradores) hace ping, ruta de saltos, consulta DNS y revisión de puertos 
 abiertos **desde el servidor de la aplicación**; la revisión de puertos solo acepta
 direcciones de la red interna y cada prueba queda en la auditoría.
 
-**Red > Omada (controladores TP-Link), solo lectura.** La pestaña *Omada* muestra lo que
+**Red > Omada (controladores TP-Link).** La pestaña *Omada* muestra lo que
 conocen los controladores Omada: *Resumen* (clientes conectados, equipos en línea y
 caídos, velocidad de bajada y subida, gráfico de consumo de 6 horas a 30 días, clientes
 con más consumo, clientes por punto de acceso y por red Wi-Fi, señal débil), *Equipos*
@@ -656,7 +656,12 @@ y necesita su propia aplicación. El secreto se guarda cifrado. *Registrar en el
 inventario de Red* copia los AP y switches a la pestaña *Equipos* (sin pisar lo
 escrito a mano), y los clientes cuya MAC coincide con un equipo o celular del
 inventario se muestran con su nombre. El gráfico suma la velocidad de los clientes en
-cada lectura; no es la medición del enlace de Internet en el router.
+cada lectura; no es la medición del enlace de Internet en el router. **Bloquear,
+desbloquear y reconectar clientes** está apagado por defecto: un administrador lo
+habilita por controlador («Permitir acciones») y la aplicación Open API de ese
+controlador debe tener rol *Admin*; cada acción se hace en Omada al momento y queda
+en la auditoría. El Omada ID es el valor de `omadacId=` en la dirección del navegador
+con el controlador abierto (se puede pegar la dirección completa).
 
 **Directivas de grupo (GPO)**, solo lectura: la pestaña *Directivas (GPO)* lista cada
 directiva con su estado, qué tipo de configuración trae (scripts, despliegue de

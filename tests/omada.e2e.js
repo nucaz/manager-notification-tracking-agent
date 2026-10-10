@@ -23,7 +23,7 @@ const check = (name, cond) => results.push([!!cond, name]);
 const OMADAC = 'e2e0omadac0id0000000000000000001';
 const CLIENT = 'e2eclient0000000000000000000id01';
 const SECRET = 'e2e-secreto-que-no-debe-verse-0001';
-const mock = { calls: [], tokens: 0, expireNext: false, down: false, clients: null, devices: null, methods: new Set() };
+const mock = { calls: [], tokens: 0, expireNext: false, down: false, clients: null, devices: null, methods: new Set(), actions: [], viewer: false };
 const DEVICES = [
   { mac: '30-DE-4B-00-E2-01', name: 'ZZ-E2E SW-Sistemas', type: 'switch', model: 'SG2008 v4.20', ip: '192.168.100.94', status: 1, cpuUtil: 12, memUtil: 40, uptime: '9day(s) 6h', firmwareVersion: '4.20.24', sn: 'SN-SW-1' },
   { mac: '3C-78-95-00-E2-02', name: 'ZZ-E2E AP1-Counter', type: 'ap', model: 'EAP620 HD(US) v3.0', ip: '192.168.100.44', status: 1, cpuUtil: 91, memUtil: 55, uptime: '3day(s)', firmwareVersion: '1.6.7', sn: 'SN-AP-1',
@@ -64,6 +64,12 @@ function startMock() {
       if (req.headers.authorization !== `AccessToken=tok-${mock.tokens}`) return json(res, { errorCode: -44113, msg: 'The Access Token is Invalid' });
       if (mock.expireNext) { mock.expireNext = false; mock.tokens += 100; return json(res, { errorCode: -44112, msg: 'The access token has expired' }); }
       const p = url.pathname.replace(`/openapi/v1/${OMADAC}`, '');
+      const action = /^\/sites\/site-e2e-1\/clients\/([0-9A-F-]{17})\/(block|unblock|reconnect)$/.exec(p);
+      if (req.method === 'POST' && action) {
+        if (mock.viewer) return json(res, { errorCode: -1005, msg: 'Operation forbidden.' });
+        mock.actions.push(`${action[2]} ${action[1]}`);
+        return json(res, { errorCode: 0, msg: 'Success.' });
+      }
       if (req.method !== 'GET') return json(res, { errorCode: -1, msg: 'solo lectura' });
       if (p === '/sites') return json(res, grid([{ siteId: 'site-e2e-1', name: 'ZZ-E2E Pueblo Libre', region: 'Peru' }], url));
       if (p === '/sites/site-e2e-1/devices') return json(res, grid(mock.devices || DEVICES, url));
@@ -275,6 +281,53 @@ async function main() {
       && (await get('/red/omada')).text.includes('menos de un minuto'));
     check('Auditoría de guardar, registrar y quitar', !!(await row("SELECT id FROM audit_log WHERE action = 'red_omada_controlador_guardado' AND target LIKE ?", [`${TAG}%`]))
       && !!(await row("SELECT id FROM audit_log WHERE action = 'red_omada_registrar_equipos'")));
+
+    // ---------------- acciones sobre clientes ----------------
+    const cable = await row('SELECT * FROM omada_clients WHERE mac = ?', ['AA:00:00:00:E2:03']);
+    const wifi1 = await row('SELECT * FROM omada_clients WHERE mac = ?', ['AA:00:00:00:E2:01']);
+    page = await get('/red/omada/clientes');
+    await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'bloquear' });
+    check('Acciones apagadas por defecto: sin botones y el bloqueo se rechaza sin tocar el controlador', !page.text.includes('/accion') && (await get('/red/omada/clientes')).text.includes('Las acciones están apagadas')
+      && mock.actions.length === 0 && (await get('/red/omada/configuracion')).text.includes('Solo lectura'));
+    await post('/red/omada/configuracion', form({ id: ctrl.id, client_secret: '', allow_actions: '1',
+      omadac_id: `https://use1-omada-cloud.tplinkcloud.com/omada/6.3.0.45/index.html?token=abc123&deviceId=15F3&omadacId=${OMADAC}&connectorUrl=https://x#/dashboard` }));
+    const on = await row('SELECT * FROM omada_controllers WHERE id = ?', [ctrl.id]);
+    check('Pegar la dirección completa del controlador: se toma solo el Omada ID', on.omadac_id === OMADAC && on.allow_actions === 1 && (await get('/red/omada/configuracion')).text.includes('Lectura y acciones'));
+    page = await get('/red/omada/clientes');
+    check('Con acciones habilitadas: botones de bloquear y reconectar, con confirmación', page.text.includes(`/red/omada/clientes/${cable.id}/accion`) && page.text.includes('value="bloquear"') && page.text.includes('value="reconectar"')
+      && page.text.includes('data-confirma="¿Bloquear a'));
+    mock.viewer = true;
+    await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'bloquear' });
+    check('Aplicación con rol Viewer: Omada rechaza y se explica qué rol hace falta', (await get('/red/omada/clientes')).text.includes('necesita un rol que pueda modificar clientes')
+      && (await row('SELECT blocked FROM omada_clients WHERE id = ?', [cable.id])).blocked === 0);
+    mock.viewer = false;
+    const r2 = await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'bloquear', volver: '?ver=todos' });
+    const blocked = await row('SELECT * FROM omada_clients WHERE id = ?', [cable.id]);
+    check('Bloquear: se envía a Omada con la MAC del cliente y queda marcado', mock.actions.join() === 'block AA-00-00-00-E2-03' && blocked.blocked === 1 && blocked.active === 0 && r2.location === '/red/omada/clientes?ver=todos');
+    page = await get('/red/omada/clientes?ver=bloqueados');
+    check('Filtro de bloqueados, con el botón de desbloquear', page.text.includes(`${TAG} Garita`) && !page.text.includes(`${TAG} Corporativo`) && page.text.includes('value="desbloquear"') && page.text.includes('Bloqueados · 1'));
+    await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'desbloquear' });
+    await post(`/red/omada/clientes/${wifi1.id}/accion`, { accion: 'reconectar' });
+    check('Desbloquear y reconectar', mock.actions.slice(1).join() === 'unblock AA-00-00-00-E2-03,reconnect AA-00-00-00-E2-01' && (await row('SELECT blocked FROM omada_clients WHERE id = ?', [cable.id])).blocked === 0
+      && (await row('SELECT active FROM omada_clients WHERE id = ?', [wifi1.id])).active === 1);
+    const sent = mock.actions.length;
+    await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'reboot' });
+    const r3 = await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'bloquear', volver: '//otro.sitio/x' });
+    await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'desbloquear' });
+    check('Acción desconocida: rechazada; el retorno nunca sale de la pantalla de clientes', mock.actions.length === sent + 2 && r3.location === '/red/omada/clientes');
+    as('editor');
+    await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'bloquear' });
+    as('lector');
+    await post(`/red/omada/clientes/${cable.id}/accion`, { accion: 'bloquear' });
+    check('Editor y lector: no pueden bloquear ni ven los botones', mock.actions.length === sent + 2 && !(await get('/red/omada/clientes')).text.includes('/accion'));
+    as('superadmin');
+    const audits = await rows("SELECT detail FROM audit_log WHERE action = 'red_omada_cliente_accion' AND target LIKE ? ORDER BY id", [`${TAG}%`]);
+    check('Cada acción queda en la auditoría con cliente, sitio e IP', audits.length === 5 && /^bloqueado · sitio ZZ-E2E Pueblo Libre · IP 192\.168\.100\.15$/.test(audits[0].detail) && /^reconectado/.test(audits[2].detail));
+    await pool.query('UPDATE omada_clients SET blocked = 1, active = 0, last_seen = NOW() - INTERVAL 60 DAY WHERE id = ?', [cable.id]);
+    await pool.query('UPDATE omada_controllers SET enabled = 0 WHERE id = ?', [ctrl.id]);
+    await omada.sync();
+    await pool.query('UPDATE omada_controllers SET enabled = 1 WHERE id = ?', [ctrl.id]);
+    check('Un cliente bloqueado no se olvida a los 30 días (para poder desbloquearlo)', !!(await row('SELECT id FROM omada_clients WHERE id = ?', [cable.id])));
 
     // ---------------- quitar ----------------
     await post(`/red/omada/configuracion/${ctrl.id}/eliminar`);

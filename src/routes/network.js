@@ -372,13 +372,28 @@ router.post('/omada/equipos/registrar', canWrite, verifyCsrfToken, async (req, r
 router.get('/omada/clientes', async (req, res, next) => {
   try {
     const b = await omadaBase(req);
-    const view = ['wifi', 'cable', 'todos'].includes(req.query.ver) ? req.query.ver : '';
-    const all = await omadaService.clients({ siteId: b.site ? b.site.id : 0, onlyActive: view !== 'todos' });
-    const rows = view === 'wifi' ? all.filter((c) => c.wireless) : view === 'cable' ? all.filter((c) => !c.wireless) : all;
+    const view = ['wifi', 'cable', 'todos', 'bloqueados'].includes(req.query.ver) ? req.query.ver : '';
+    const everyone = await omadaService.clients({ siteId: b.site ? b.site.id : 0, onlyActive: false });
+    const all = everyone.filter((c) => c.active);
+    const rows = view === 'wifi' ? all.filter((c) => c.wireless) : view === 'cable' ? all.filter((c) => !c.wireless) : view === 'todos' ? everyone
+      : view === 'bloqueados' ? everyone.filter((c) => c.blocked) : all;
     const f = search(req, rows, ['name', 'mac', 'ip', 'vendor', 'device_type', 'ssid', 'via_name', 'site_name', 'inventory_name']);
-    res.render('network/omada_clients', { title: 'Red — Omada: clientes', sub: 'clientes', ...b, all, items: f.rows, q: f.q, view });
+    res.render('network/omada_clients', { title: 'Red — Omada: clientes', sub: 'clientes', ...b, all, items: f.rows, q: f.q, view, blockedCount: everyone.filter((c) => c.blocked).length });
   } catch (err) {
     next(err);
+  }
+});
+
+// Lo unico que cambia algo en Omada: solo administradores, con el controlador habilitado para acciones, y auditado.
+router.post('/omada/clientes/:id(\\d+)/accion', isAdmin, verifyCsrfToken, async (req, res, next) => {
+  const back = `/red/omada/clientes${/^\?[\w=&%.:-]{0,200}$/.test(String(req.body.volver || '')) ? req.body.volver : ''}`;
+  try {
+    const r = await omadaService.clientAction(req.params.id, String(req.body.accion || ''));
+    await auditService.log(req, { user: req.session.user, action: 'red_omada_cliente_accion', target: `${r.name} (${r.mac})`.slice(0, 250), detail: `${r.done} · sitio ${r.site}${r.ip ? ` · IP ${r.ip}` : ''}` });
+    req.flash('success', `${r.name} (${r.mac}): ${r.done} en Omada.`);
+    return res.redirect(back);
+  } catch (err) {
+    return fail(req, res, err, back, next);
   }
 });
 

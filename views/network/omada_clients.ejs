@@ -3,6 +3,8 @@
 <% const base = function (extra) { const p = []; if (site) p.push('sitio=' + site.id); if (extra) p.push(extra); return '?' + p.join('&'); };
    const activos = all.filter(function (c) { return c.active; });
    const wifi = activos.filter(function (c) { return c.wireless; }).length;
+   const esAdmin = ['superadmin', 'admin'].includes(currentUser.role);
+   const volver = base([view ? 'ver=' + view : '', q ? 'q=' + encodeURIComponent(q) : ''].filter(Boolean).join('&'));
    const senal = function (v) { return v === null ? 'secondary' : v >= 60 ? 'success' : v >= 40 ? 'warning' : 'danger'; }; %>
 <div class="card p-3">
   <div class="d-flex flex-wrap gap-2 small mb-2">
@@ -10,6 +12,7 @@
     <a class="btn btn-sm <%= view === 'wifi' ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= base('ver=wifi') %>"><i class="bi bi-wifi"></i> Wi-Fi · <%= wifi %></a>
     <a class="btn btn-sm <%= view === 'cable' ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= base('ver=cable') %>"><i class="bi bi-ethernet"></i> Cable · <%= activos.length - wifi %></a>
     <a class="btn btn-sm <%= view === 'todos' ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= base('ver=todos') %>" title="Incluye los que se desconectaron en los últimos 30 días">Vistos en 30 días</a>
+    <% if (blockedCount || view === 'bloqueados') { %><a class="btn btn-sm <%= view === 'bloqueados' ? 'btn-danger' : 'btn-outline-danger' %>" href="<%= base('ver=bloqueados') %>"><i class="bi bi-slash-circle"></i> Bloqueados · <%= blockedCount %></a><% } %>
   </div>
   <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
     <% if (site) { %><input type="hidden" name="sitio" value="<%= site.id %>"><% } %>
@@ -22,13 +25,13 @@
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small">
       <thead><tr><th>Cliente</th><th>IP</th><th>MAC</th><th>Conexión</th><th>Conectado a</th><th class="text-end">Señal</th><th class="text-end">Bajando</th><th class="text-end">Subiendo</th>
-        <th class="text-end">Bajada total</th><th class="text-end">Subida total</th><th>Sitio</th><th data-oculta>Fabricante</th><th data-oculta>Tipo</th><th data-oculta>VLAN</th><th data-oculta>Visto</th></tr></thead>
+        <th class="text-end">Bajada total</th><th class="text-end">Subida total</th><th>Sitio</th><th data-oculta>Fabricante</th><th data-oculta>Tipo</th><th data-oculta>VLAN</th><th data-oculta>Visto</th><% if (esAdmin) { %><th data-orden="no"></th><% } %></tr></thead>
       <tbody>
         <% items.forEach(function (c) { %>
           <tr class="<%= c.active ? '' : 'text-muted' %>">
             <td><span class="fw-semibold"><%= c.name || '(sin nombre)' %></span>
               <% if (c.inventory_id) { %><div><a href="<%= c.inventory_kind === 'celular' ? '/red/celulares' : '/red/equipos' %>?q=<%= encodeURIComponent(c.mac) %>" title="Está en el inventario de Red"><i class="bi bi-card-checklist"></i> <%= c.inventory_name %></a></div><% } %>
-              <% if (!c.active) { %><span class="badge text-bg-secondary">desconectado</span><% } %></td>
+              <% if (c.blocked) { %><span class="badge text-bg-danger">bloqueado</span><% } else if (!c.active) { %><span class="badge text-bg-secondary">desconectado</span><% } %></td>
             <td class="font-monospace text-nowrap"><%= c.ip || '—' %></td>
             <td class="font-monospace text-nowrap"><%= c.mac %></td>
             <td class="text-nowrap"><i class="bi <%= c.wireless ? 'bi-wifi' : 'bi-ethernet' %>"></i> <%= c.wireless ? c.ssid || 'Wi-Fi' : 'Cable' %></td>
@@ -43,13 +46,34 @@
             <td><%= c.device_type || '—' %></td>
             <td><%= c.vlan === null ? '—' : c.vlan %></td>
             <td class="text-nowrap"><%= String(c.last_seen || '').slice(0, 16) || '—' %></td>
+            <% if (esAdmin) { %><td class="text-nowrap text-end">
+              <% if (c.allow_actions) { %>
+                <form method="post" action="/red/omada/clientes/<%= c.id %>/accion" class="d-inline"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="volver" value="<%= volver %>">
+                  <% if (c.blocked) { %>
+                    <button class="btn btn-sm btn-outline-success" name="accion" value="desbloquear" title="Desbloquear" data-confirma="¿Desbloquear a <%= c.name || c.mac %>? Podrá volver a conectarse a la red."><i class="bi bi-unlock"></i></button>
+                  <% } else { %>
+                    <% if (c.active && c.wireless) { %><button class="btn btn-sm btn-outline-secondary" name="accion" value="reconectar" title="Reconectar (lo desconecta un momento para que vuelva a asociarse)"
+                      data-confirma="¿Reconectar a <%= c.name || c.mac %>? Se desconecta unos segundos."><i class="bi bi-arrow-repeat"></i></button><% } %>
+                    <button class="btn btn-sm btn-outline-danger" name="accion" value="bloquear" title="Bloquear"
+                      data-confirma="¿Bloquear a <%= c.name || c.mac %> (<%= c.mac %>)? Se desconecta y no podrá volver a entrar a la red de <%= c.site_name %> hasta que se desbloquee."><i class="bi bi-slash-circle"></i></button>
+                  <% } %>
+                </form>
+              <% } %>
+            </td><% } %>
           </tr>
         <% }); %>
-        <% if (!items.length) { %><tr><td colspan="15" class="text-center text-muted py-4">Sin clientes<%= q || view ? ' con ese filtro' : ' conectados' %>.</td></tr><% } %>
+        <% if (!items.length) { %><tr><td colspan="16" class="text-center text-muted py-4">Sin clientes<%= q || view ? ' con ese filtro' : ' conectados' %>.</td></tr><% } %>
       </tbody>
     </table>
   </div>
   <p class="small text-muted mb-0">«Bajando» y «Subiendo» son la velocidad en el momento de la última lectura; los totales son de la sesión actual del cliente.
-    Cuando la MAC coincide con un equipo o celular del inventario de Red, se muestra su nombre.</p>
+    Cuando la MAC coincide con un equipo o celular del inventario de Red, se muestra su nombre.
+    <% if (esAdmin) { %>Bloquear, desbloquear y reconectar se hacen en Omada al momento y quedan en la auditoría; los botones aparecen solo si el controlador tiene habilitadas las acciones (Configuración).<% } %></p>
 </div>
+<script>
+  // Cada accion pide confirmacion con su propio texto.
+  document.querySelectorAll('button[data-confirma]').forEach(function (b) {
+    b.addEventListener('click', function (e) { if (!window.confirm(b.getAttribute('data-confirma'))) e.preventDefault(); });
+  });
+</script>
 <%- include('../partials/foot') %>
