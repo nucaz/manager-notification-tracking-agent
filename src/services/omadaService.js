@@ -138,7 +138,12 @@ function explain(err) {
 function unwrap(data) {
   if (!data || typeof data !== 'object' || data.errorCode === undefined) throw explain({ message: 'respuesta inesperada', response: { status: 404 } });
   if (Number(data.errorCode) !== 0) {
-    const e = new Error(`Omada respondió: ${clean(data.msg, 200) || 'error'} (código ${data.errorCode}).`);
+    // -7131: la nube de TP-Link no conoce ese controlador. Pasa con un controlador propio (OC300/OC200 o por
+    // software) aunque tenga acceso por la nube: su Open API solo se atiende en su direccion local.
+    const hint = Number(data.errorCode) === -7131
+      ? ' Esa dirección es la de los controladores alojados en la nube de TP-Link. Un OC300 u otro controlador propio atiende la Open API en su dirección local: use la «Interface Access Address» que muestra el icono del ojo de la aplicación (https://IP-del-controlador:puerto), y este servidor debe poder llegar a esa IP.'
+      : '';
+    const e = new Error(`Omada respondió: ${clean(data.msg, 200) || 'error'} (código ${data.errorCode}).${hint}`);
     e.omada = true;
     e.code = Number(data.errorCode);
     throw e;

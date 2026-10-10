@@ -651,8 +651,10 @@ en el controlador**. Para conectarlo, en *Configuración* (administradores) se r
 cada controlador con los datos de su aplicación Open API: en el controlador, vista
 *Global* → *Settings* → *Platform Integration* → *Open API* → *Add New App* en modo
 *Client* con rol *Viewer*; el icono del ojo muestra el Omada ID, el Client ID, el
-Client Secret y la dirección de la interfaz. **Cada OC300 es un controlador distinto**
-y necesita su propia aplicación. El secreto se guarda cifrado. *Registrar en el
+Client Secret y la dirección de la interfaz. Un OC300 (o cualquier controlador propio)
+atiende la Open API **en su dirección local**, aunque se administre desde la nube: el
+servidor de la aplicación debe poder llegar a esa IP y puerto. **Cada OC300 es un
+controlador distinto** y necesita su propia aplicación. El secreto se guarda cifrado. *Registrar en el
 inventario de Red* copia los AP y switches a la pestaña *Equipos* (sin pisar lo
 escrito a mano), y los clientes cuya MAC coincide con un equipo o celular del
 inventario se muestran con su nombre. El gráfico suma la velocidad de los clientes en

@@ -40,7 +40,7 @@
         <li>Con <strong>Add New App</strong> cree una aplicación en modo <strong>Client</strong>, con rol <strong>Viewer</strong> y acceso a los sitios que quiera ver.</li>
         <li>Pulse el icono del ojo de la aplicación: ahí están el <strong>Client ID</strong>, el <strong>Client Secret</strong>, el <strong>Omada ID</strong> y la <strong>dirección de la interfaz</strong> (Interface Access Address).</li>
         <li>Si no ve el Omada ID ahí: es el valor que sigue a <code>omadacId=</code> en la barra de direcciones del navegador cuando tiene abierto ese controlador. Puede pegar la dirección completa en el campo y se toma solo ese valor.</li>
-        <li>Dirección de la interfaz para un controlador que se abre desde <code>use1-omada-cloud.tplinkcloud.com</code>: <code>https://use1-omada-northbound.tplinkcloud.com</code> (en otras regiones cambia el prefijo: <code>euw1</code>, <code>aps1</code>).</li>
+        <li><strong>Dirección de la interfaz</strong>: copie la «Interface Access Address» tal como la muestra el icono del ojo. En un <strong>OC300, OC200 o controlador por software</strong> es su dirección en la red local (<code>https://IP-del-controlador:puerto</code>), aunque usted lo abra desde la nube: el servidor de esta aplicación debe poder llegar a esa IP y puerto, y normalmente hay que desmarcar «Verificar certificado». Solo los controladores <strong>alojados por TP-Link</strong> (Cloud-Based) usan <code>https://use1-omada-northbound.tplinkcloud.com</code>.</li>
       </ol>
       <p class="mb-1"><strong>Cada OC300 es un controlador distinto</strong>: tiene su propio Omada ID y necesita su propia aplicación Open API. Si tiene dos (por ejemplo, Pueblo Libre y Surco), agregue dos controladores aquí.</p>
       <p class="mb-1">Aquí los dos se ven juntos: el resumen, los equipos y los clientes muestran todos los sitios, o uno solo con el selector.</p>
@@ -58,13 +58,13 @@
           <input class="form-control font-monospace" id="o_pegar" type="text" autocomplete="off" spellcheck="false" placeholder="Pegue aquí la dirección completa del navegador (https://…omadacId=…)">
           <button class="btn btn-outline-primary" type="button" id="o_extraer">Extraer</button>
         </div>
-        <div class="form-text" id="o_pegar_msg" aria-live="polite">Abra el controlador desde la nube de Omada, copie la dirección de la barra del navegador y péguela. Se llenan el Omada ID y la dirección de la interfaz; lo pegado no se envía ni se guarda.</div>
+        <div class="form-text" id="o_pegar_msg" aria-live="polite">Abra el controlador desde la nube de Omada, copie la dirección de la barra del navegador y péguela. Se llena el Omada ID; lo pegado no se envía ni se guarda.</div>
       </div>
       <div class="mb-2"><label class="form-label small" for="o_name">Nombre *</label>
         <input class="form-control form-control-sm" id="o_name" name="name" value="<%= v('name') %>" maxlength="100" required placeholder="OC300 Pueblo Libre"></div>
       <div class="mb-2"><label class="form-label small" for="o_url">Dirección de la interfaz *</label>
-        <input class="form-control form-control-sm font-monospace" id="o_url" name="base_url" value="<%= v('base_url') %>" maxlength="255" required placeholder="https://use1-omada-northbound.tplinkcloud.com">
-        <div class="form-text">Tal como aparece en «Interface Access Address». Para un controlador local: https://IP:puerto.</div></div>
+        <input class="form-control form-control-sm font-monospace" id="o_url" name="base_url" value="<%= v('base_url') %>" maxlength="255" required placeholder="https://192.168.0.10:443">
+        <div class="form-text">Tal como aparece en «Interface Access Address» (icono del ojo de la aplicación Open API). En un OC300 es su dirección local.</div></div>
       <div class="mb-2"><label class="form-label small" for="o_cid">Omada ID *</label>
         <input class="form-control form-control-sm font-monospace" id="o_cid" name="omadac_id" value="<%= String(v('omadac_id')).slice(0, 64) %>" maxlength="600" required>
         <div class="form-text">El valor de <code>omadacId=</code> en la dirección del navegador con el controlador abierto (32 letras y números). Es distinto en cada OC300.</div></div>
@@ -109,7 +109,10 @@
       var done = 'Omada ID extraído: ' + m[1] + '.';
       // use1-omada-cloud.tplinkcloud.com -> https://use1-omada-northbound.tplinkcloud.com
       var region = /^https:\/\/([a-z0-9]+)-omada-cloud\.tplinkcloud\.com(?:[/:?#]|$)/i.exec(text);
-      if (region) {
+      // Con deviceId= o connectorUrl= es un controlador propio abierto por la nube: su interfaz es local.
+      var propio = /[?&](deviceId|connectorUrl)=/.test(text);
+      if (propio) done += ' Es un controlador propio (OC300 o similar): en «Dirección de la interfaz» va su dirección local, la que muestra el icono del ojo de la aplicación Open API.';
+      if (region && !propio) {
         var proposed = 'https://' + region[1].toLowerCase() + '-omada-northbound.tplinkcloud.com';
         if (!url.value.trim() || /-omada-northbound\.tplinkcloud\.com$/i.test(url.value.trim())) {
           url.value = proposed;
