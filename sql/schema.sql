@@ -1515,6 +1515,7 @@ CREATE TABLE IF NOT EXISTS omada_controllers (
   verify_tls TINYINT(1) NOT NULL DEFAULT 1,     -- 0 solo para un controlador local con certificado propio
   enabled TINYINT(1) NOT NULL DEFAULT 1,
   allow_actions TINYINT(1) NOT NULL DEFAULT 0,  -- 1 = se puede bloquear/desbloquear clientes desde aqui
+  mode VARCHAR(10) NOT NULL DEFAULT 'local',    -- local = directo al controlador | cuenta = por la nube (aplicacion de la cuenta TP-Link)
   last_sync_at DATETIME NULL,
   last_sync_ok TINYINT(1) NULL,
   last_sync_detail VARCHAR(500) NULL,
@@ -1533,6 +1534,8 @@ CREATE TABLE IF NOT EXISTS omada_sites (
   site_key VARCHAR(64) NOT NULL,                -- siteId de Omada
   name VARCHAR(100) NOT NULL,
   region VARCHAR(60) NULL,
+  org_name VARCHAR(100) NULL,                   -- modo cuenta: controlador (organizacion) al que pertenece
+  api_root VARCHAR(400) NULL,                   -- modo cuenta: prefijo de la API de esa organizacion a traves de la nube
   devices_total INT NOT NULL DEFAULT 0,
   devices_online INT NOT NULL DEFAULT 0,
   clients_total INT NOT NULL DEFAULT 0,

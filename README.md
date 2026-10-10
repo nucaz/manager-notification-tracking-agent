@@ -647,10 +647,14 @@ con más consumo, clientes por punto de acceso y por red Wi-Fi, señal débil), 
 (AP, switches y gateway con estado, MAC, IP, modelo, CPU, memoria, firmware) y
 *Clientes* (por Wi-Fi o cable, a qué AP o puerto están conectados, señal, velocidad y
 consumo). La aplicación lee cada 5 minutos por la Open API oficial y **no cambia nada
-en el controlador**. Para conectarlo, en *Configuración* (administradores) se registra
-cada controlador con los datos de su aplicación Open API: en el controlador, vista
-*Global* → *Settings* → *Platform Integration* → *Open API* → *Add New App* en modo
-*Client* con rol *Viewer*; el icono del ojo muestra el Omada ID, el Client ID, el
+en el controlador**. Para conectarlo, en *Configuración* (administradores) hay dos
+formas. **Por la nube de Omada** (recomendada): una aplicación Open API creada en la
+*cuenta* de Omada (portal de la nube, no dentro de un controlador) ve todos los
+controladores que se le asignen; se registran su Client ID, su Client Secret y la
+región. Requiere controladores OC200/OC220/OC300/OC400 o por software con versión
+6.2.0 o superior, en línea. **Directa al controlador**: una aplicación creada dentro
+del controlador, vista *Global* → *Settings* → *Platform Integration* → *Open API* →
+*Add New App* en modo *Client*; el icono del ojo muestra el Omada ID, el Client ID, el
 Client Secret y la dirección de la interfaz. Un OC300 (o cualquier controlador propio)
 atiende la Open API **en su dirección local**, aunque se administre desde la nube: el
 servidor de la aplicación debe poder llegar a esa IP y puerto. **Cada OC300 es un

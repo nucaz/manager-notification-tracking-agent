@@ -332,7 +332,7 @@ const omadaBase = async (req) => {
   const sites = await omadaService.sites();
   const site = sites.find((s) => s.id === Number(req.query.sitio)) || null;
   return { tab: 'omada', sites, site, STATUS: omadaService.STATUS, OKINDS: omadaService.KINDS, fmtBps: omadaService.fmtBps, fmtBytes: omadaService.fmtBytes,
-    controllers: await omadaService.controllers() };
+    controllers: await omadaService.controllers(), REGIONS: omadaService.REGIONS };
 };
 
 router.get('/omada', async (req, res, next) => {
@@ -417,10 +417,10 @@ router.post('/omada/configuracion', isAdmin, verifyCsrfToken, async (req, res, n
     // Se prueba de inmediato: asi se sabe si las credenciales sirven.
     try {
       const t = await omadaService.test(saved);
-      req.flash('success', `Controlador guardado y conexión correcta. Sitios visibles: ${t.sites.join(', ') || 'ninguno'}.`);
+      req.flash('success', `Guardado y conexión correcta. ${t.label}: ${t.sites.join(', ') || 'ninguno'}.`);
       await omadaService.syncController(saved);
     } catch (err) {
-      req.flash('error', `Controlador guardado, pero la prueba de conexión falló: ${err.message}`);
+      req.flash('error', `Guardado, pero la prueba de conexión falló: ${err.message}`);
     }
     return res.redirect('/red/omada/configuracion');
   } catch (err) {
@@ -434,7 +434,7 @@ router.post('/omada/configuracion', isAdmin, verifyCsrfToken, async (req, res, n
 router.post('/omada/configuracion/:id(\\d+)/probar', isAdmin, verifyCsrfToken, async (req, res, next) => {
   try {
     const t = await omadaService.test(req.params.id);
-    req.flash('success', `Conexión correcta. Sitios visibles: ${t.sites.join(', ') || 'ninguno'}.`);
+    req.flash('success', `Conexión correcta. ${t.label}: ${t.sites.join(', ') || 'ninguno'}.`);
   } catch (err) {
     if (err.sqlMessage) return next(err);
     req.flash('error', `La prueba falló: ${err.message}`);

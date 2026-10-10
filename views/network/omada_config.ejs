@@ -2,20 +2,22 @@
 <%- include('_omada_nav') %>
 <% const f = draft || edit || {};
    const v = function (k, def) { return f[k] === null || f[k] === undefined ? (def || '') : f[k]; };
-   const off = function (k) { return String(v(k, '1')) === '0'; }; %>
+   const off = function (k) { return String(v(k, '1')) === '0'; };
+   const modo = v('mode', edit || draft ? 'local' : 'cuenta') === 'local' ? 'local' : 'cuenta';
+   const regionDe = function (url) { return Object.keys(REGIONS).find(function (k) { return REGIONS[k][1] === url; }) || v('region', 'use1'); }; %>
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="card p-3">
-      <h6>Controladores</h6>
+      <h6>Conexiones</h6>
       <div class="table-responsive">
         <table class="table table-sm align-middle small">
-          <thead><tr><th>Nombre</th><th>Interfaz</th><th class="text-end">Sitios</th><th>Última lectura</th><th data-orden="no"></th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Conexión</th><th class="text-end">Sitios</th><th>Última lectura</th><th data-orden="no"></th></tr></thead>
           <tbody>
             <% controllers.forEach(function (c) { %>
               <tr class="<%= edit && edit.id === c.id ? 'table-active' : '' %>">
                 <td class="fw-semibold"><%= c.name %><% if (!c.enabled) { %> <span class="badge text-bg-secondary">en pausa</span><% } %>
                   <div><span class="badge text-bg-<%= c.allow_actions ? 'warning' : 'light border' %> fw-normal"><%= c.allow_actions ? 'Lectura y acciones' : 'Solo lectura' %></span></div></td>
-                <td class="font-monospace"><%= c.base_url.replace('https://', '') %></td>
+                <td><%= c.mode === 'cuenta' ? 'Por la nube de Omada' : 'Directa al controlador' %><div class="font-monospace text-muted"><%= c.base_url.replace('https://', '') %></div></td>
                 <td class="text-end"><%= c.sites %></td>
                 <td><% if (c.last_sync_at) { %><span class="badge text-bg-<%= c.last_sync_ok ? 'success' : 'danger' %>"><%= c.last_sync_ok ? 'Correcta' : 'Falló' %></span> <%= String(c.last_sync_at).slice(0, 16) %>
                   <div class="text-muted"><%= c.last_sync_detail %></div><% } else { %>Aún no se ha leído<% } %></td>
@@ -23,62 +25,81 @@
                   <form method="post" action="/red/omada/configuracion/<%= c.id %>/probar" class="d-inline"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <button class="btn btn-sm btn-outline-secondary" title="Probar la conexión"><i class="bi bi-plug"></i></button></form>
                   <a class="btn btn-sm btn-outline-primary" href="/red/omada/configuracion?editar=<%= c.id %>" title="Editar"><i class="bi bi-pencil"></i></a>
-                  <form method="post" action="/red/omada/configuracion/<%= c.id %>/eliminar" class="d-inline" onsubmit="return confirm('¿Quitar este controlador y todo lo que se leyó de él? En Omada no se cambia nada.');">
+                  <form method="post" action="/red/omada/configuracion/<%= c.id %>/eliminar" class="d-inline" onsubmit="return confirm('¿Quitar esta conexión y todo lo que se leyó con ella? En Omada no se cambia nada.');">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-sm btn-outline-danger" title="Quitar"><i class="bi bi-trash"></i></button></form>
                 </td>
               </tr>
             <% }); %>
-            <% if (!controllers.length) { %><tr><td colspan="5" class="text-center text-muted py-4">Sin controladores.</td></tr><% } %>
+            <% if (!controllers.length) { %><tr><td colspan="5" class="text-center text-muted py-4">Sin conexiones.</td></tr><% } %>
           </tbody>
         </table>
       </div>
     </div>
     <div class="card p-3 mt-3 small">
-      <h6>Dónde se obtiene cada dato</h6>
+      <h6>Dos formas de conectar</h6>
+      <p class="mb-1"><strong>Por la nube de Omada (recomendada).</strong> Una sola aplicación, creada en su <strong>cuenta</strong> de Omada, ve todos los controladores que le asigne (por ejemplo, los OC300 de Pueblo Libre y Surco). No hace falta llegar a la red de cada sede.</p>
       <ol class="mb-2 ps-3">
-        <li>Entre al controlador (desde la nube de Omada, pulse el icono del globo del OC300) y vaya a la vista <strong>Global</strong> → <strong>Settings</strong> → <strong>Platform Integration</strong> → <strong>Open API</strong>.</li>
-        <li>Con <strong>Add New App</strong> cree una aplicación en modo <strong>Client</strong>, con rol <strong>Viewer</strong> y acceso a los sitios que quiera ver.</li>
-        <li>Pulse el icono del ojo de la aplicación: ahí están el <strong>Client ID</strong>, el <strong>Client Secret</strong>, el <strong>Omada ID</strong> y la <strong>dirección de la interfaz</strong> (Interface Access Address).</li>
-        <li>Si no ve el Omada ID ahí: es el valor que sigue a <code>omadacId=</code> en la barra de direcciones del navegador cuando tiene abierto ese controlador. Puede pegar la dirección completa en el campo y se toma solo ese valor.</li>
-        <li><strong>Dirección de la interfaz</strong>: copie la «Interface Access Address» tal como la muestra el icono del ojo. En un <strong>OC300, OC200 o controlador por software</strong> es su dirección en la red local (<code>https://IP-del-controlador:puerto</code>), aunque usted lo abra desde la nube: el servidor de esta aplicación debe poder llegar a esa IP y puerto, y normalmente hay que desmarcar «Verificar certificado». Solo los controladores <strong>alojados por TP-Link</strong> (Cloud-Based) usan <code>https://use1-omada-northbound.tplinkcloud.com</code>.</li>
+        <li>Entre al portal de la nube de Omada (donde aparece la lista de sus controladores), <strong>no</strong> dentro de un controlador.</li>
+        <li>Busque la sección de <strong>Open API</strong> de la cuenta y cree una aplicación: nombre, vigencia y los controladores (organizaciones) que podrá ver.</li>
+        <li>Copie aquí su <strong>Client ID</strong> y su <strong>Client Secret</strong>, y elija la región de su cuenta (si entra por <code>use1-omada-cloud…</code>, es América).</li>
       </ol>
-      <p class="mb-1"><strong>Cada OC300 es un controlador distinto</strong>: tiene su propio Omada ID y necesita su propia aplicación Open API. Si tiene dos (por ejemplo, Pueblo Libre y Surco), agregue dos controladores aquí.</p>
-      <p class="mb-1">Aquí los dos se ven juntos: el resumen, los equipos y los clientes muestran todos los sitios, o uno solo con el selector.</p>
-      <p class="mb-0 text-muted">Por defecto solo se lee (equipos, clientes y consumo). Para <strong>bloquear, desbloquear o reconectar clientes</strong> desde aquí hacen falta dos cosas: marcar «Permitir acciones» en el controlador y que su aplicación Open API tenga rol <strong>Admin</strong> (con Viewer, Omada rechaza la acción). El Client Secret se guarda cifrado y no se vuelve a mostrar.</p>
+      <p class="mb-2 text-muted">Requisitos de TP-Link: controladores OC200, OC220, OC300, OC400 o por software, con versión <strong>6.2.0 o superior</strong>, en línea y con acceso por la nube activado. No aplica a los controladores alojados por TP-Link (Cloud-Based), que usan la conexión directa con su dirección de la nube.</p>
+      <p class="mb-1"><strong>Directa al controlador.</strong> Usa una aplicación Open API creada <em>dentro</em> de un controlador (vista Global → Settings → Platform Integration → Open API, modo Client). El icono del ojo muestra el Omada ID y la dirección de la interfaz, que en un OC300 es su IP local: el servidor de esta aplicación debe poder llegar a esa IP. Cada controlador se registra aparte.</p>
+      <p class="mb-0 text-muted">Por defecto solo se lee (equipos, clientes y consumo). Para <strong>bloquear, desbloquear o reconectar clientes</strong> marque «Permitir acciones»; en la conexión directa, además, la aplicación debe tener rol Admin. El Client Secret se guarda cifrado y no se vuelve a mostrar.</p>
     </div>
   </div>
   <div class="col-lg-5">
     <form method="post" action="/red/omada/configuracion" class="card p-3" autocomplete="off" id="omada_form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <% if (edit) { %><input type="hidden" name="id" value="<%= edit.id %>"><% } %>
-      <h6><%= edit ? 'Editar ' + edit.name : 'Nuevo controlador' %></h6>
-      <div class="mb-3 p-2 border rounded bg-body-tertiary">
-        <label class="form-label small mb-1" for="o_pegar"><i class="bi bi-magic"></i> Extraer el Omada ID de la dirección del controlador</label>
-        <div class="input-group input-group-sm">
-          <input class="form-control font-monospace" id="o_pegar" type="text" autocomplete="off" spellcheck="false" placeholder="Pegue aquí la dirección completa del navegador (https://…omadacId=…)">
-          <button class="btn btn-outline-primary" type="button" id="o_extraer">Extraer</button>
-        </div>
-        <div class="form-text" id="o_pegar_msg" aria-live="polite">Abra el controlador desde la nube de Omada, copie la dirección de la barra del navegador y péguela. Se llena el Omada ID; lo pegado no se envía ni se guarda.</div>
+      <h6><%= edit ? 'Editar ' + edit.name : 'Nueva conexión' %></h6>
+      <div class="mb-3">
+        <div class="form-check"><input class="form-check-input" type="radio" name="mode" id="o_modo_cuenta" value="cuenta" <%= modo === 'cuenta' ? 'checked' : '' %>>
+          <label class="form-check-label small" for="o_modo_cuenta"><strong>Por la nube de Omada</strong> <span class="text-muted">— aplicación de la cuenta; ve varios controladores</span></label></div>
+        <div class="form-check"><input class="form-check-input" type="radio" name="mode" id="o_modo_local" value="local" <%= modo === 'local' ? 'checked' : '' %>>
+          <label class="form-check-label small" for="o_modo_local"><strong>Directa al controlador</strong> <span class="text-muted">— aplicación creada dentro del controlador; por su IP</span></label></div>
       </div>
       <div class="mb-2"><label class="form-label small" for="o_name">Nombre *</label>
-        <input class="form-control form-control-sm" id="o_name" name="name" value="<%= v('name') %>" maxlength="100" required placeholder="OC300 Pueblo Libre"></div>
-      <div class="mb-2"><label class="form-label small" for="o_url">Dirección de la interfaz *</label>
-        <input class="form-control form-control-sm font-monospace" id="o_url" name="base_url" value="<%= v('base_url') %>" maxlength="255" required placeholder="https://192.168.0.10:443">
-        <div class="form-text">Tal como aparece en «Interface Access Address» (icono del ojo de la aplicación Open API). En un OC300 es su dirección local.</div></div>
-      <div class="mb-2"><label class="form-label small" for="o_cid">Omada ID *</label>
-        <input class="form-control form-control-sm font-monospace" id="o_cid" name="omadac_id" value="<%= String(v('omadac_id')).slice(0, 64) %>" maxlength="600" required>
-        <div class="form-text">El valor de <code>omadacId=</code> en la dirección del navegador con el controlador abierto (32 letras y números). Es distinto en cada OC300.</div></div>
+        <input class="form-control form-control-sm" id="o_name" name="name" value="<%= v('name') %>" maxlength="100" required placeholder="Omada Depilzone"></div>
+
+      <div data-modo="cuenta">
+        <div class="mb-2"><label class="form-label small" for="o_region">Región de la cuenta *</label>
+          <select class="form-select form-select-sm" id="o_region" name="region">
+            <% Object.keys(REGIONS).forEach(function (k) { %><option value="<%= k %>" <%= regionDe(v('base_url')) === k ? 'selected' : '' %>><%= REGIONS[k][0] %> — <%= REGIONS[k][1].replace('https://', '') %></option><% }); %>
+          </select>
+          <div class="form-text">Es el prefijo de la dirección con la que entra al portal: <code>use1</code>, <code>euw1</code> o <code>aps1</code>.</div></div>
+      </div>
+
+      <div data-modo="local">
+        <div class="mb-3 p-2 border rounded bg-body-tertiary">
+          <label class="form-label small mb-1" for="o_pegar"><i class="bi bi-magic"></i> Extraer el Omada ID de la dirección del controlador</label>
+          <div class="input-group input-group-sm">
+            <input class="form-control font-monospace" id="o_pegar" type="text" autocomplete="off" spellcheck="false" placeholder="Pegue aquí la dirección completa del navegador (https://…omadacId=…)">
+            <button class="btn btn-outline-primary" type="button" id="o_extraer">Extraer</button>
+          </div>
+          <div class="form-text" id="o_pegar_msg" aria-live="polite">Abra el controlador desde la nube de Omada, copie la dirección de la barra del navegador y péguela. Se llena el Omada ID; lo pegado no se envía ni se guarda.</div>
+        </div>
+        <div class="mb-2"><label class="form-label small" for="o_url">Dirección de la interfaz *</label>
+          <input class="form-control form-control-sm font-monospace" id="o_url" name="base_url" value="<%= modo === 'local' ? v('base_url') : '' %>" maxlength="255" required placeholder="https://192.168.0.10:443">
+          <div class="form-text">Tal como aparece en «Interface Access Address» (icono del ojo de la aplicación Open API). En un OC300 es su dirección local.</div></div>
+        <div class="mb-2"><label class="form-label small" for="o_cid">Omada ID *</label>
+          <input class="form-control form-control-sm font-monospace" id="o_cid" name="omadac_id" value="<%= modo === 'local' ? String(v('omadac_id')).slice(0, 64) : '' %>" maxlength="600" required>
+          <div class="form-text">El valor de <code>omadacId=</code> en la dirección del navegador con el controlador abierto (32 letras y números). Es distinto en cada OC300.</div></div>
+      </div>
+
       <div class="mb-2"><label class="form-label small" for="o_client">Client ID *</label>
         <input class="form-control form-control-sm font-monospace" id="o_client" name="client_id" value="<%= v('client_id') %>" maxlength="64" required></div>
       <div class="mb-2"><label class="form-label small" for="o_secret">Client Secret <%= edit ? '' : '*' %></label>
         <input type="password" class="form-control form-control-sm font-monospace" id="o_secret" name="client_secret" maxlength="200" autocomplete="new-password" <%= edit ? '' : 'required' %>
           placeholder="<%= edit ? 'Guardado. Escriba uno solo para cambiarlo.' : '' %>"></div>
-      <div class="form-check mb-1"><input type="hidden" name="verify_tls" value="0"><input class="form-check-input" type="checkbox" id="o_tls" name="verify_tls" value="1" <%= off('verify_tls') ? '' : 'checked' %>>
-        <label class="form-check-label small" for="o_tls">Verificar certificado <span class="text-muted">(desmarque solo para un controlador local con certificado propio)</span></label></div>
+      <div data-modo="local">
+        <div class="form-check mb-1"><input type="hidden" name="verify_tls" value="0"><input class="form-check-input" type="checkbox" id="o_tls" name="verify_tls" value="1" <%= off('verify_tls') ? '' : 'checked' %>>
+          <label class="form-check-label small" for="o_tls">Verificar certificado <span class="text-muted">(desmarque para un controlador local con certificado propio)</span></label></div>
+      </div>
       <div class="form-check mb-1"><input type="hidden" name="enabled" value="0"><input class="form-check-input" type="checkbox" id="o_on" name="enabled" value="1" <%= off('enabled') ? '' : 'checked' %>>
-        <label class="form-check-label small" for="o_on">Leer este controlador cada 5 minutos</label></div>
+        <label class="form-check-label small" for="o_on">Leer cada 5 minutos</label></div>
       <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="o_act" name="allow_actions" value="1" <%= String(v('allow_actions', '0')) === '1' ? 'checked' : '' %>>
-        <label class="form-check-label small" for="o_act">Permitir acciones: bloquear, desbloquear y reconectar clientes <span class="text-muted">(solo administradores; requiere rol Admin en la aplicación Open API)</span></label></div>
+        <label class="form-check-label small" for="o_act">Permitir acciones: bloquear, desbloquear y reconectar clientes <span class="text-muted">(solo administradores)</span></label></div>
       <div class="d-flex gap-2">
         <button class="btn btn-primary btn-sm"><i class="bi bi-check-lg"></i> Guardar y probar</button>
         <% if (edit) { %><a class="btn btn-outline-secondary btn-sm" href="/red/omada/configuracion">Cancelar</a><% } %>
@@ -87,14 +108,27 @@
   </div>
 </div>
 <script>
-  // Extrae el Omada ID (omadacId=) de la direccion pegada y propone la direccion
-  // de la interfaz de la misma region. Todo ocurre en el navegador: el campo no
-  // tiene "name", asi que la direccion (que trae un token de sesion) no se envia.
   (function () {
+    // Segun la forma de conexion se muestran unos campos u otros; los ocultos no se envian ni se exigen.
+    var form = document.getElementById('omada_form');
+    function modo() { return document.getElementById('o_modo_local').checked ? 'local' : 'cuenta'; }
+    function aplicar() {
+      var m = modo();
+      form.querySelectorAll('[data-modo]').forEach(function (box) {
+        var on = box.getAttribute('data-modo') === m;
+        box.classList.toggle('d-none', !on);
+        box.querySelectorAll('input, select').forEach(function (el) { el.disabled = !on; });
+      });
+    }
+    document.getElementById('o_modo_local').addEventListener('change', aplicar);
+    document.getElementById('o_modo_cuenta').addEventListener('change', aplicar);
+    aplicar();
+
+    // Extrae el Omada ID (omadacId=) de la direccion pegada. Todo ocurre en el navegador: el campo no
+    // tiene "name", asi que la direccion (que trae un token de sesion) no se envia.
     var box = document.getElementById('o_pegar');
     var msg = document.getElementById('o_pegar_msg');
     var id = document.getElementById('o_cid');
-    var url = document.getElementById('o_url');
     function extraer() {
       var text = box.value.trim();
       if (!text) return;
@@ -106,22 +140,8 @@
         return;
       }
       id.value = m[1];
-      var done = 'Omada ID extraído: ' + m[1] + '.';
-      // use1-omada-cloud.tplinkcloud.com -> https://use1-omada-northbound.tplinkcloud.com
-      var region = /^https:\/\/([a-z0-9]+)-omada-cloud\.tplinkcloud\.com(?:[/:?#]|$)/i.exec(text);
-      // Con deviceId= o connectorUrl= es un controlador propio abierto por la nube: su interfaz es local.
-      var propio = /[?&](deviceId|connectorUrl)=/.test(text);
-      if (propio) done += ' Es un controlador propio (OC300 o similar): en «Dirección de la interfaz» va su dirección local, la que muestra el icono del ojo de la aplicación Open API.';
-      if (region && !propio) {
-        var proposed = 'https://' + region[1].toLowerCase() + '-omada-northbound.tplinkcloud.com';
-        if (!url.value.trim() || /-omada-northbound\.tplinkcloud\.com$/i.test(url.value.trim())) {
-          url.value = proposed;
-          done += ' Dirección de la interfaz: ' + proposed + '.';
-        }
-      }
       msg.className = 'form-text text-success';
-      msg.textContent = done + ' Faltan el Client ID y el Client Secret.';
-      (document.getElementById('o_name').value ? document.getElementById('o_client') : document.getElementById('o_name')).focus();
+      msg.textContent = 'Omada ID extraído: ' + m[1] + '. La dirección de la interfaz es la que muestra el icono del ojo de la aplicación Open API.';
     }
     document.getElementById('o_extraer').addEventListener('click', extraer);
     box.addEventListener('paste', function () { setTimeout(extraer, 0); });

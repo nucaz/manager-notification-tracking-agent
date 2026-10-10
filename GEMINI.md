@@ -159,8 +159,12 @@ READMEs.
   (`omada_controllers`, secreto cifrado con `cryptoService`). Guarda copia de sitios, equipos y clientes, y una
   muestra de consumo por lectura (`omada_samples`, 30 días) de la que sale el gráfico, dibujado en el servidor
   como SVG. Cruza por MAC con el inventario de Red y puede registrar ahí los AP y switches sin pisar nada.
-  Las marcas de tiempo las pone la base (`SELECT NOW()`), no Node. Prueba: `tests/omada.e2e.js`, contra un
-  controlador simulado (nunca uno real).
+  Las marcas de tiempo las pone la base (`SELECT NOW()`), no Node. Dos formas de conexión (`mode`): **cuenta**
+  (Account-Level Open API: una aplicación de la cuenta TP-Link, token en `/authorize/account/token`, lista
+  `/v1/organizations` y cada controlador en `{serverHost}/v1/cloudaccess/{deviceId}/openapi/v1/{omadacId}`;
+  sirve para OC200/OC300 y software 6.2.0+ por la nube; `serverHost` solo se acepta si es de tplinkcloud.com) y
+  **local** (aplicación creada dentro del controlador, por su dirección; la nube responde -7131 a un OC300 en
+  este modo). Prueba: `tests/omada.e2e.js`, contra un controlador y una nube simulados (nunca reales).
 - **Tablas de listado (estándar en toda la app)**: toda tabla con
   `<thead>` dentro de `.table-responsive` recibe sola, de
   `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por

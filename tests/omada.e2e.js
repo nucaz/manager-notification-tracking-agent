@@ -23,7 +23,9 @@ const check = (name, cond) => results.push([!!cond, name]);
 const OMADAC = 'e2e0omadac0id0000000000000000001';
 const CLIENT = 'e2eclient0000000000000000000id01';
 const SECRET = 'e2e-secreto-que-no-debe-verse-0001';
-const mock = { calls: [], tokens: 0, expireNext: false, down: false, clients: null, devices: null, methods: new Set(), actions: [], viewer: false };
+const OMADAC2 = 'e2e0omadac0id0000000000000000002';
+const ACC_CLIENT = 'e2ecuenta00000000000000000000id1';
+const mock = { calls: [], tokens: 0, expireNext: false, down: false, clients: null, devices: null, methods: new Set(), actions: [], viewer: false, orgs: null, surcoDown: false };
 const DEVICES = [
   { mac: '30-DE-4B-00-E2-01', name: 'ZZ-E2E SW-Sistemas', type: 'switch', model: 'SG2008 v4.20', ip: '192.168.100.94', status: 1, cpuUtil: 12, memUtil: 40, uptime: '9day(s) 6h', firmwareVersion: '4.20.24', sn: 'SN-SW-1' },
   { mac: '3C-78-95-00-E2-02', name: 'ZZ-E2E AP1-Counter', type: 'ap', model: 'EAP620 HD(US) v3.0', ip: '192.168.100.44', status: 1, cpuUtil: 91, memUtil: 55, uptime: '3day(s)', firmwareVersion: '1.6.7', sn: 'SN-AP-1',
@@ -61,6 +63,39 @@ function startMock() {
         mock.tokens += 1;
         return json(res, { errorCode: 0, msg: 'Open API Get Access Token successfully.', result: { accessToken: `tok-${mock.tokens}`, tokenType: 'bearer', expiresIn: 7200, refreshToken: 'r' } });
       }
+      // ---- por la nube: aplicacion de la cuenta ----
+      if (req.method === 'POST' && url.pathname === '/authorize/account/token') {
+        const b = JSON.parse(body || '{}');
+        if (url.searchParams.get('type') !== 'get_tokens' || b.client_id !== ACC_CLIENT || b.client_secret !== SECRET) return json(res, { errorCode: -90106, msg: 'The Client Id Or Client Secret is Invalid' });
+        return json(res, { errorCode: 0, msg: 'ok', result: { accessToken: 'a1-AT-e2e', tokenType: 'bearer', expiresIn: 7200, refreshToken: 'r' } });
+      }
+      const cloud = /^\/v1\/cloudaccess\/([A-Za-z0-9]+)\/openapi\/v1\/([a-z0-9]+)(\/.*)$/.exec(url.pathname);
+      if (url.pathname === '/v1/organizations' || cloud) {
+        if (req.headers.authorization !== 'AccessToken=a1-AT-e2e') return json(res, { errorCode: -44113, msg: 'The Access Token is Invalid' });
+        const host = `http://${req.headers.host}`;
+        if (!cloud) {
+          return json(res, grid(mock.orgs || [
+            { orgName: 'ZZ-E2E OC300 PL', online: true, deviceId: 'DEVPL0000000001', omadacId: OMADAC, orgVersion: '6.3.0.45', deviceType: 'SMB.OMADA.HARDWARECONTROLLER', serverHost: host },
+            { orgName: 'ZZ-E2E OC300 Surco', online: true, deviceId: 'DEVSURCO0000001', omadacId: OMADAC2, orgVersion: '6.3.0.45', serverHost: host },
+            { orgName: 'ZZ-E2E Apagado', online: false, deviceId: 'DEVOFF000000001', omadacId: 'e2e0omadac0id0000000000000000003', serverHost: host },
+            { orgName: 'ZZ-E2E Raro', online: true, deviceId: 'DEVRARO00000001', omadacId: 'e2e0omadac0id0000000000000000004', serverHost: 'https://evil.example' },
+          ], url));
+        }
+        const [, dev, oid, rest] = cloud;
+        const pl = dev === 'DEVPL0000000001' && oid === OMADAC;
+        const surco = dev === 'DEVSURCO0000001' && oid === OMADAC2;
+        if (!pl && !surco) return json(res, { errorCode: -44121, msg: 'This OpenAPI AccessToken has no permission to access this organization' });
+        const act2 = /^\/sites\/(site-e2e-[12])\/clients\/([0-9A-F-]{17})\/(block|unblock|reconnect)$/.exec(rest);
+        if (req.method === 'POST' && act2) { mock.actions.push(`${act2[3]} ${act2[2]} via ${dev}`); return json(res, { errorCode: 0, msg: 'Success.' }); }
+        if (req.method !== 'GET') return json(res, { errorCode: -1, msg: 'solo lectura' });
+        if (surco && mock.surcoDown) return json(res, { errorCode: -1200, msg: 'Controller offline.' });
+        if (rest === '/sites') return json(res, grid(pl ? [{ siteId: 'site-e2e-1', name: 'ZZ-E2E Pueblo Libre', region: 'Peru' }] : [{ siteId: 'site-e2e-2', name: 'Default', region: 'Peru' }], url));
+        if (pl && rest === '/sites/site-e2e-1/devices') return json(res, grid(DEVICES, url));
+        if (pl && rest === '/sites/site-e2e-1/clients') return json(res, grid(CLIENTS, url));
+        if (surco && rest === '/sites/site-e2e-2/devices') return json(res, grid([{ mac: '3C-78-95-00-E2-09', name: 'ZZ-E2E AP-Surco', type: 'ap', model: 'EAP620 HD', ip: '192.168.50.5', status: 1 }], url));
+        if (surco && rest === '/sites/site-e2e-2/clients') return json(res, grid([{ mac: 'AA-00-00-00-E2-09', name: 'ZZ-E2E Cliente Surco', ip: '192.168.50.20', wireless: true, ssid: 'Surco', apMac: '3C-78-95-00-E2-09', apName: 'ZZ-E2E AP-Surco', signalLevel: 70, activity: 1000 }], url));
+        res.writeHead(404); return res.end('no');
+      }
       if (req.headers.authorization !== `AccessToken=tok-${mock.tokens}`) return json(res, { errorCode: -44113, msg: 'The Access Token is Invalid' });
       if (mock.expireNext) { mock.expireNext = false; mock.tokens += 100; return json(res, { errorCode: -44112, msg: 'The access token has expired' }); }
       const p = url.pathname.replace(`/openapi/v1/${OMADAC}`, '');
@@ -87,7 +122,7 @@ async function main() {
   omada._.allowHttp = true; // el simulado no tiene TLS
   const TAG = 'ZZ-E2E';
   const cleanup = async () => {
-    await pool.query('DELETE FROM omada_controllers WHERE name LIKE ? OR omadac_id = ?', [`${TAG}%`, OMADAC]);
+    await pool.query('DELETE FROM omada_controllers WHERE name LIKE ? OR omadac_id IN (?, ?)', [`${TAG}%`, OMADAC, ACC_CLIENT]);
     await pool.query('DELETE FROM network_devices WHERE name LIKE ?', [`${TAG}%`]);
     await pool.query("DELETE FROM audit_log WHERE action LIKE 'red\\_omada\\_%' AND (target LIKE ? OR target = 'equipos de red')", [`${TAG}%`]);
   };
@@ -330,6 +365,52 @@ async function main() {
     await omada.sync();
     await pool.query('UPDATE omada_controllers SET enabled = 1 WHERE id = ?', [ctrl.id]);
     check('Un cliente bloqueado no se olvida a los 30 días (para poder desbloquearlo)', !!(await row('SELECT id FROM omada_clients WHERE id = ?', [cable.id])));
+
+    // ---------------- por la nube: aplicacion de la cuenta ----------------
+    mock.actions.length = 0;
+    page = await get('/red/omada/configuracion');
+    check('Formulario: conexión por la nube (por defecto) o directa, con la región de la cuenta', page.text.includes('id="o_modo_cuenta" value="cuenta" checked') && page.text.includes('name="region"')
+      && page.text.includes('use1-omada-northbound.tplinkcloud.com') && page.text.includes('data-modo="local"'));
+    omada._.allowHttp = false;
+    await post('/red/omada/configuracion', { name: `${TAG} Nube`, mode: 'cuenta', base_url: 'https://otro.example', client_id: ACC_CLIENT, client_secret: SECRET, enabled: ['0', '1'] });
+    check('Por la nube: solo se acepta una dirección de la nube de Omada', (await get('/red/omada/configuracion')).text.includes('tplinkcloud.com') && !(await row('SELECT id FROM omada_controllers WHERE name = ?', [`${TAG} Nube`])));
+    await post('/red/omada/configuracion', { name: `${TAG} Nube`, mode: 'cuenta', region: 'euw1', client_id: ACC_CLIENT, client_secret: SECRET, enabled: '0' });
+    let acc = await row('SELECT * FROM omada_controllers WHERE name = ?', [`${TAG} Nube`]);
+    check('Por la nube: la región define la dirección y no se pide Omada ID', acc && acc.mode === 'cuenta' && acc.base_url === 'https://euw1-omada-northbound.tplinkcloud.com' && acc.verify_tls === 1);
+    await pool.query('DELETE FROM omada_controllers WHERE id = ?', [acc.id]);
+    omada._.allowHttp = true;
+    await post('/red/omada/configuracion', { name: `${TAG} Nube`, mode: 'cuenta', base_url: URL_OK, client_id: ACC_CLIENT, client_secret: 'secreto-equivocado-000', enabled: ['0', '1'] });
+    check('Por la nube: credenciales malas, con el motivo', (await get('/red/omada/configuracion')).text.includes('Client Id Or Client Secret is Invalid'));
+    acc = await row('SELECT * FROM omada_controllers WHERE name = ?', [`${TAG} Nube`]);
+    await post('/red/omada/configuracion', { id: acc.id, name: `${TAG} Nube`, mode: 'cuenta', base_url: URL_OK, client_id: ACC_CLIENT, client_secret: SECRET, enabled: ['0', '1'], allow_actions: '1' });
+    page = await get('/red/omada/configuracion');
+    acc = await row('SELECT * FROM omada_controllers WHERE id = ?', [acc.id]);
+    check('Por la nube: la prueba lista los controladores de la cuenta con su estado', page.text.includes('Controladores de la cuenta') && page.text.includes(`${TAG} OC300 PL (en línea, versión 6.3.0.45)`)
+      && page.text.includes(`${TAG} Apagado (fuera de línea`) && page.text.includes('Por la nube de Omada'));
+    const accSites = await rows('SELECT * FROM omada_sites WHERE controller_id = ? ORDER BY site_key', [acc.id]);
+    check('Una sola aplicación lee los dos controladores; el sitio «Default» toma el nombre de su controlador', accSites.length === 2 && accSites[0].name === `${TAG} Pueblo Libre` && accSites[0].org_name === `${TAG} OC300 PL`
+      && accSites[1].name === `${TAG} OC300 Surco` && accSites[0].api_root === `${URL_OK}/v1/cloudaccess/DEVPL0000000001/openapi/v1/${OMADAC}` && accSites[0].clients_total === 3 && accSites[1].clients_total === 1);
+    check('Controlador fuera de línea o con dirección ajena a TP-Link: se omite y se avisa', acc.last_sync_ok === 1 && /Apagado: fuera de línea/.test(acc.last_sync_detail) && /Raro: dirección no reconocida/.test(acc.last_sync_detail)
+      && !mock.calls.some((c) => c.includes('DEVRARO') || c.includes('DEVOFF')));
+    page = await get('/red/omada');
+    check('Tablero: los dos sitios juntos, con selector', page.text.includes(`${TAG} Pueblo Libre</a>`) && page.text.includes(`${TAG} OC300 Surco</a>`) && page.text.includes('Todos los sitios')
+      && (await get(`/red/omada/clientes?sitio=${accSites[1].id}`)).text.includes(`${TAG} Cliente Surco`) && !(await get(`/red/omada/clientes?sitio=${accSites[1].id}`)).text.includes(`${TAG} Corporativo`));
+    const cliSurco = await row('SELECT id FROM omada_clients WHERE site_id = ? AND mac = ?', [accSites[1].id, 'AA:00:00:00:E2:09']);
+    await post(`/red/omada/clientes/${cliSurco.id}/accion`, { accion: 'bloquear' });
+    check('Bloquear por la nube: va al controlador correcto', mock.actions.join() === 'block AA-00-00-00-E2-09 via DEVSURCO0000001' && (await row('SELECT blocked FROM omada_clients WHERE id = ?', [cliSurco.id])).blocked === 1);
+    mock.surcoDown = true;
+    const r5 = await omada.syncController(acc.id);
+    check('Si un controlador falla, se leen los demás y se conserva lo último del que falló', r5.ok && /OC300 Surco: Omada respondió/.test(r5.detail) && /Pueblo Libre: 3 equipos/.test(r5.detail)
+      && !!(await row('SELECT id FROM omada_sites WHERE id = ?', [accSites[1].id])));
+    mock.surcoDown = false;
+    mock.orgs = [{ orgName: 'ZZ-E2E OC300 PL', online: true, deviceId: 'DEVPL0000000001', omadacId: OMADAC, orgVersion: '6.3.0.45', serverHost: URL_OK }];
+    await omada.syncController(acc.id);
+    check('Un controlador que se quita de la aplicación de la cuenta deja de listarse', !(await row('SELECT id FROM omada_sites WHERE id = ?', [accSites[1].id])) && !!(await row('SELECT id FROM omada_sites WHERE id = ?', [accSites[0].id])));
+    mock.orgs = [];
+    const r6 = await omada.syncController(acc.id);
+    check('Aplicación de la cuenta sin controladores asignados: se explica', !r6.ok && /ningún controlador asignado/.test(r6.detail));
+    mock.orgs = null;
+    await post(`/red/omada/configuracion/${acc.id}/eliminar`);
 
     // ---------------- quitar ----------------
     await post(`/red/omada/configuracion/${ctrl.id}/eliminar`);

@@ -31,6 +31,9 @@ const RANGES = { 6: 'Últimas 6 horas', 24: 'Últimas 24 horas', 168: 'Últimos 
 // Codigos de la API "el token vencio" y "el token no es valido": se pide otro y se repite una vez.
 const TOKEN_ERRORS = new Set([-44112, -44113]);
 
+// Por la nube (aplicacion de la cuenta TP-Link): direccion segun la region donde se registro la cuenta.
+const REGIONS = { use1: ['América (USE)', 'https://use1-omada-northbound.tplinkcloud.com'], euw1: ['Europa (EUW)', 'https://euw1-omada-northbound.tplinkcloud.com'],
+  aps1: ['Asia-Pacífico (APS)', 'https://aps1-omada-northbound.tplinkcloud.com'] };
 const ACTIONS = { bloquear: ['block', 'bloqueado'], desbloquear: ['unblock', 'desbloqueado'], reconectar: ['reconnect', 'reconectado'] };
 
 const _ = { allowHttp: false }; // las pruebas usan un controlador simulado sin TLS
@@ -61,26 +64,33 @@ function fmtBytes(v) {
 function controllerInput(b, { isNew }) {
   const name = clean(b.name, 100);
   if (!name) throw new Error('Escriba un nombre para el controlador (ej. OC300 Pueblo Libre).');
-  let url;
-  try { url = new URL(String(b.base_url || '').trim()); } catch (e) { throw new Error('La dirección de la interfaz no es válida: debe ser como https://use1-omada-northbound.tplinkcloud.com'); }
-  if (url.protocol !== 'https:' && !(_.allowHttp && url.protocol === 'http:')) throw new Error('La dirección de la interfaz debe empezar con https://');
-  if (url.username || url.password || url.search || url.hash) throw new Error('La dirección de la interfaz no lleva usuario, parámetros ni #: solo https://servidor[:puerto]');
-  // Se puede pegar la direccion completa del controlador en la nube: de ahi solo se toma el omadacId.
-  const pasted = /[?&]omadacId=([A-Za-z0-9]+)/.exec(String(b.omadac_id || ''));
-  const omadacId = pasted ? pasted[1] : String(b.omadac_id || '').trim();
-  if (!/^[A-Za-z0-9]{8,64}$/.test(omadacId)) throw new Error('El Omada ID no es válido: son letras y números, sin espacios (es el valor de omadacId= en la dirección del controlador).');
+  const mode = b.mode === 'cuenta' ? 'cuenta' : 'local';
   const clientId = String(b.client_id || '').trim();
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(clientId)) throw new Error('El Client ID no es válido: cópielo tal como aparece en la aplicación Open API.');
+  let url;
+  // Por la nube: la direccion es la de la region de la cuenta.
+  const raw = mode === 'cuenta' && REGIONS[b.region] ? REGIONS[b.region][1] : String(b.base_url || '').trim();
+  try { url = new URL(raw); } catch (e) {
+    throw new Error(mode === 'cuenta' ? 'Elija la región de su cuenta de Omada.' : 'La dirección de la interfaz no es válida: debe ser como https://192.168.0.10:443');
+  }
+  if (url.protocol !== 'https:' && !(_.allowHttp && url.protocol === 'http:')) throw new Error('La dirección de la interfaz debe empezar con https://');
+  if (url.username || url.password || url.search || url.hash) throw new Error('La dirección de la interfaz no lleva usuario, parámetros ni #: solo https://servidor[:puerto]');
+  if (mode === 'cuenta' && !_.allowHttp && !/\.tplinkcloud\.com$/i.test(url.hostname)) throw new Error('Por la nube, la dirección debe ser la de una región de Omada (…tplinkcloud.com).');
+  // Se puede pegar la direccion completa del controlador en la nube: de ahi solo se toma el omadacId.
+  const pasted = /[?&]omadacId=([A-Za-z0-9]+)/.exec(String(b.omadac_id || ''));
+  // Por la nube no hay un Omada ID que escribir (los controladores salen de la cuenta): se guarda el Client ID en su lugar.
+  const omadacId = mode === 'cuenta' ? clientId : pasted ? pasted[1] : String(b.omadac_id || '').trim();
+  if (mode === 'local' && !/^[A-Za-z0-9]{8,64}$/.test(omadacId)) throw new Error('El Omada ID no es válido: son letras y números, sin espacios (es el valor de omadacId= en la dirección del controlador).');
   const secret = String(b.client_secret || '').trim();
   if (isNew && !secret) throw new Error('Escriba el Client Secret de la aplicación Open API.');
   if (secret && !/^[\x21-\x7e]{8,200}$/.test(secret)) throw new Error('El Client Secret no es válido: cópielo completo, sin espacios.');
-  return { row: { name, base_url: url.origin, omadac_id: omadacId, client_id: clientId, verify_tls: b.verify_tls === '0' ? 0 : 1, enabled: b.enabled === '0' ? 0 : 1,
+  return { row: { name, mode, base_url: url.origin, omadac_id: omadacId, client_id: clientId, verify_tls: mode === 'cuenta' || b.verify_tls !== '0' ? 1 : 0, enabled: b.enabled === '0' ? 0 : 1,
     allow_actions: [].concat(b.allow_actions || []).includes('1') ? 1 : 0 }, secret };
 }
 
 // Sin el secreto: lo que se puede mostrar.
 async function controllers() {
-  const [rows] = await pool.query(`SELECT c.id, c.name, c.base_url, c.omadac_id, c.client_id, c.verify_tls, c.enabled, c.allow_actions, c.last_sync_at, c.last_sync_ok, c.last_sync_detail,
+  const [rows] = await pool.query(`SELECT c.id, c.name, c.mode, c.base_url, c.omadac_id, c.client_id, c.verify_tls, c.enabled, c.allow_actions, c.last_sync_at, c.last_sync_ok, c.last_sync_detail,
       (c.client_secret IS NOT NULL AND c.client_secret <> '') AS has_secret, (SELECT COUNT(*) FROM omada_sites s WHERE s.controller_id = c.id) AS sites
     FROM omada_controllers c ORDER BY c.name`);
   return rows;
@@ -99,7 +109,7 @@ async function saveController(id, body, user) {
   if (id && !cur) throw new Error('El controlador ya no existe.');
   const { row, secret } = controllerInput(body, { isNew: !cur });
   const [[dup]] = await pool.query('SELECT id FROM omada_controllers WHERE base_url = ? AND omadac_id = ? AND id <> ?', [row.base_url, row.omadac_id, cur ? cur.id : 0]);
-  if (dup) throw new Error('Ese controlador (misma dirección y mismo Omada ID) ya está registrado.');
+  if (dup) throw new Error(row.mode === 'cuenta' ? 'Esa aplicación de la cuenta ya está registrada.' : 'Ese controlador (misma dirección y mismo Omada ID) ya está registrado.');
   if (secret) row.client_secret = cryptoService.encrypt(secret);
   if (cur) {
     await pool.query('UPDATE omada_controllers SET ? WHERE id = ?', [row, cur.id]);
@@ -141,7 +151,7 @@ function unwrap(data) {
     // -7131: la nube de TP-Link no conoce ese controlador. Pasa con un controlador propio (OC300/OC200 o por
     // software) aunque tenga acceso por la nube: su Open API solo se atiende en su direccion local.
     const hint = Number(data.errorCode) === -7131
-      ? ' Esa dirección es la de los controladores alojados en la nube de TP-Link. Un OC300 u otro controlador propio atiende la Open API en su dirección local: use la «Interface Access Address» que muestra el icono del ojo de la aplicación (https://IP-del-controlador:puerto), y este servidor debe poder llegar a esa IP.'
+      ? ' La aplicación Open API creada dentro de un OC300 (u otro controlador propio) solo sirve en su dirección local. Para leerlo por la nube, cree una aplicación en su cuenta de Omada (portal de la nube) y regístrela aquí con la conexión «Por la nube de Omada».'
       : '';
     const e = new Error(`Omada respondió: ${clean(data.msg, 200) || 'error'} (código ${data.errorCode}).${hint}`);
     e.omada = true;
@@ -161,8 +171,11 @@ async function token(c, { fresh = false } = {}) {
   }
   let r;
   try {
-    r = await axios.post(`${c.base_url}/openapi/authorize/token`, { omadacId: c.omadac_id, client_id: c.client_id, client_secret: c.client_secret },
-      { params: { grant_type: 'client_credentials' }, timeout: TIMEOUT, httpsAgent: agentFor(c), maxRedirects: 0 });
+    r = c.mode === 'cuenta'
+      ? await axios.post(`${c.base_url}/authorize/account/token`, { client_id: c.client_id, client_secret: c.client_secret },
+        { params: { type: 'get_tokens' }, timeout: TIMEOUT, httpsAgent: agentFor(c), maxRedirects: 0 })
+      : await axios.post(`${c.base_url}/openapi/authorize/token`, { omadacId: c.omadac_id, client_id: c.client_id, client_secret: c.client_secret },
+        { params: { grant_type: 'client_credentials' }, timeout: TIMEOUT, httpsAgent: agentFor(c), maxRedirects: 0 });
   } catch (err) { throw explain(err); }
   const res = unwrap(r.data);
   if (!res || !res.accessToken) throw explain({ message: 'sin token', response: { status: 404 } });
@@ -176,7 +189,7 @@ async function get(c, path, params = {}) {
     const tok = await token(c, { fresh });
     let r;
     try {
-      r = await axios.get(`${c.base_url}/openapi/v1/${encodeURIComponent(c.omadac_id)}${path}`,
+      r = await axios.get(`${rootOf(c)}${path}`,
         { params, headers: { Authorization: `AccessToken=${tok}` }, timeout: TIMEOUT, httpsAgent: agentFor(c), maxRedirects: 0 });
     } catch (err) { throw explain(err); }
     return unwrap(r.data);
@@ -192,7 +205,7 @@ async function act(c, path) {
     const tok = await token(c, { fresh });
     let r;
     try {
-      r = await axios.post(`${c.base_url}/openapi/v1/${encodeURIComponent(c.omadac_id)}${path}`, {},
+      r = await axios.post(`${rootOf(c)}${path}`, {},
         { headers: { Authorization: `AccessToken=${tok}` }, timeout: TIMEOUT, httpsAgent: agentFor(c), maxRedirects: 0 });
     } catch (err) { throw explain(err); }
     return unwrap(r.data);
@@ -202,6 +215,46 @@ async function act(c, path) {
     return once(true);
   }
 }
+// Prefijo de la API de un controlador: directo, o el de una organizacion a traves de la nube (api_root).
+const rootOf = (c) => c.api_root || `${c.base_url}/openapi/v1/${encodeURIComponent(c.omadac_id)}`;
+
+// Modo cuenta: los controladores (organizaciones) que la aplicacion de la cuenta puede ver.
+// Cada uno se alcanza en {serverHost}/v1/cloudaccess/{deviceId}/openapi/v1/{omadacId}.
+async function organizations(c) {
+  const once = async (fresh) => {
+    const tok = await token(c, { fresh });
+    const out = [];
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      let r;
+      try {
+        r = await axios.get(`${c.base_url}/v1/organizations`, { params: { page, pageSize: 100 }, headers: { Authorization: `AccessToken=${tok}` }, timeout: TIMEOUT, httpsAgent: agentFor(c), maxRedirects: 0 });
+      } catch (err) { throw explain(err); }
+      const res = unwrap(r.data);
+      const data = (res && res.data) || [];
+      out.push(...data);
+      if (!data.length || out.length >= (Number(res.totalRows) || 0)) break;
+    }
+    return out;
+  };
+  let list;
+  try { list = await once(false); } catch (err) {
+    if (!TOKEN_ERRORS.has(err.code)) throw err;
+    list = await once(true);
+  }
+  const own = new URL(c.base_url);
+  return list.map((o) => {
+    const name = clean(o.orgName, 100) || 'Controlador';
+    let root = null;
+    // La direccion la da TP-Link: solo se acepta si es https de tplinkcloud.com (o el mismo servidor configurado).
+    try {
+      const h = new URL(String(o.serverHost || c.base_url));
+      const trusted = (h.protocol === 'https:' && /\.tplinkcloud\.com$/i.test(h.hostname)) || h.origin === own.origin;
+      if (trusted && /^[A-Za-z0-9]{8,80}$/.test(String(o.deviceId)) && /^[A-Za-z0-9]{8,64}$/.test(String(o.omadacId))) root = `${h.origin}/v1/cloudaccess/${o.deviceId}/openapi/v1/${o.omadacId}`;
+    } catch (e) { root = null; }
+    return { name, online: !!o.online, version: clean(o.orgVersion, 30), root };
+  });
+}
+
 // Listas paginadas: { totalRows, data }.
 async function getAll(c, path) {
   const out = [];
@@ -219,16 +272,23 @@ async function test(id) {
   const c = await withSecret(id);
   if (!c) throw new Error('El controlador ya no existe.');
   tokens.delete(c.id);
+  if (c.mode === 'cuenta') {
+    const orgs = await organizations(c);
+    return { label: 'Controladores de la cuenta', sites: orgs.map((o) => `${o.name} (${o.online ? 'en línea' : 'fuera de línea'}${o.version ? `, versión ${o.version}` : ''})`) };
+  }
   const sites = await getAll(c, '/sites');
-  return { sites: sites.map((s) => clean(s.name, 100)).filter(Boolean) };
+  return { label: 'Sitios visibles', sites: sites.map((s) => clean(s.name, 100)).filter(Boolean) };
 }
 
 // ---------------- lectura ----------------
 const kindOf = (t) => { const k = String(t || '').toLowerCase(); return KINDS[k] && k !== 'otro' ? k : 'otro'; };
 
 async function syncSite(c, s, now) {
-  await pool.query(`INSERT INTO omada_sites (controller_id, site_key, name, region) VALUES (?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE name = VALUES(name), region = VALUES(region)`, [c.id, String(s.siteId), clean(s.name, 100) || String(s.siteId), clean(s.region, 60)]);
+  // Por la nube, un sitio que se llama "Default" se muestra con el nombre de su controlador.
+  const siteName = c.org_name && /^default$/i.test(String(s.name || '').trim()) ? c.org_name : clean(s.name, 100) || String(s.siteId);
+  await pool.query(`INSERT INTO omada_sites (controller_id, site_key, name, region, org_name, api_root) VALUES (?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE name = VALUES(name), region = VALUES(region), org_name = VALUES(org_name), api_root = VALUES(api_root)`,
+  [c.id, String(s.siteId), siteName, clean(s.region, 60), c.org_name || null, c.api_root || null]);
   const [[site]] = await pool.query('SELECT id FROM omada_sites WHERE controller_id = ? AND site_key = ?', [c.id, String(s.siteId)]);
   const base = `/sites/${encodeURIComponent(s.siteId)}`;
   const [devs, clis] = [await getAll(c, `${base}/devices`), await getAll(c, `${base}/clients`)];
@@ -287,13 +347,40 @@ async function syncController(id) {
   // La hora la pone la base: es la misma con la que luego se compara (NOW()).
   const [[{ now }]] = await pool.query('SELECT NOW() AS now');
   try {
-    const sites = await getAll(c, '/sites');
     const done = [];
-    for (const s of sites) if (s && s.siteId) done.push(await syncSite(c, s, now));
-    // Un sitio que ya no existe en el controlador se quita (con sus equipos, clientes y muestras).
-    const keys = sites.map((s) => String(s.siteId));
-    await pool.query(`DELETE FROM omada_sites WHERE controller_id = ?${keys.length ? ' AND site_key NOT IN (?)' : ''}`, keys.length ? [c.id, keys] : [c.id]);
-    const detail = done.length ? done.map((d) => `${d.name}: ${d.devices} equipos, ${d.clients} clientes`).join(' · ') : 'El controlador no tiene sitios visibles para esta aplicación.';
+    const notes = [];
+    // Directo: un solo controlador. Por la nube: cada controlador (organizacion) de la cuenta.
+    const targets = [];
+    if (c.mode === 'cuenta') {
+      const orgs = await organizations(c);
+      for (const o of orgs) {
+        if (!o.root) notes.push(`${o.name}: dirección no reconocida, se omite`);
+        else if (!o.online) notes.push(`${o.name}: fuera de línea`);
+        else targets.push({ ...c, org_name: o.name, api_root: o.root });
+      }
+      // Un controlador que ya no esta en la cuenta se quita; uno fuera de linea conserva lo ultimo leido.
+      const roots = orgs.map((o) => o.root).filter(Boolean);
+      await pool.query(`DELETE FROM omada_sites WHERE controller_id = ? AND (api_root IS NULL${roots.length ? ' OR api_root NOT IN (?)' : ''})`, roots.length ? [c.id, roots] : [c.id]);
+      if (!orgs.length) notes.push('La aplicación de la cuenta no tiene ningún controlador asignado');
+    } else {
+      targets.push(c);
+    }
+    for (const t of targets) {
+      let sites;
+      try { sites = await getAll(t, '/sites'); } catch (err) {
+        // Por la nube, la falla de un controlador no detiene la lectura de los demas.
+        if (c.mode !== 'cuenta' || !err.omada) throw err;
+        notes.push(`${t.org_name}: ${err.message}`);
+        continue;
+      }
+      for (const s of sites) if (s && s.siteId) done.push(await syncSite(t, s, now));
+      // Un sitio que ya no existe en el controlador se quita (con sus equipos, clientes y muestras).
+      const keys = sites.map((s) => String(s.siteId));
+      const scope = t.api_root ? ' AND api_root = ?' : '';
+      await pool.query(`DELETE FROM omada_sites WHERE controller_id = ?${scope}${keys.length ? ' AND site_key NOT IN (?)' : ''}`, [c.id, ...(t.api_root ? [t.api_root] : []), ...(keys.length ? [keys] : [])]);
+    }
+    if (c.mode === 'cuenta' && !done.length && notes.length) { const e = new Error(notes.join(' · ')); e.omada = true; throw e; }
+    const detail = [...done.map((d) => `${d.name}: ${d.devices} equipos, ${d.clients} clientes`), ...notes].join(' · ') || 'El controlador no tiene sitios visibles para esta aplicación.';
     await pool.query('UPDATE omada_controllers SET last_sync_at = ?, last_sync_ok = 1, last_sync_detail = ? WHERE id = ?', [now, detail.slice(0, 500), c.id]);
     return { ok: true, name: c.name, detail };
   } catch (err) {
@@ -394,10 +481,10 @@ async function dashboard({ siteId = 0, hours = 24 } = {}) {
 async function clientAction(clientId, action) {
   const a = ACTIONS[action];
   if (!a) throw new Error('Acción no válida.');
-  const [[k]] = await pool.query(`SELECT k.id, k.mac, k.name, k.ip, s.site_key, s.name AS site_name, s.controller_id
+  const [[k]] = await pool.query(`SELECT k.id, k.mac, k.name, k.ip, s.site_key, s.name AS site_name, s.controller_id, s.api_root
     FROM omada_clients k JOIN omada_sites s ON s.id = k.site_id WHERE k.id = ?`, [Number(clientId) || 0]);
   if (!k) throw new Error('El cliente ya no está en la lista.');
-  const c = await withSecret(k.controller_id);
+  const c = { ...(await withSecret(k.controller_id)), api_root: k.api_root };
   if (!c.allow_actions) throw new Error(`Las acciones están apagadas para el controlador ${c.name}. Un administrador las habilita en Configuración.`);
   try {
     await act(c, `/sites/${encodeURIComponent(k.site_key)}/clients/${k.mac.replace(/:/g, '-')}/${a[0]}`);
@@ -432,6 +519,6 @@ async function registerInInventory(user) {
 }
 
 module.exports = {
-  STATUS, KINDS, RANGES, fmtBps, fmtBytes, controllers, controller, saveController, deleteController, test, sync, syncController,
+  STATUS, KINDS, RANGES, REGIONS, fmtBps, fmtBytes, controllers, controller, saveController, deleteController, test, sync, syncController,
   sites, devices, clients, samples, dashboard, registerInInventory, clientAction, ACTIONS, _,
 };
