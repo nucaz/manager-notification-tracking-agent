@@ -151,6 +151,14 @@ READMEs.
   una línea de comandos), auditadas y con tope; la revisión de puertos solo acepta direcciones privadas. La
   ruta usa `tracepath` porque `traceroute` exige privilegios que el contenedor no tiene. Prueba:
   `tests/red.e2e.js`.
+- **Red > Omada** (`omadaService.js`, job `syncOmada.js` cada 5 min): lee los controladores TP-Link Omada por
+  su Open API oficial (modo *client credentials*; cabecera `Authorization: AccessToken=…`). **Solo hace GET**
+  (más el POST del token): no cambia nada en el controlador. Cada OC300 es un controlador aparte
+  (`omada_controllers`, secreto cifrado con `cryptoService`). Guarda copia de sitios, equipos y clientes, y una
+  muestra de consumo por lectura (`omada_samples`, 30 días) de la que sale el gráfico, dibujado en el servidor
+  como SVG. Cruza por MAC con el inventario de Red y puede registrar ahí los AP y switches sin pisar nada.
+  Las marcas de tiempo las pone la base (`SELECT NOW()`), no Node. Prueba: `tests/omada.e2e.js`, contra un
+  controlador simulado (nunca uno real).
 - **Tablas de listado (estándar en toda la app)**: toda tabla con
   `<thead>` dentro de `.table-responsive` recibe sola, de
   `public/js/tablas.js`, **orden con clic en el encabezado**, **filtro por

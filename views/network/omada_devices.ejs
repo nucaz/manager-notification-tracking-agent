@@ -1,0 +1,63 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_omada_nav') %>
+<% const puede = currentUser.role !== 'lector';
+   const esAdmin = ['superadmin', 'admin'].includes(currentUser.role);
+   const n = function (k) { return all.filter(function (x) { return x.kind === k; }).length; };
+   const base = function (extra) { const p = []; if (site) p.push('sitio=' + site.id); if (extra) p.push(extra); return '?' + p.join('&'); };
+   const sinRegistrar = all.filter(function (x) { return !x.inventory_id; }).length; %>
+<div class="card p-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <div class="d-flex flex-wrap gap-2 small">
+      <a class="btn btn-sm <%= kind ? 'btn-outline-secondary' : 'btn-secondary' %>" href="<%= base() %>">Todos · <%= all.length %></a>
+      <% ['ap', 'switch', 'gateway'].forEach(function (k) { if (!n(k) && k === 'gateway') return; %>
+        <a class="btn btn-sm <%= kind === k ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= base('tipo=' + k) %>"><i class="bi <%= OKINDS[k][1] %>"></i> <%= OKINDS[k][0] %> · <%= n(k) %></a>
+      <% }); %>
+    </div>
+    <% if (puede && sinRegistrar) { %>
+      <form method="post" action="/red/omada/equipos/registrar"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-sm btn-outline-primary" title="Los agrega a la pestaña Equipos con nombre, MAC, IP, modelo y serie. No modifica los que ya están."><i class="bi bi-box-arrow-in-down"></i>
+          Registrar <%= sinRegistrar %> en el inventario de Red</button></form>
+    <% } %>
+  </div>
+  <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
+    <% if (site) { %><input type="hidden" name="sitio" value="<%= site.id %>"><% } %>
+    <% if (kind) { %><input type="hidden" name="tipo" value="<%= kind %>"><% } %>
+    <label class="visually-hidden" for="omada_q">Buscar</label>
+    <input type="search" class="form-control form-control-sm" id="omada_q" name="q" value="<%= q %>" placeholder="Nombre, MAC, IP, modelo…" style="max-width: 20rem">
+    <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
+    <% if (q) { %><span class="small text-muted"><%= items.length %> resultado(s)</span> <a class="small" href="<%= base(kind ? 'tipo=' + kind : '') %>">Quitar búsqueda</a><% } %>
+  </form>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr><th>Estado</th><th>Tipo</th><th>Nombre</th><th>MAC</th><th>IP</th><th>Modelo</th><th class="text-end">Clientes</th><th class="text-end">CPU</th><th class="text-end">Memoria</th><th>Encendido hace</th>
+        <th>Sitio</th><th data-oculta>Conectado a</th><th data-oculta>Firmware</th><th data-oculta>Serie</th><th data-orden="no"></th></tr></thead>
+      <tbody>
+        <% items.forEach(function (x) { const st = STATUS[x.status] || STATUS[0]; %>
+          <tr>
+            <td><span class="badge text-bg-<%= st[1] %>"><%= st[0] %></span></td>
+            <td class="text-nowrap"><i class="bi <%= (OKINDS[x.kind] || OKINDS.otro)[1] %>"></i> <%= (OKINDS[x.kind] || OKINDS.otro)[0] %></td>
+            <td class="fw-semibold"><%= x.name %></td>
+            <td class="font-monospace text-nowrap"><%= x.mac %></td>
+            <td class="font-monospace text-nowrap"><%= x.ip || '—' %></td>
+            <td><%= x.model || '—' %></td>
+            <td class="text-end"><% if (x.clients) { %><a href="/red/omada/clientes?<%= site ? 'sitio=' + site.id + '&' : '' %>q=<%= encodeURIComponent(x.name) %>"><%= x.clients %></a><% } else { %>0<% } %></td>
+            <td class="text-end <%= x.cpu >= 85 ? 'text-danger fw-semibold' : '' %>"><%= x.cpu === null ? '—' : x.cpu + ' %' %></td>
+            <td class="text-end <%= x.mem >= 90 ? 'text-danger fw-semibold' : '' %>"><%= x.mem === null ? '—' : x.mem + ' %' %></td>
+            <td class="text-nowrap"><%= x.uptime || '—' %></td>
+            <td><%= x.site_name %></td>
+            <td><%= x.uplink_name ? x.uplink_name + (x.uplink_port ? ' · puerto ' + x.uplink_port : '') : '—' %></td>
+            <td><%= x.firmware || '—' %></td>
+            <td><%= x.serial || '—' %></td>
+            <td class="text-nowrap text-end">
+              <% if (esAdmin && x.ip) { %><a class="btn btn-sm btn-outline-secondary" href="/red/herramientas?host=<%= encodeURIComponent(x.ip) %>" title="Ping y otras pruebas"><i class="bi bi-terminal"></i></a><% } %>
+              <% if (x.inventory_id && puede) { %><a class="btn btn-sm btn-outline-primary" href="/red/equipos/<%= x.inventory_id %>" title="Ficha en el inventario de Red (sede, área, notas, VLAN)"><i class="bi bi-card-text"></i></a><% } %>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="15" class="text-center text-muted py-4">Sin equipos<%= q || kind ? ' con ese filtro' : '' %>.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+  <p class="small text-muted mb-0">Datos del controlador Omada (solo lectura). La sede, el área y las notas de cada equipo se llevan en la pestaña Equipos.</p>
+</div>
+<%- include('../partials/foot') %>

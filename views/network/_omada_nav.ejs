@@ -1,0 +1,39 @@
+<%# Cabecera comun de Red > Omada: titulo, pestañas, sub-secciones, selector de sitio y estado de la lectura. %>
+<% const oAdmin = ['superadmin', 'admin'].includes(currentUser.role);
+   const oSubs = [['resumen', '/red/omada', 'Resumen', 'bi-speedometer2'], ['equipos', '/red/omada/equipos', 'Equipos', 'bi-hdd-network'], ['clientes', '/red/omada/clientes', 'Clientes', 'bi-people']];
+   if (oAdmin) oSubs.push(['configuracion', '/red/omada/configuracion', 'Configuración', 'bi-gear']);
+   const oQs = site ? '?sitio=' + site.id : '';
+   const oFailed = controllers.filter(function (c) { return c.enabled && c.last_sync_ok === 0; });
+   const oLast = sites.map(function (s) { return s.synced_at || ''; }).sort().pop(); %>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h2 class="mb-0">Red — Omada</h2>
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <% if (oLast) { %><span class="small text-muted" id="omada_ultima">Última lectura: <%= String(oLast).slice(0, 16) %></span><% } %>
+    <% if (oAdmin && controllers.length) { %>
+      <form method="post" action="/red/omada/leer"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-outline-primary btn-sm" title="La lectura automática es cada 5 minutos"><i class="bi bi-arrow-repeat"></i> Leer ahora</button></form>
+    <% } %>
+  </div>
+</div>
+<%- include('_tabs') %>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <ul class="nav nav-pills small">
+    <% oSubs.forEach(function (t) { %>
+      <li class="nav-item"><a class="nav-link py-1 <%= sub === t[0] ? 'active' : '' %>" href="<%= t[1] %><%= t[0] === 'configuracion' ? '' : oQs %>"><i class="bi <%= t[3] %>"></i> <%= t[2] %></a></li>
+    <% }); %>
+  </ul>
+  <% if (sub !== 'configuracion' && sites.length > 1) { %>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Sitio">
+      <a class="btn <%= site ? 'btn-outline-secondary' : 'btn-secondary' %>" href="?">Todos los sitios</a>
+      <% sites.forEach(function (s) { %><a class="btn <%= site && site.id === s.id ? 'btn-secondary' : 'btn-outline-secondary' %>" href="?sitio=<%= s.id %>"><%= s.name %></a><% }); %>
+    </div>
+  <% } %>
+</div>
+<% if (!controllers.length) { %>
+  <div class="alert alert-info">Aún no hay ningún controlador Omada configurado.
+    <% if (oAdmin) { %><a href="/red/omada/configuracion" class="alert-link">Agregue el primero en Configuración</a>.<% } else { %>Pídale a un administrador que lo agregue.<% } %></div>
+<% } %>
+<% oFailed.forEach(function (c) { %>
+  <div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> <strong><%= c.name %>:</strong> la última lectura (<%= String(c.last_sync_at || '').slice(0, 16) %>) falló. <%= c.last_sync_detail %>
+    Lo que se muestra es lo último que se pudo leer.</div>
+<% }); %>

@@ -640,6 +640,24 @@ administradores) hace ping, ruta de saltos, consulta DNS y revisión de puertos 
 abiertos **desde el servidor de la aplicación**; la revisión de puertos solo acepta
 direcciones de la red interna y cada prueba queda en la auditoría.
 
+**Red > Omada (controladores TP-Link), solo lectura.** La pestaña *Omada* muestra lo que
+conocen los controladores Omada: *Resumen* (clientes conectados, equipos en línea y
+caídos, velocidad de bajada y subida, gráfico de consumo de 6 horas a 30 días, clientes
+con más consumo, clientes por punto de acceso y por red Wi-Fi, señal débil), *Equipos*
+(AP, switches y gateway con estado, MAC, IP, modelo, CPU, memoria, firmware) y
+*Clientes* (por Wi-Fi o cable, a qué AP o puerto están conectados, señal, velocidad y
+consumo). La aplicación lee cada 5 minutos por la Open API oficial y **no cambia nada
+en el controlador**. Para conectarlo, en *Configuración* (administradores) se registra
+cada controlador con los datos de su aplicación Open API: en el controlador, vista
+*Global* → *Settings* → *Platform Integration* → *Open API* → *Add New App* en modo
+*Client* con rol *Viewer*; el icono del ojo muestra el Omada ID, el Client ID, el
+Client Secret y la dirección de la interfaz. **Cada OC300 es un controlador distinto**
+y necesita su propia aplicación. El secreto se guarda cifrado. *Registrar en el
+inventario de Red* copia los AP y switches a la pestaña *Equipos* (sin pisar lo
+escrito a mano), y los clientes cuya MAC coincide con un equipo o celular del
+inventario se muestran con su nombre. El gráfico suma la velocidad de los clientes en
+cada lectura; no es la medición del enlace de Internet en el router.
+
 **Directivas de grupo (GPO)**, solo lectura: la pestaña *Directivas (GPO)* lista cada
 directiva con su estado, qué tipo de configuración trae (scripts, despliegue de
 software, restricciones, seguridad, preferencias), los paquetes MSI que despliega, su

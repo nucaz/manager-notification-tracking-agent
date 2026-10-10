@@ -1,0 +1,55 @@
+<%- include('../partials/head', { title: title }) %>
+<%- include('_omada_nav') %>
+<% const base = function (extra) { const p = []; if (site) p.push('sitio=' + site.id); if (extra) p.push(extra); return '?' + p.join('&'); };
+   const activos = all.filter(function (c) { return c.active; });
+   const wifi = activos.filter(function (c) { return c.wireless; }).length;
+   const senal = function (v) { return v === null ? 'secondary' : v >= 60 ? 'success' : v >= 40 ? 'warning' : 'danger'; }; %>
+<div class="card p-3">
+  <div class="d-flex flex-wrap gap-2 small mb-2">
+    <a class="btn btn-sm <%= view ? 'btn-outline-secondary' : 'btn-secondary' %>" href="<%= base() %>">Conectados · <%= activos.length %></a>
+    <a class="btn btn-sm <%= view === 'wifi' ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= base('ver=wifi') %>"><i class="bi bi-wifi"></i> Wi-Fi · <%= wifi %></a>
+    <a class="btn btn-sm <%= view === 'cable' ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= base('ver=cable') %>"><i class="bi bi-ethernet"></i> Cable · <%= activos.length - wifi %></a>
+    <a class="btn btn-sm <%= view === 'todos' ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= base('ver=todos') %>" title="Incluye los que se desconectaron en los últimos 30 días">Vistos en 30 días</a>
+  </div>
+  <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
+    <% if (site) { %><input type="hidden" name="sitio" value="<%= site.id %>"><% } %>
+    <% if (view) { %><input type="hidden" name="ver" value="<%= view %>"><% } %>
+    <label class="visually-hidden" for="omada_cq">Buscar</label>
+    <input type="search" class="form-control form-control-sm" id="omada_cq" name="q" value="<%= q %>" placeholder="Nombre, MAC, IP, AP, SSID…" style="max-width: 20rem">
+    <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
+    <% if (q) { %><span class="small text-muted"><%= items.length %> resultado(s)</span> <a class="small" href="<%= base(view ? 'ver=' + view : '') %>">Quitar búsqueda</a><% } %>
+  </form>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small">
+      <thead><tr><th>Cliente</th><th>IP</th><th>MAC</th><th>Conexión</th><th>Conectado a</th><th class="text-end">Señal</th><th class="text-end">Bajando</th><th class="text-end">Subiendo</th>
+        <th class="text-end">Bajada total</th><th class="text-end">Subida total</th><th>Sitio</th><th data-oculta>Fabricante</th><th data-oculta>Tipo</th><th data-oculta>VLAN</th><th data-oculta>Visto</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (c) { %>
+          <tr class="<%= c.active ? '' : 'text-muted' %>">
+            <td><span class="fw-semibold"><%= c.name || '(sin nombre)' %></span>
+              <% if (c.inventory_id) { %><div><a href="<%= c.inventory_kind === 'celular' ? '/red/celulares' : '/red/equipos' %>?q=<%= encodeURIComponent(c.mac) %>" title="Está en el inventario de Red"><i class="bi bi-card-checklist"></i> <%= c.inventory_name %></a></div><% } %>
+              <% if (!c.active) { %><span class="badge text-bg-secondary">desconectado</span><% } %></td>
+            <td class="font-monospace text-nowrap"><%= c.ip || '—' %></td>
+            <td class="font-monospace text-nowrap"><%= c.mac %></td>
+            <td class="text-nowrap"><i class="bi <%= c.wireless ? 'bi-wifi' : 'bi-ethernet' %>"></i> <%= c.wireless ? c.ssid || 'Wi-Fi' : 'Cable' %></td>
+            <td><%= c.via_name || '—' %><%= !c.wireless && c.via_port ? ' · puerto ' + c.via_port : '' %></td>
+            <td class="text-end" data-valor="<%= c.signal_pct === null ? -1 : c.signal_pct %>"><% if (c.wireless && c.signal_pct !== null) { %><span class="badge text-bg-<%= senal(c.signal_pct) %>"><%= c.signal_pct %> %</span><% } else { %>—<% } %></td>
+            <td class="text-end text-nowrap" data-valor="<%= c.down_bps %>"><%= c.active ? fmtBps(c.down_bps) : '—' %></td>
+            <td class="text-end text-nowrap" data-valor="<%= c.up_bps %>"><%= c.active ? fmtBps(c.up_bps) : '—' %></td>
+            <td class="text-end text-nowrap" data-valor="<%= c.traffic_down %>"><%= fmtBytes(c.traffic_down) %></td>
+            <td class="text-end text-nowrap" data-valor="<%= c.traffic_up %>"><%= fmtBytes(c.traffic_up) %></td>
+            <td><%= c.site_name %></td>
+            <td><%= c.vendor || '—' %></td>
+            <td><%= c.device_type || '—' %></td>
+            <td><%= c.vlan === null ? '—' : c.vlan %></td>
+            <td class="text-nowrap"><%= String(c.last_seen || '').slice(0, 16) || '—' %></td>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="15" class="text-center text-muted py-4">Sin clientes<%= q || view ? ' con ese filtro' : ' conectados' %>.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+  <p class="small text-muted mb-0">«Bajando» y «Subiendo» son la velocidad en el momento de la última lectura; los totales son de la sesión actual del cliente.
+    Cuando la MAC coincide con un equipo o celular del inventario de Red, se muestra su nombre.</p>
+</div>
+<%- include('../partials/foot') %>

@@ -8,6 +8,7 @@ const { verifyCsrfToken } = require('../middleware/csrf');
 const { uploader, DIRS } = require('../services/uploadService');
 const networkService = require('../services/networkService');
 const netToolsService = require('../services/netToolsService');
+const omadaService = require('../services/omadaService');
 const catalogService = require('../services/catalogService');
 const auditService = require('../services/auditService');
 
@@ -319,6 +320,141 @@ router.post('/vlan/:id(\\d+)/eliminar', canWrite, verifyCsrfToken, async (req, r
       req.flash('success', 'VLAN eliminada (los equipos que la tenían quedan sin ella).');
     }
     return res.redirect('/red/vlan');
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ---------------- Omada (controladores TP-Link, solo lectura) ----------------
+// Ver y buscar: quien tenga el modulo Red. Configurar, probar y leer ahora:
+// administradores. Registrar equipos en el inventario: quien pueda escribir.
+const omadaBase = async (req) => {
+  const sites = await omadaService.sites();
+  const site = sites.find((s) => s.id === Number(req.query.sitio)) || null;
+  return { tab: 'omada', sites, site, STATUS: omadaService.STATUS, OKINDS: omadaService.KINDS, fmtBps: omadaService.fmtBps, fmtBytes: omadaService.fmtBytes,
+    controllers: await omadaService.controllers() };
+};
+
+router.get('/omada', async (req, res, next) => {
+  try {
+    const b = await omadaBase(req);
+    const hours = omadaService.RANGES[req.query.h] ? Number(req.query.h) : 24;
+    res.render('network/omada', { title: 'Red — Omada', sub: 'resumen', ...b, hours, RANGES: omadaService.RANGES,
+      d: await omadaService.dashboard({ siteId: b.site ? b.site.id : 0, hours }) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/omada/equipos', async (req, res, next) => {
+  try {
+    const b = await omadaBase(req);
+    const all = await omadaService.devices({ siteId: b.site ? b.site.id : 0 });
+    const kind = omadaService.KINDS[req.query.tipo] ? req.query.tipo : '';
+    const f = search(req, kind ? all.filter((x) => x.kind === kind) : all, ['name', 'mac', 'ip', 'model', 'serial', 'firmware', 'site_name', 'uplink_name']);
+    res.render('network/omada_devices', { title: 'Red — Omada: equipos', sub: 'equipos', ...b, all, items: f.rows, q: f.q, kind });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/omada/equipos/registrar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const r = await omadaService.registerInInventory(req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_omada_registrar_equipos', target: 'equipos de red', detail: `${r.created} equipos nuevos de ${r.total} en Omada` });
+    req.flash('success', r.created ? `${r.created} equipo(s) de Omada registrados en la pestaña Equipos. Complete ahí la sede, el área y las notas.` : 'Todos los equipos de Omada ya estaban en la pestaña Equipos.');
+    return res.redirect('/red/omada/equipos');
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/omada/clientes', async (req, res, next) => {
+  try {
+    const b = await omadaBase(req);
+    const view = ['wifi', 'cable', 'todos'].includes(req.query.ver) ? req.query.ver : '';
+    const all = await omadaService.clients({ siteId: b.site ? b.site.id : 0, onlyActive: view !== 'todos' });
+    const rows = view === 'wifi' ? all.filter((c) => c.wireless) : view === 'cable' ? all.filter((c) => !c.wireless) : all;
+    const f = search(req, rows, ['name', 'mac', 'ip', 'vendor', 'device_type', 'ssid', 'via_name', 'site_name', 'inventory_name']);
+    res.render('network/omada_clients', { title: 'Red — Omada: clientes', sub: 'clientes', ...b, all, items: f.rows, q: f.q, view });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/omada/configuracion', isAdmin, async (req, res, next) => {
+  try {
+    const b = await omadaBase(req);
+    const edit = req.query.editar ? await omadaService.controller(req.query.editar) : null;
+    const draft = req.session.omadaDraft || null;
+    delete req.session.omadaDraft;
+    res.render('network/omada_config', { title: 'Red — Omada: configuración', sub: 'configuracion', ...b, edit, draft });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/omada/configuracion', isAdmin, verifyCsrfToken, async (req, res, next) => {
+  const id = Number(req.body.id) || 0;
+  try {
+    const saved = await omadaService.saveController(id, req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_omada_controlador_guardado', target: String(req.body.name || '').slice(0, 100), detail: `id ${saved}` });
+    // Se prueba de inmediato: asi se sabe si las credenciales sirven.
+    try {
+      const t = await omadaService.test(saved);
+      req.flash('success', `Controlador guardado y conexión correcta. Sitios visibles: ${t.sites.join(', ') || 'ninguno'}.`);
+      await omadaService.syncController(saved);
+    } catch (err) {
+      req.flash('error', `Controlador guardado, pero la prueba de conexión falló: ${err.message}`);
+    }
+    return res.redirect('/red/omada/configuracion');
+  } catch (err) {
+    // Lo escrito vuelve al formulario, menos el secreto.
+    const { client_secret: _s, _csrf, ...rest } = req.body; // eslint-disable-line no-unused-vars
+    req.session.omadaDraft = rest;
+    return fail(req, res, err, id ? `/red/omada/configuracion?editar=${id}` : '/red/omada/configuracion', next);
+  }
+});
+
+router.post('/omada/configuracion/:id(\\d+)/probar', isAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const t = await omadaService.test(req.params.id);
+    req.flash('success', `Conexión correcta. Sitios visibles: ${t.sites.join(', ') || 'ninguno'}.`);
+  } catch (err) {
+    if (err.sqlMessage) return next(err);
+    req.flash('error', `La prueba falló: ${err.message}`);
+  }
+  return res.redirect('/red/omada/configuracion');
+});
+
+router.post('/omada/configuracion/:id(\\d+)/eliminar', isAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const c = await omadaService.controller(req.params.id);
+    if (await omadaService.deleteController(req.params.id)) {
+      await auditService.log(req, { user: req.session.user, action: 'red_omada_controlador_eliminado', target: c ? c.name : `id ${req.params.id}` });
+      req.flash('success', 'Controlador quitado, con lo que se había leído de él. En Omada no se cambió nada.');
+    }
+    return res.redirect('/red/omada/configuracion');
+  } catch (err) {
+    return next(err);
+  }
+});
+
+let omadaManual = 0; // una lectura manual por minuto, entre todos
+router.post('/omada/leer', isAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    if (Date.now() - omadaManual < 60000) {
+      req.flash('error', 'Se acaba de leer hace menos de un minuto. Espere un momento.');
+      return res.redirect('/red/omada');
+    }
+    omadaManual = Date.now();
+    const r = await omadaService.sync();
+    const bad = r.results.filter((x) => !x.ok);
+    if (r.skipped) req.flash('error', 'Ya hay una lectura en curso.');
+    else if (!r.results.length) req.flash('error', 'No hay controladores habilitados. Agregue uno en Configuración.');
+    else if (bad.length) req.flash('error', bad.map((x) => `${x.name}: ${x.detail}`).join(' — ').slice(0, 600));
+    else req.flash('success', `Lectura completa: ${r.results.map((x) => x.detail).join(' · ')}`.slice(0, 600));
+    return res.redirect('/red/omada');
   } catch (err) {
     return next(err);
   }

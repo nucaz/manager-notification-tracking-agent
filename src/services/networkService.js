@@ -13,7 +13,7 @@ const KINDS = {
   router: ['Router', 'bi-router'], firewall: ['Firewall', 'bi-shield'], impresora: ['Impresora', 'bi-printer'], servidor: ['Servidor', 'bi-server'],
   otro: ['Otro', 'bi-box'],
 };
-const SOURCES = { manual: 'A mano', glpi: 'GLPI', ad: 'Directorio activo', celular: 'Celulares' };
+const SOURCES = { manual: 'A mano', glpi: 'GLPI', ad: 'Directorio activo', celular: 'Celulares', omada: 'Omada' };
 
 const clean = (v, max) => { const s = String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim(); return s ? s.slice(0, max) : null; };
 
