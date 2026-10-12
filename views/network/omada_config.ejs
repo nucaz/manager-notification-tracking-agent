@@ -39,11 +39,13 @@
       <h6>Dos formas de conectar</h6>
       <p class="mb-1"><strong>Por la nube de Omada (recomendada).</strong> Una sola aplicación, creada en su <strong>cuenta</strong> de Omada, ve todos los controladores que le asigne (por ejemplo, los OC300 de Pueblo Libre y Surco). No hace falta llegar a la red de cada sede.</p>
       <ol class="mb-2 ps-3">
-        <li>Entre al portal de la nube de Omada (donde aparece la lista de sus controladores), <strong>no</strong> dentro de un controlador.</li>
-        <li>Busque la sección de <strong>Open API</strong> de la cuenta y cree una aplicación: nombre, vigencia y los controladores (organizaciones) que podrá ver.</li>
-        <li>Copie aquí su <strong>Client ID</strong> y su <strong>Client Secret</strong>, y elija la región de su cuenta (si entra por <code>use1-omada-cloud…</code>, es América).</li>
+        <li>Entre al portal de la nube de Omada (donde aparece la lista de sus controladores, «On Premise Systems»), <strong>no</strong> dentro de un controlador.</li>
+        <li>En la barra izquierda, debajo del icono de inicio, abra <strong>Open API</strong>. Si no aparece el icono, pruebe la dirección directa: la del portal terminada en <code>#/cloudOpenApi</code> (por ejemplo <code>https://use1-omada-cloud.tplinkcloud.com/#/cloudOpenApi</code>).</li>
+        <li>Cree una clave: nombre, vigencia, permiso (solo lectura o acceso completo) y los controladores (organizaciones) que podrá ver.</li>
+        <li>Copie aquí su <strong>Key ID</strong> (es el Client ID) y su <strong>API Secret</strong> (es el Client Secret), y elija la región de su cuenta (si entra por <code>use1-omada-cloud…</code>, es América).</li>
       </ol>
-      <p class="mb-2 text-muted">Requisitos de TP-Link: controladores OC200, OC220, OC300, OC400 o por software, con versión <strong>6.2.0 o superior</strong>, en línea y con acceso por la nube activado. No aplica a los controladores alojados por TP-Link (Cloud-Based), que usan la conexión directa con su dirección de la nube.</p>
+      <p class="mb-2 text-muted">Requisitos de TP-Link: controladores OC200, OC220, OC300, OC400 o por software, con versión <strong>6.2.0 o superior</strong>, en línea y con acceso por la nube activado. No aplica a los controladores alojados por TP-Link (Cloud-Based), que usan la conexión directa con su dirección de la nube. TP-Link habilita esta sección por cuenta: si su portal no la muestra ni abre la dirección directa, su cuenta aún no la tiene y hay que pedirla a soporte de TP-Link o usar la conexión directa.</p>
+      <p class="mb-2"><strong>Las credenciales de una aplicación creada dentro de un controlador no sirven por la nube</strong> (Omada responde «Application has expired or does not exist»).</p>
       <p class="mb-1"><strong>Directa al controlador.</strong> Usa una aplicación Open API creada <em>dentro</em> de un controlador (vista Global → Settings → Platform Integration → Open API, modo Client). El icono del ojo muestra el Omada ID y la dirección de la interfaz, que en un OC300 es su IP local: el servidor de esta aplicación debe poder llegar a esa IP. Cada controlador se registra aparte.</p>
       <p class="mb-0 text-muted">Por defecto solo se lee (equipos, clientes y consumo). Para <strong>bloquear, desbloquear o reconectar clientes</strong> marque «Permitir acciones»; en la conexión directa, además, la aplicación debe tener rol Admin. El Client Secret se guarda cifrado y no se vuelve a mostrar.</p>
     </div>
@@ -87,9 +89,9 @@
           <div class="form-text">El valor de <code>omadacId=</code> en la dirección del navegador con el controlador abierto (32 letras y números). Es distinto en cada OC300.</div></div>
       </div>
 
-      <div class="mb-2"><label class="form-label small" for="o_client">Client ID *</label>
+      <div class="mb-2"><label class="form-label small" for="o_client">Client ID <span class="text-muted" data-modo-texto="cuenta">(Key ID de la clave del portal)</span> *</label>
         <input class="form-control form-control-sm font-monospace" id="o_client" name="client_id" value="<%= v('client_id') %>" maxlength="64" required></div>
-      <div class="mb-2"><label class="form-label small" for="o_secret">Client Secret <%= edit ? '' : '*' %></label>
+      <div class="mb-2"><label class="form-label small" for="o_secret">Client Secret <span class="text-muted" data-modo-texto="cuenta">(API Secret)</span> <%= edit ? '' : '*' %></label>
         <input type="password" class="form-control form-control-sm font-monospace" id="o_secret" name="client_secret" maxlength="200" autocomplete="new-password" <%= edit ? '' : 'required' %>
           placeholder="<%= edit ? 'Guardado. Escriba uno solo para cambiarlo.' : '' %>"></div>
       <div data-modo="local">
@@ -119,6 +121,7 @@
         box.classList.toggle('d-none', !on);
         box.querySelectorAll('input, select').forEach(function (el) { el.disabled = !on; });
       });
+      form.querySelectorAll('[data-modo-texto]').forEach(function (el) { el.classList.toggle('d-none', el.getAttribute('data-modo-texto') !== m); });
     }
     document.getElementById('o_modo_local').addEventListener('change', aplicar);
     document.getElementById('o_modo_cuenta').addEventListener('change', aplicar);

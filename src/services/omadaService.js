@@ -152,7 +152,11 @@ function unwrap(data) {
     // software) aunque tenga acceso por la nube: su Open API solo se atiende en su direccion local.
     const hint = Number(data.errorCode) === -7131
       ? ' La aplicación Open API creada dentro de un OC300 (u otro controlador propio) solo sirve en su dirección local. Para leerlo por la nube, cree una aplicación en su cuenta de Omada (portal de la nube) y regístrela aquí con la conexión «Por la nube de Omada».'
-      : '';
+      // -52602 / -90112: la nube no conoce esa aplicacion. Lo habitual: se pegaron las credenciales de una
+      // aplicacion creada DENTRO de un controlador, que no sirven por la nube.
+      : [-52602, -90112].includes(Number(data.errorCode))
+        ? ' La nube de Omada no reconoce ese Client ID. Por la nube solo sirve una aplicación creada en el portal (On Premise Systems → Open API), no la creada dentro de un controlador (Settings → Platform Integration); esa se registra como «Directa al controlador».'
+        : '';
     const e = new Error(`Omada respondió: ${clean(data.msg, 200) || 'error'} (código ${data.errorCode}).${hint}`);
     e.omada = true;
     e.code = Number(data.errorCode);

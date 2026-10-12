@@ -66,6 +66,7 @@ function startMock() {
       // ---- por la nube: aplicacion de la cuenta ----
       if (req.method === 'POST' && url.pathname === '/authorize/account/token') {
         const b = JSON.parse(body || '{}');
+        if (b.client_id === CLIENT) return json(res, { errorCode: -52602, msg: 'This Open API Application has expired or does not exist.' });
         if (url.searchParams.get('type') !== 'get_tokens' || b.client_id !== ACC_CLIENT || b.client_secret !== SECRET) return json(res, { errorCode: -90106, msg: 'The Client Id Or Client Secret is Invalid' });
         return json(res, { errorCode: 0, msg: 'ok', result: { accessToken: 'a1-AT-e2e', tokenType: 'bearer', expiresIn: 7200, refreshToken: 'r' } });
       }
@@ -379,6 +380,9 @@ async function main() {
     check('Por la nube: la región define la dirección y no se pide Omada ID', acc && acc.mode === 'cuenta' && acc.base_url === 'https://euw1-omada-northbound.tplinkcloud.com' && acc.verify_tls === 1);
     await pool.query('DELETE FROM omada_controllers WHERE id = ?', [acc.id]);
     omada._.allowHttp = true;
+    await post('/red/omada/configuracion', { name: `${TAG} Nube mal`, mode: 'cuenta', base_url: URL_OK, client_id: CLIENT, client_secret: SECRET, enabled: '0' });
+    check('Por la nube con las credenciales de una aplicación del controlador: se explica por qué no sirven', (await get('/red/omada/configuracion')).text.includes('no la creada dentro de un controlador'));
+    await pool.query('DELETE FROM omada_controllers WHERE name = ?', [`${TAG} Nube mal`]);
     await post('/red/omada/configuracion', { name: `${TAG} Nube`, mode: 'cuenta', base_url: URL_OK, client_id: ACC_CLIENT, client_secret: 'secreto-equivocado-000', enabled: ['0', '1'] });
     check('Por la nube: credenciales malas, con el motivo', (await get('/red/omada/configuracion')).text.includes('Client Id Or Client Secret is Invalid'));
     acc = await row('SELECT * FROM omada_controllers WHERE name = ?', [`${TAG} Nube`]);
