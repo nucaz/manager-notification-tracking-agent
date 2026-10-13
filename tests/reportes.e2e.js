@@ -305,9 +305,11 @@ async function main() {
     check('Sidecar sin configurar: dice dónde completarlo', p.text.includes('DevOps Sidecar no esta configurado'));
 
     // --- Permisos
-    const lector = reportService.available({ role: 'lector' }, { celulares: false, glpi_inventario: true });
-    check('Un rol sin el módulo Celulares no ve sus reportes; Repositorios es solo para administradores', !lector.celulares && !lector.chips
-      && lector.glpi_computadoras && !lector.repositorios && lector.license && reportService.available({ role: 'admin' }, {}).repositorios);
+    const lector = reportService.available({ role: 'lector' }, { celulares: false, glpi_inventario: true, licencias: true, devops: true });
+    check('Cada reporte pide acceso a su módulo: sin Celulares no hay sus reportes; sin Dominios, tampoco el de dominios', !lector.celulares && !lector.chips
+      && lector.glpi_computadoras && lector.license && !lector.domain && !lector.certificate);
+    check('Repositorios: solo administradores, y con el módulo DevOps habilitado', !lector.repositorios && !reportService.available({ role: 'admin' }, {}).repositorios
+      && !!reportService.available({ role: 'admin' }, { devops: true }).repositorios);
     p = await get('/reportes?modulo=no-existe');
     check('Un reporte desconocido cae en el primero de la lista', p.status === 200 && p.text.includes('<option value="license" selected>'));
   } finally {

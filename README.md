@@ -650,7 +650,10 @@ Lector puede editar en un módulo concreto y un Editor quedar solo de consulta e
 pidiendo ese perfil. La pantalla *Permisos* lista quién tiene permisos especiales y la
 lista de usuarios los marca. Desde la ficha de un usuario se pueden **copiar sus permisos
 especiales a otros usuarios**: cada uno queda con exactamente los mismos (los que tuviera
-se reemplazan) y su perfil no cambia. Cada cambio queda en la auditoría.
+se reemplazan) y su perfil no cambia. Cada cambio queda en la auditoría. **Reportes sigue
+los mismos permisos**: cada reporte solo se ofrece, y solo se puede descargar, si la
+persona tiene acceso al módulo de donde salen los datos (sin acceso a Celulares no hay
+reporte de celulares ni de chips).
 
 **Red: switches y puntos de acceso.** La pestaña *Switches y AP* lleva la ficha técnica
 de cada switch y punto de acceso: marca y modelo, IP, MAC, cantidad de puertos, categoría

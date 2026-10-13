@@ -38,9 +38,10 @@ const money = (n) => (n === null || n === undefined || n === '' ? '' : Number(n)
 // ---------------------------------------------------------------------
 // Vencimientos
 // ---------------------------------------------------------------------
-function expiry({ label, table, dateField, columns }) {
+function expiry({ label, module, table, dateField, columns }) {
   return {
     label,
+    module, // el modulo de donde salen los datos: sin acceso a el, no hay reporte
     group: 'Vencimientos',
     kind: 'vencimientos',
     columns: [...columns.map(([key, text]) => ({ key, label: text })), { key: 'days_left', label: 'Días restantes' },
@@ -550,6 +551,7 @@ const dateTime = (iso) => (iso ? String(iso).replace('T', ' ').slice(0, 16) : ''
 const repositorios = {
   label: 'Repositorios (DevOps)',
   group: 'DevOps',
+  module: 'devops',
   adminOnly: true, // el modulo DevOps es solo de administradores
   columns: [
     { key: 'name', label: 'Repositorio' }, { key: 'github_url', label: 'GitHub' }, { key: 'activo', label: 'Activo' },
@@ -578,19 +580,19 @@ const repositorios = {
 };
 
 const REPORTS = {
-  license: expiry({ label: 'Licencias de software', table: 'software_licenses', dateField: 'expiration_date',
+  license: expiry({ label: 'Licencias de software', module: 'licencias', table: 'software_licenses', dateField: 'expiration_date',
     columns: [['product_name', 'Producto'], ['vendor', 'Proveedor'], ['assigned_to', 'Asignado a'], ['seats', 'Puestos'], ['cost', 'Costo'],
       ['currency', 'Moneda'], ['expiration_date', 'Vence']] }),
-  domain: expiry({ label: 'Dominios', table: 'domains', dateField: 'expiration_date',
+  domain: expiry({ label: 'Dominios', module: 'dominios', table: 'domains', dateField: 'expiration_date',
     columns: [['domain_name', 'Dominio'], ['registrar', 'Registrador'], ['responsible', 'Responsable'], ['renewal_cost', 'Costo de renovación'],
       ['currency', 'Moneda'], ['expiration_date', 'Vence']] }),
-  isp_contract: expiry({ label: 'Contratos ISP', table: 'isp_contracts', dateField: 'end_date',
+  isp_contract: expiry({ label: 'Contratos ISP', module: 'isp', table: 'isp_contracts', dateField: 'end_date',
     columns: [['provider', 'Proveedor'], ['contract_number', 'N.º de contrato'], ['bandwidth_down', 'Bajada'], ['bandwidth_up', 'Subida'],
       ['monthly_cost', 'Costo mensual'], ['currency', 'Moneda'], ['end_date', 'Termina']] }),
-  server: expiry({ label: 'Servidores y Activos TI', table: 'servers', dateField: 'support_expiration_date',
+  server: expiry({ label: 'Servidores y Activos TI', module: 'servidores', table: 'servers', dateField: 'support_expiration_date',
     columns: [['name', 'Nombre'], ['asset_type', 'Tipo de activo'], ['environment', 'Ambiente'], ['criticality', 'Criticidad'],
       ['responsible', 'Responsable'], ['status', 'Situación'], ['support_expiration_date', 'Vence el soporte']] }),
-  certificate: expiry({ label: 'Certificados TLS', table: 'certificates', dateField: 'expiration_date',
+  certificate: expiry({ label: 'Certificados TLS', module: 'certificados', table: 'certificates', dateField: 'expiration_date',
     columns: [['common_name', 'Dominio cubierto'], ['certificate_type', 'Tipo'], ['issuer', 'Emisor'], ['responsible', 'Responsable'],
       ['cost', 'Costo'], ['currency', 'Moneda'], ['expiration_date', 'Vence']] }),
   celulares,
@@ -612,12 +614,15 @@ const REPORTS = {
   repositorios,
 };
 
-// Reportes que puede abrir este usuario: los de inventario piden tener
-// habilitado el modulo de donde salen los datos.
+// Reportes que puede abrir este usuario: TODO reporte pide tener acceso al
+// modulo de donde salen sus datos (por su perfil o por su permiso especial;
+// enabledModules ya lo trae resuelto por usuario). Sin acceso a Celulares no
+// hay reporte de celulares ni de chips, ni en pantalla ni para descargar.
 function available(user, enabledModules) {
   return Object.fromEntries(Object.entries(REPORTS).filter(([, r]) => {
-    if (r.adminOnly) return user && ['superadmin', 'admin'].includes(user.role);
-    return !r.module || !!(enabledModules || {})[r.module];
+    if (r.adminOnly && !(user && ['superadmin', 'admin'].includes(user.role))) return false;
+    // Un reporte sin modulo declarado no se ofrece a nadie: es mas seguro que ofrecerlo a todos.
+    return !!r.module && !!(enabledModules || {})[r.module];
   }));
 }
 

@@ -8,11 +8,17 @@ const router = express.Router();
 router.use(requireAuth, moduleRequired('reportes'));
 
 // El reporte pedido (?modulo=), entre los que este usuario puede abrir.
+// denied: pidio uno que existe pero al que no tiene acceso. report queda sin
+// valor cuando no puede abrir ninguno.
 function pick(req, res) {
   const reports = reportService.available(req.session.user, res.locals.enabledModules);
-  const mod = reports[req.query.modulo] ? req.query.modulo : Object.keys(reports)[0];
-  return { reports, mod, report: reports[mod] };
+  const asked = String(req.query.modulo || '');
+  const denied = !!asked && !reports[asked] && !!reportService.REPORTS[asked];
+  const mod = reports[asked] ? asked : Object.keys(reports)[0];
+  return { reports, mod, report: reports[mod], denied };
 }
+const NO_REPORTS = 'No tienes acceso a ningún módulo del que se puedan sacar reportes.';
+const DENIED = 'No tienes acceso al módulo de ese reporte.';
 
 // Parametros que acompanan a los enlaces de exportacion: los mismos
 // filtros que se estan viendo.
@@ -25,7 +31,16 @@ function exportQuery(mod, query, selects) {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { reports, mod, report } = pick(req, res);
+    const { reports, mod, report, denied } = pick(req, res);
+    if (!report) {
+      req.flash('error', NO_REPORTS);
+      return res.redirect('/');
+    }
+    // Pidio (por la direccion) un reporte de un modulo que no puede abrir: se le dice, y ve el primero que si.
+    if (denied) {
+      req.flash('error', DENIED);
+      return res.redirect(`/reportes?modulo=${encodeURIComponent(mod)}`);
+    }
     const base = {
       title: 'Reportes y consultas', reports, mod, report,
       filters: { q: req.query.q || '', from: req.query.from || '', to: req.query.to || '', status: req.query.status || '' },
@@ -66,7 +81,12 @@ const FORMATS = {
 router.get('/exportar.:formato', async (req, res, next) => {
   const format = FORMATS[req.params.formato];
   if (!format) return next();
-  const { mod, report } = pick(req, res);
+  const { mod, report, denied } = pick(req, res);
+  // Una descarga nunca cae a otro reporte: o es el pedido y con acceso, o no hay archivo.
+  if (!report || denied) {
+    req.flash('error', report ? DENIED : NO_REPORTS);
+    return res.redirect(report ? '/reportes' : '/');
+  }
   try {
     const result = await reportService.run(report, req.query);
     const user = req.session.user || {};

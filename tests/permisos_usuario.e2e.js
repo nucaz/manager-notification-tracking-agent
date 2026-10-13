@@ -76,6 +76,7 @@ async function main() {
   app.use('/red', require(path.join(ROOT, 'src/routes/network')));
   app.use('/usuarios', require(path.join(ROOT, 'src/routes/users')));
   app.use('/permisos', require(path.join(ROOT, 'src/routes/permissions')));
+  app.use('/reportes', require(path.join(ROOT, 'src/routes/reports')));
   app.get('/', (req, res) => res.send(`INICIO ${res.locals.errorMessages.join(' | ')}`));
   app.use((err, req, res, next) => { res.status(500).send(`ERROR ${err.message}`); }); // eslint-disable-line no-unused-vars
   const server = app.listen(0);
@@ -175,6 +176,36 @@ async function main() {
     await post('/permisos', all);
     check('Guardar Permisos también guarda la columna Administrador', (await row("SELECT enabled FROM role_modules WHERE role = 'admin' AND module = 'certificados'")).enabled === 0
       && (await row("SELECT enabled FROM role_modules WHERE role = 'admin' AND module = 'red'")).enabled === 1 && (await modules.moduleEnabled('admin', 'certificados')) === false);
+    // ---------------- reportes: solo de los módulos a los que tiene acceso ----------------
+    const reportService = require(path.join(ROOT, 'src/services/reportService'));
+    check('Todo reporte declara de qué módulo salen sus datos', Object.values(reportService.REPORTS).every((r) => !!modules.MODULES[r.module]));
+    for (const m of ['reportes', 'celulares', 'certificados', 'licencias', 'dominios']) await setRole('lector', m, 1);
+    await setUser(U.lector, 'celulares', 'none'); // ademas de licencias = sin acceso, dominios = solo ver, red = ver y editar
+    user = U.lector;
+    page = await get('/reportes?modulo=certificate');
+    check('Reportes: no ofrece los de módulos sin acceso (Celulares, Chips, Licencias) y sí los demás', page.status === 200 && !page.text.includes('Celulares (equipos)') && !page.text.includes('Chips (líneas)')
+      && !page.text.includes('Licencias de software') && page.text.includes('Certificados TLS') && page.text.includes('Dominios'));
+    const rr1 = await get('/reportes?modulo=celulares');
+    check('Pedir por la dirección el reporte de un módulo sin acceso: no lo muestra y lo dice', rr1.status === 302 && !rr1.location.includes('celulares')
+      && (await get(rr1.location)).text.includes('No tienes acceso al módulo de ese reporte'));
+    const blocked = async (u) => { const r = await fetch(base + u, { redirect: 'manual', headers: { cookie } }); return r.status === 302 && !/attachment/.test(r.headers.get('content-disposition') || ''); };
+    check('Descargar (CSV, Excel o PDF) el reporte de un módulo sin acceso: no entrega ningún archivo', await blocked('/reportes/exportar.csv?modulo=celulares') && await blocked('/reportes/exportar.xlsx?modulo=chips')
+      && await blocked('/reportes/exportar.pdf?modulo=license'));
+    const okFile = await fetch(`${base}/reportes/exportar.csv?modulo=domain`, { redirect: 'manual', headers: { cookie } });
+    check('…y sí descarga el de un módulo donde solo tiene «ver»', okFile.status === 200 && /reporte_domain_/.test(okFile.headers.get('content-disposition') || ''));
+    check('Unidad: los reportes disponibles siguen al acceso por módulo', Object.keys(reportService.available(U.lector, { celulares: false, dominios: true })).join() === 'domain'
+      && Object.keys(reportService.available(U.lector, { devops: true })).length === 0 && Object.keys(reportService.available(U.admin, { devops: true })).join() === 'repositorios'
+      && Object.keys(reportService.available(U.lector, {})).length === 0);
+    for (const k of Object.keys(modules.MODULES)) if (k !== 'reportes') await setUser(U.lector, k, 'none');
+    const rr2 = await get('/reportes');
+    check('Con Reportes habilitado pero sin acceso a ningún otro módulo: no hay reportes y se explica', rr2.location === '/' && (await get('/')).text.includes('ningún módulo del que se puedan sacar reportes')
+      && await blocked('/reportes/exportar.csv?modulo=domain'));
+    await setUser(U.lector, 'reportes', 'none');
+    check('Sin acceso al propio módulo Reportes: no entra', (await get('/reportes')).location === '/' && await blocked('/reportes/exportar.csv?modulo=domain'));
+    await pool.query('DELETE FROM user_modules WHERE user_id = ?', [U.lector.id]);
+    for (const [m, a] of [['dominios', 'view'], ['licencias', 'none'], ['red', 'edit']]) await setUser(U.lector, m, a);
+    user = superadmin;
+
     // ---------------- copiar a otros usuarios ----------------
     const copia = await mk('lector');
     await setUser(U.admin, 'red', 'view');

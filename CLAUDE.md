@@ -161,7 +161,9 @@ READMEs.
   módulo debe usar `req.effectiveRole || req.session.user.role`, o `moduleAccess(user, modulo)` desde otro
   módulo. El menú usa `realRole`. Los permisos especiales de un usuario se pueden copiar a otros desde su ficha
   (`POST /usuarios/:id/copiar-permisos`: reemplaza los del destino, nunca a un superadmin, auditado por destino).
-  Prueba: `tests/permisos_usuario.e2e.js`.
+  **Reportes**: todo reporte de `reportService.REPORTS` declara su `module` y solo se ofrece (y se descarga) a
+  quien tiene acceso a ese módulo; un reporte nuevo sin `module` no se ofrece a nadie. Una descarga pedida sin
+  acceso nunca cae a otro reporte. Prueba: `tests/permisos_usuario.e2e.js`.
 - **Red > Switches y AP** (`networkService.saveInfra`, `netMonitorService.js`, job `syncNetMonitor.js`): ficha
   técnica de switches y puntos de acceso en `network_device_specs` (1:1 con `network_devices`; son las **mismas
   filas** de la pestaña Equipos, y editar un switch o AP desde Equipos redirige a su ficha).
