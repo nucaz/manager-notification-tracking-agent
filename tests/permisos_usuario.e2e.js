@@ -41,9 +41,12 @@ async function main() {
   for (const role of ['admin', 'editor', 'lector']) await setRole(role, 'red', 1);
 
   const [[superadmin]] = await pool.query("SELECT id, email, full_name, role FROM users WHERE role = 'superadmin' AND active = 1 ORDER BY id LIMIT 1");
+  let seq = 0;
   const mk = async (role) => {
-    const [r] = await pool.query("INSERT INTO users (full_name, email, password_hash, role, active) VALUES (?, ?, 'x', ?, 1)", [`PRUEBA ${role}`, `${role}${DOM}`, role]);
-    return { id: r.insertId, email: `${role}${DOM}`, full_name: `PRUEBA ${role}`, role };
+    seq += 1;
+    const email = `${role}${seq > 3 ? seq : ''}${DOM}`;
+    const [r] = await pool.query("INSERT INTO users (full_name, email, password_hash, role, active) VALUES (?, ?, 'x', ?, 1)", [`PRUEBA ${role}${seq > 3 ? ` ${seq}` : ''}`, email, role]);
+    return { id: r.insertId, email, full_name: `PRUEBA ${role}${seq > 3 ? ` ${seq}` : ''}`, role };
   };
   const U = { lector: await mk('lector'), editor: await mk('editor'), admin: await mk('admin') };
   const setUser = async (u, module, access) => {
@@ -172,6 +175,33 @@ async function main() {
     await post('/permisos', all);
     check('Guardar Permisos también guarda la columna Administrador', (await row("SELECT enabled FROM role_modules WHERE role = 'admin' AND module = 'certificados'")).enabled === 0
       && (await row("SELECT enabled FROM role_modules WHERE role = 'admin' AND module = 'red'")).enabled === 1 && (await modules.moduleEnabled('admin', 'certificados')) === false);
+    // ---------------- copiar a otros usuarios ----------------
+    const copia = await mk('lector');
+    await setUser(U.admin, 'red', 'view');
+    page = await get(`/usuarios/${U.lector.id}/editar`);
+    check('Ficha: sección para copiar los permisos guardados, con los demás usuarios (sin superadministradores)', page.text.includes('id="copiar_permisos"') && page.text.includes(`id="destino_${U.admin.id}"`)
+      && !page.text.includes(`id="destino_${superadmin.id}"`) && !page.text.includes(`id="destino_${U.lector.id}"`) && page.text.includes('ya tiene 1 permiso(s) especial(es), se reemplazarán')
+      && page.text.includes('Red: ver y editar'));
+    const rc = await post(`/usuarios/${U.lector.id}/copiar-permisos`, { destino: [U.admin.id, copia.id, superadmin.id, U.lector.id, 99999999] });
+    const copied = async (id) => (await rows('SELECT module, access FROM user_modules WHERE user_id = ? ORDER BY module', [id])).map((r) => `${r.module}=${r.access}`).join();
+    check('Copiar: cada destino queda con exactamente los mismos permisos (se reemplazan los que tenía)', rc.location === `/usuarios/${U.lector.id}/editar#permisos_especiales`
+      && (await copied(U.admin.id)) === 'dominios=view,licencias=none,red=edit' && (await copied(copia.id)) === 'dominios=view,licencias=none,red=edit'
+      && (await copied(U.lector.id)) === 'dominios=view,licencias=none,red=edit');
+    check('Nunca se copia a un superadministrador, y queda en la auditoría por cada destino', !(await row('SELECT module FROM user_modules WHERE user_id = ?', [superadmin.id]))
+      && /copiados de lector@.*red=edit/.test((await row("SELECT detail FROM audit_log WHERE action = 'user_permissions_copy' AND target = ?", [copia.email])).detail)
+      && (await get(`/usuarios/${U.lector.id}/editar`)).text.includes('copiados a:'));
+    await post(`/usuarios/${U.lector.id}/copiar-permisos`, {});
+    check('Sin marcar a nadie: avisa y no cambia nada', (await get(`/usuarios/${U.lector.id}/editar`)).text.includes('Marque al menos un usuario') && (await copied(copia.id)) === 'dominios=view,licencias=none,red=edit');
+    await post(`/usuarios/${U.editor.id}/copiar-permisos`, { destino: [copia.id] });
+    check('Un usuario sin permisos especiales no tiene qué copiar (no borra los del destino)', (await get(`/usuarios/${U.editor.id}/editar`)).text.includes('no tiene permisos especiales que copiar')
+      && (await copied(copia.id)) === 'dominios=view,licencias=none,red=edit' && (await get(`/usuarios/${U.editor.id}/editar`)).text.includes('no tiene permisos especiales guardados'));
+    user = U.admin;
+    await setUser(U.admin, 'red', null);
+    await pool.query('DELETE FROM user_modules WHERE user_id = ?', [U.admin.id]);
+    check('Un administrador no puede copiar permisos', (await post(`/usuarios/${U.lector.id}/copiar-permisos`, { destino: [U.admin.id] })).location === '/' && !(await row('SELECT module FROM user_modules WHERE user_id = ?', [U.admin.id])));
+    user = superadmin;
+    await pool.query('DELETE FROM user_modules WHERE user_id = ?', [copia.id]);
+
     await post(`/usuarios/${U.lector.id}/editar`, form(U.lector, { role: 'superadmin', um_red: 'none' }));
     check('Al pasar a superadministrador se le quitan los permisos especiales', !(await row('SELECT module FROM user_modules WHERE user_id = ?', [U.lector.id]))
       && (await get(`/usuarios/${U.lector.id}/editar`)).text.includes('siempre tiene acceso a todo'));

@@ -47,7 +47,7 @@ router.get('/', async (req, res, next) => {
 });
 
 router.get('/nuevo', async (req, res) => {
-  res.render('users/form', { title: 'Nuevo usuario', item: {}, moduleRows: null, ACCESS: modules.ACCESS });
+  res.render('users/form', { title: 'Nuevo usuario', item: {}, moduleRows: null, ACCESS: modules.ACCESS, others: [], ROLES });
 });
 
 router.post('/nuevo', async (req, res, next) => {
@@ -85,7 +85,10 @@ router.get('/:id/editar', async (req, res, next) => {
       req.flash('error', 'Usuario no encontrado.');
       return res.redirect('/usuarios');
     }
-    res.render('users/form', { title: 'Editar usuario', item: rows[0], moduleRows: await moduleRows(rows[0].id, rows[0].role), ACCESS: modules.ACCESS });
+    // A quien se le pueden copiar sus permisos especiales: los demas usuarios que no son superadministradores.
+    const [others] = await pool.query(`SELECT u.id, u.full_name, u.role, u.active, (SELECT COUNT(*) FROM user_modules m WHERE m.user_id = u.id) AS special
+      FROM users u WHERE u.id <> ? AND u.role <> 'superadmin' ORDER BY u.full_name`, [rows[0].id]);
+    res.render('users/form', { title: 'Editar usuario', item: rows[0], moduleRows: await moduleRows(rows[0].id, rows[0].role), ACCESS: modules.ACCESS, others, ROLES });
   } catch (err) {
     next(err);
   }
@@ -134,6 +137,53 @@ router.post('/:id/editar', async (req, res, next) => {
       return res.redirect(`/usuarios/${req.params.id}/editar`);
     }
     next(err);
+  }
+});
+
+// Copia los permisos especiales de un usuario a otros: cada destino queda con
+// EXACTAMENTE los mismos (se reemplazan los que tuviera). Nunca a un superadministrador.
+router.post('/:id/copiar-permisos', async (req, res, next) => {
+  const back = `/usuarios/${req.params.id}/editar#permisos_especiales`;
+  try {
+    const [[source]] = await pool.query('SELECT id, email, full_name, role FROM users WHERE id = ?', [req.params.id]);
+    if (!source) {
+      req.flash('error', 'Usuario no encontrado.');
+      return res.redirect('/usuarios');
+    }
+    const [rows] = await pool.query('SELECT module, access FROM user_modules WHERE user_id = ?', [source.id]);
+    const perms = rows.filter((r) => modules.MODULES[r.module] && modules.ACCESS[r.access]);
+    if (source.role === 'superadmin' || !perms.length) {
+      req.flash('error', 'Este usuario no tiene permisos especiales que copiar. Guárdelos primero.');
+      return res.redirect(back);
+    }
+    const ids = [...new Set([].concat(req.body.destino || []).map(Number).filter((n) => n > 0 && n !== source.id))];
+    const [targets] = ids.length ? await pool.query("SELECT id, email, full_name FROM users WHERE id IN (?) AND role <> 'superadmin'", [ids]) : [[]];
+    if (!targets.length) {
+      req.flash('error', 'Marque al menos un usuario al que copiar los permisos.');
+      return res.redirect(back);
+    }
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      for (const t of targets) {
+        await conn.query('DELETE FROM user_modules WHERE user_id = ?', [t.id]);
+        await conn.query('INSERT INTO user_modules (user_id, module, access) VALUES ?', [perms.map((p) => [t.id, p.module, p.access])]);
+      }
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+    const detail = perms.map((p) => `${p.module}=${p.access}`).join(', ');
+    for (const t of targets) {
+      await auditService.log(req, { user: req.session.user, action: 'user_permissions_copy', target: t.email, detail: `copiados de ${source.email}: ${detail}`.slice(0, 1000) });
+    }
+    req.flash('success', `Permisos especiales de ${source.full_name} copiados a: ${targets.map((t) => t.full_name).join(', ')}.`);
+    return res.redirect(back);
+  } catch (err) {
+    return next(err);
   }
 });
 

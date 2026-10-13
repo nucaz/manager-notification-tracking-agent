@@ -159,7 +159,9 @@ READMEs.
   de ese módulo (así los botones siguen la regla sin tocar cada vista); `requireRole` niega todo con `view` y
   deja pasar lo de editor con `edit` (nunca lo de administrador). Una comprobación propia de rol dentro de un
   módulo debe usar `req.effectiveRole || req.session.user.role`, o `moduleAccess(user, modulo)` desde otro
-  módulo. El menú usa `realRole`. Prueba: `tests/permisos_usuario.e2e.js`.
+  módulo. El menú usa `realRole`. Los permisos especiales de un usuario se pueden copiar a otros desde su ficha
+  (`POST /usuarios/:id/copiar-permisos`: reemplaza los del destino, nunca a un superadmin, auditado por destino).
+  Prueba: `tests/permisos_usuario.e2e.js`.
 - **Red > Switches y AP** (`networkService.saveInfra`, `netMonitorService.js`, job `syncNetMonitor.js`): ficha
   técnica de switches y puntos de acceso en `network_device_specs` (1:1 con `network_devices`; son las **mismas
   filas** de la pestaña Equipos, y editar un switch o AP desde Equipos redirige a su ficha).

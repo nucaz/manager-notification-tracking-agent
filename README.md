@@ -648,7 +648,9 @@ acceso», «solo ver» o «ver y editar». El permiso especial manda sobre el pe
 Lector puede editar en un módulo concreto y un Editor quedar solo de consulta en otro.
 «Ver y editar» equivale a lo que hace un Editor; las acciones de administrador siguen
 pidiendo ese perfil. La pantalla *Permisos* lista quién tiene permisos especiales y la
-lista de usuarios los marca. Cada cambio queda en la auditoría.
+lista de usuarios los marca. Desde la ficha de un usuario se pueden **copiar sus permisos
+especiales a otros usuarios**: cada uno queda con exactamente los mismos (los que tuviera
+se reemplazan) y su perfil no cambia. Cada cambio queda en la auditoría.
 
 **Red: switches y puntos de acceso.** La pestaña *Switches y AP* lleva la ficha técnica
 de cada switch y punto de acceso: marca y modelo, IP, MAC, cantidad de puertos, categoría
