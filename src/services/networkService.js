@@ -7,6 +7,7 @@
 //     se les agrega MAC, IP, ubicacion y VLAN.
 //   - AP, switches y demas: a mano.
 const pool = require('../db/pool');
+const cryptoService = require('./cryptoService');
 
 const KINDS = {
   pc: ['PC', 'bi-pc-display'], celular: ['Celular', 'bi-phone'], ap: ['Punto de acceso (AP)', 'bi-wifi'], switch: ['Switch', 'bi-hdd-network'],
@@ -199,10 +200,16 @@ const PROTOCOLS = {
   snmp: ['SNMP', 'MIB / OID (binario)', 'Consulta (petición / respuesta)', 'Herramientas de monitoreo tradicionales (Zabbix, PRTG).'],
   grpc: ['gRPC Telemetry', 'Protocol Buffers', 'Flujo continuo (streaming)', 'Analítica avanzada en tiempo real y grandes volúmenes de datos.'],
 };
-const INFRA_SQL = `SELECT d.*, sp.brand, sp.model, sp.port_count, sp.poe, sp.speed, sp.floor, sp.uplink1, sp.uplink2, sp.protocols,
+// Estado del equipo: solo los que estan en uso se monitorean.
+const STATES = { en_uso: ['En uso', 'success'], stock: ['En stock', 'info'], reparacion: ['En reparación', 'warning'], baja: ['De baja', 'secondary'] };
+const INFRA_SQL = `SELECT d.*, sp.model_id, sp.brand, sp.model, sp.port_count, sp.poe, sp.speed, sp.floor, sp.uplink1, sp.uplink2, sp.protocols, COALESCE(sp.state, 'en_uso') AS state, sp.mgmt_user,
+    (sp.mgmt_password IS NOT NULL AND sp.mgmt_password <> '') AS has_password, md.brand_id,
+    COALESCE(mo.method, 'auto') AS mon_method, mo.port AS mon_port, (mo.community IS NOT NULL AND mo.community <> '') AS has_community,
+    mo.status AS mon_status, mo.detail AS mon_detail, mo.latency_ms AS mon_ms, mo.checked_at AS mon_checked_at, mo.changed_at AS mon_changed_at,
     (SELECT GROUP_CONCAT(v.vlan_number ORDER BY v.vlan_number SEPARATOR ', ') FROM network_device_vlans dv JOIN network_vlans v ON v.id = dv.vlan_id WHERE dv.device_id = d.id) AS vlan_numbers,
     (SELECT GROUP_CONCAT(CONCAT(v.vlan_number, ' ', v.name) ORDER BY v.vlan_number SEPARATOR ', ') FROM network_device_vlans dv JOIN network_vlans v ON v.id = dv.vlan_id WHERE dv.device_id = d.id) AS vlan_names
-  FROM network_devices d LEFT JOIN network_device_specs sp ON sp.device_id = d.id`;
+  FROM network_devices d LEFT JOIN network_device_specs sp ON sp.device_id = d.id LEFT JOIN network_models md ON md.id = sp.model_id
+    LEFT JOIN network_device_monitor mo ON mo.device_id = d.id`;
 
 async function infra() {
   const [rows] = await pool.query(`${INFRA_SQL} WHERE d.kind IN (?) ORDER BY d.sede, sp.floor, d.kind DESC, d.name`, [INFRA_KINDS]);
@@ -214,28 +221,123 @@ async function infraDevice(id) {
   const [v] = await pool.query('SELECT vlan_id FROM network_device_vlans WHERE device_id = ?', [row.id]);
   return { ...row, vlan_ids: v.map((x) => x.vlan_id) };
 }
-function specInput(b) {
-  const ports = String(b.port_count === undefined || b.port_count === null ? '' : b.port_count).trim();
+
+// --- catalogo de marcas y modelos (tablas network_brands y network_models) ---
+async function brands({ all = false } = {}) {
+  const [rows] = await pool.query(`SELECT b.*, (SELECT COUNT(*) FROM network_models m WHERE m.brand_id = b.id) AS models FROM network_brands b${all ? '' : ' WHERE b.active = 1'} ORDER BY b.name`);
+  return rows;
+}
+async function models({ all = false } = {}) {
+  const [rows] = await pool.query(`SELECT m.*, b.name AS brand_name, (SELECT COUNT(*) FROM network_device_specs sp WHERE sp.model_id = m.id) AS devices
+    FROM network_models m JOIN network_brands b ON b.id = m.brand_id${all ? '' : ' WHERE m.active = 1 AND b.active = 1'} ORDER BY b.name, m.name`);
+  return rows;
+}
+function portsInput(v) {
+  const ports = String(v === undefined || v === null ? '' : v).trim();
   if (ports && !(/^\d{1,4}$/.test(ports) && Number(ports) >= 1 && Number(ports) <= 1024)) throw new Error('La cantidad de puertos debe ser un número entre 1 y 1024.');
+  return ports ? Number(ports) : null;
+}
+async function saveBrand(body, user) {
+  const name = clean(body.name, 80);
+  if (!name) throw new Error('Escriba el nombre de la marca.');
+  const [[dup]] = await pool.query('SELECT id FROM network_brands WHERE name = ?', [name]);
+  if (dup) throw new Error(`La marca ${name} ya está en el catálogo.`);
+  return (await pool.query('INSERT INTO network_brands SET ?', [{ name, created_by: user ? user.id : null }]))[0].insertId;
+}
+async function saveModel(id, body, user) {
+  const name = clean(body.name, 100);
+  if (!name) throw new Error('Escriba el nombre del modelo.');
+  const [[brand]] = await pool.query('SELECT id, name FROM network_brands WHERE id = ?', [Number(body.brand_id) || 0]);
+  if (!brand) throw new Error('Elija la marca del modelo.');
+  if (!INFRA_KINDS.includes(String(body.kind))) throw new Error('Indique si el modelo es un switch o un punto de acceso.');
+  const row = { brand_id: brand.id, name, kind: String(body.kind), port_count: portsInput(body.port_count), poe: POE[body.poe] ? body.poe : null, speed: SPEEDS[body.speed] ? body.speed : null };
+  const [[dup]] = await pool.query('SELECT id FROM network_models WHERE brand_id = ? AND name = ? AND id <> ?', [brand.id, name, Number(id) || 0]);
+  if (dup) throw new Error(`El modelo ${brand.name} ${name} ya está en el catálogo.`);
+  if (Number(id)) {
+    const [r] = await pool.query('UPDATE network_models SET ? WHERE id = ?', [row, Number(id)]);
+    if (!r.affectedRows) throw new Error('El modelo ya no existe.');
+    // Las fichas guardan una copia de marca y modelo (para buscar y listar): se actualizan.
+    await pool.query('UPDATE network_device_specs SET brand = ?, model = ? WHERE model_id = ?', [brand.name, name, Number(id)]);
+    await pool.query('UPDATE network_devices d JOIN network_device_specs sp ON sp.device_id = d.id SET d.brand_model = ? WHERE sp.model_id = ?', [`${brand.name} ${name}`.slice(0, 150), Number(id)]);
+    return Number(id);
+  }
+  return (await pool.query('INSERT INTO network_models SET ?', [{ ...row, created_by: user ? user.id : null }]))[0].insertId;
+}
+// Activa o desactiva (un elemento desactivado deja de ofrecerse, sin tocar los equipos que ya lo tienen).
+async function setCatalogActive(table, id, active) {
+  const t = table === 'marca' ? 'network_brands' : 'network_models';
+  const [r] = await pool.query('UPDATE ?? SET active = ? WHERE id = ?', [t, active ? 1 : 0, Number(id) || 0]);
+  return r.affectedRows > 0;
+}
+// Solo se borra lo que ningun equipo usa.
+async function deleteCatalog(table, id) {
+  const n = Number(id) || 0;
+  if (table === 'marca') {
+    const [[u]] = await pool.query('SELECT COUNT(*) AS n FROM network_models WHERE brand_id = ?', [n]);
+    if (Number(u.n)) throw new Error('Esa marca tiene modelos: quite primero sus modelos, o desactívela.');
+    return (await pool.query('DELETE FROM network_brands WHERE id = ?', [n]))[0].affectedRows > 0;
+  }
+  const [[u]] = await pool.query('SELECT COUNT(*) AS n FROM network_device_specs WHERE model_id = ?', [n]);
+  if (Number(u.n)) throw new Error(`Ese modelo lo usan ${u.n} equipo(s): desactívelo en lugar de borrarlo.`);
+  return (await pool.query('DELETE FROM network_models WHERE id = ?', [n]))[0].affectedRows > 0;
+}
+
+// Sede y area salen del catalogo general (Configuracion > Catalogos). Se acepta
+// tambien el valor que el equipo ya tenia, aunque luego se haya quitado del catalogo.
+async function fromCatalog(type, value, current, label) {
+  const v = clean(value, 100);
+  if (!v || v === (current || null)) return v;
+  const [[hit]] = await pool.query('SELECT value FROM catalog_items WHERE catalog_type = ? AND value = ? AND active = 1', [type, v]);
+  if (!hit) throw new Error(`${label} «${v}» no está en el catálogo. Agréguela en Configuración → Catálogos.`);
+  return hit.value;
+}
+
+function specInput(b) {
   const pick = (v, set) => (set[v] ? v : null);
   const protocols = [...new Set([].concat(b.protocols || []).map(String))].filter((p) => PROTOCOLS[p]);
-  return { brand: clean(b.brand, 80), model: clean(b.model, 100), port_count: ports ? Number(ports) : null, poe: pick(b.poe, POE), speed: pick(b.speed, SPEEDS), floor: clean(b.floor, 40),
-    uplink1: clean(b.uplink1, 100), uplink2: clean(b.uplink2, 100), protocols: protocols.join(',') || null };
+  return { port_count: portsInput(b.port_count), poe: pick(b.poe, POE), speed: pick(b.speed, SPEEDS), floor: clean(b.floor, 40),
+    uplink1: clean(b.uplink1, 100), uplink2: clean(b.uplink2, 100), protocols: protocols.join(',') || null, state: STATES[b.state] ? b.state : 'en_uso', mgmt_user: clean(b.mgmt_user, 80) };
 }
 // Guarda el equipo (los mismos datos que en Equipos) y su ficha tecnica.
+// Marca y modelo salen del catalogo (model_id); sede y area, del catalogo general.
 async function saveInfra(id, body, user) {
   if (!INFRA_KINDS.includes(String(body.kind))) throw new Error('Elija si es un switch o un punto de acceso.');
   const spec = specInput(body);
-  const data = deviceInput({ ...body, mac_wifi: '', brand_model: [spec.brand, spec.model].filter(Boolean).join(' ') });
-  let keep = {};
+  let cur = null;
   if (id) {
-    const [[cur]] = await pool.query('SELECT kind, mac_wifi FROM network_devices WHERE id = ?', [Number(id)]);
+    [[cur]] = await pool.query(`SELECT d.kind, d.mac_wifi, d.sede, d.area, d.brand_model, sp.model_id, sp.brand, sp.model FROM network_devices d
+      LEFT JOIN network_device_specs sp ON sp.device_id = d.id WHERE d.id = ?`, [Number(id)]);
     if (!cur || !INFRA_KINDS.includes(cur.kind)) throw new Error('El equipo ya no existe.');
-    keep = { mac_wifi: cur.mac_wifi };
   }
-  const rowId = await saveRow(id, id ? { ...data, ...keep } : { ...data, source: 'manual' }, body.vlan_ids, user);
+  const modelId = Number(body.model_id) || 0;
+  let brandModel = null;
+  if (modelId) {
+    const [[m]] = await pool.query('SELECT m.id, m.name, m.active, b.name AS brand_name, b.active AS brand_active FROM network_models m JOIN network_brands b ON b.id = m.brand_id WHERE m.id = ?', [modelId]);
+    if (!m || ((!m.active || !m.brand_active) && !(cur && cur.model_id === m.id))) throw new Error('Elija un modelo del catálogo.');
+    Object.assign(spec, { model_id: m.id, brand: m.brand_name, model: m.name });
+    brandModel = `${m.brand_name} ${m.name}`;
+  } else {
+    // Sin modelo del catalogo: si el equipo vino de otra parte (Omada, Equipos), conserva su texto.
+    Object.assign(spec, { model_id: null, brand: null, model: null });
+    brandModel = cur && !cur.model_id ? cur.brand_model : null;
+  }
+  const password = String(body.mgmt_password || '');
+  if (password.length > 200) throw new Error('La contraseña de acceso es demasiado larga (máximo 200).');
+  if (password) spec.mgmt_password = cryptoService.encrypt(password);
+  else if (body.mgmt_password_clear === '1' || !spec.mgmt_user) spec.mgmt_password = null; // sin usuario no se guarda una clave suelta
+  const data = deviceInput({ ...body, mac_wifi: '', brand_model: brandModel || '',
+    sede: await fromCatalog('sede', body.sede, cur && cur.sede, 'La sede'), area: await fromCatalog('area', body.area, cur && cur.area, 'El área') });
+  const rowId = await saveRow(id, id ? { ...data, mac_wifi: cur.mac_wifi } : { ...data, source: 'manual' }, body.vlan_ids, user);
   await pool.query('INSERT INTO network_device_specs SET ? ON DUPLICATE KEY UPDATE ?', [{ device_id: rowId, ...spec }, spec]);
   return rowId;
+}
+// La credencial de acceso de un equipo, descifrada. Quien la pide y cuando lo registra la ruta.
+async function credential(id) {
+  const [[row]] = await pool.query(`SELECT d.name, d.ip, sp.mgmt_user, sp.mgmt_password FROM network_devices d JOIN network_device_specs sp ON sp.device_id = d.id
+    WHERE d.id = ? AND d.kind IN (?)`, [Number(id) || 0, INFRA_KINDS]);
+  if (!row) return null;
+  const password = row.mgmt_password ? cryptoService.decrypt(row.mgmt_password) : '';
+  return { name: row.name, ip: row.ip, user: row.mgmt_user || '', password: cryptoService.isEncrypted(password) ? null : password };
 }
 
 // Trae las PC que la aplicacion ya conoce. GLPI aporta MAC, IP, serie, modelo
@@ -296,5 +398,6 @@ async function overview() {
 }
 
 module.exports = {
-  KINDS, SOURCES, INFRA_KINDS, POE, SPEEDS, PROTOCOLS, infra, infraDevice, saveInfra, normalizeMac, normalizeIp, vlans, vlan, saveVlan, deleteVlan, devices, device, phones, phone, saveDevice, savePhone, deleteDevice, importPcs, overview,
+  KINDS, SOURCES, INFRA_KINDS, POE, SPEEDS, PROTOCOLS, STATES, infra, infraDevice, saveInfra, credential, brands, models, saveBrand, saveModel, setCatalogActive, deleteCatalog,
+  normalizeMac, normalizeIp, vlans, vlan, saveVlan, deleteVlan, devices, device, phones, phone, saveDevice, savePhone, deleteDevice, importPcs, overview,
 };

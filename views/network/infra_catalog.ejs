@@ -1,0 +1,103 @@
+<%- include('../partials/head', { title: title }) %>
+<% const esAdmin = ['superadmin', 'admin'].includes(currentUser.role);
+   const e = edit || {};
+   const v = function (k) { return e[k] === null || e[k] === undefined ? '' : e[k]; }; %>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h2 class="mb-0">Red — Marcas y modelos</h2></div>
+<%- include('_tabs') %>
+<div class="mb-2"><a href="/red/infraestructura" class="small"><i class="bi bi-arrow-left"></i> Switches y AP</a></div>
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card p-3">
+      <h6>Modelos <span class="text-muted fw-normal small">· <%= models.length %></span></h6>
+      <p class="small text-muted mb-2">Cada modelo lleva lo que es propio de él: tipo, puertos, PoE y velocidad. Al elegirlo en la ficha de un equipo, esos datos se llenan solos.</p>
+      <div class="table-responsive">
+        <table class="table table-hover table-sm align-middle small" id="cat_modelos">
+          <thead><tr><th>Marca</th><th>Modelo</th><th>Tipo</th><th class="text-end">Puertos</th><th>PoE</th><th>Velocidad</th><th class="text-end">Equipos</th><th data-orden="no"></th></tr></thead>
+          <tbody>
+            <% models.forEach(function (m) { %>
+              <tr class="<%= edit && edit.id === m.id ? 'table-active' : '' %> <%= m.active ? '' : 'text-muted' %>">
+                <td><%= m.brand_name %></td>
+                <td class="fw-semibold"><%= m.name %><% if (!m.active) { %> <span class="badge text-bg-secondary fw-normal">desactivado</span><% } %></td>
+                <td><%= m.kind === 'ap' ? 'AP' : 'Switch' %></td>
+                <td class="text-end"><%= m.port_count || '—' %></td>
+                <td><%= m.poe ? POE[m.poe] : '—' %></td>
+                <td><%= m.speed ? SPEEDS[m.speed].replace(/ \(.*/, '') : '—' %></td>
+                <td class="text-end"><%= m.devices %></td>
+                <td class="text-nowrap text-end">
+                  <a class="btn btn-sm btn-outline-primary" href="/red/infraestructura/catalogo?editar=<%= m.id %>" title="Editar"><i class="bi bi-pencil"></i></a>
+                  <% if (esAdmin) { %>
+                    <form method="post" action="/red/infraestructura/catalogo/modelo/<%= m.id %>/<%= m.active ? 'desactivar' : 'activar' %>" class="d-inline"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-sm btn-outline-secondary" title="<%= m.active ? 'Dejar de ofrecerlo' : 'Volver a ofrecerlo' %>"><i class="bi <%= m.active ? 'bi-eye-slash' : 'bi-eye' %>"></i></button></form>
+                    <% if (!m.devices) { %><form method="post" action="/red/infraestructura/catalogo/modelo/<%= m.id %>/eliminar" class="d-inline"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button class="btn btn-sm btn-outline-danger" title="Eliminar" data-confirma="¿Eliminar el modelo <%= m.brand_name %> <%= m.name %> del catálogo?"><i class="bi bi-trash"></i></button></form><% } %>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+            <% if (!models.length) { %><tr><td colspan="8" class="text-center text-muted py-4">Aún no hay modelos. Agregue el primero con el formulario.</td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card p-3 mt-3">
+      <h6>Marcas <span class="text-muted fw-normal small">· <%= brands.length %></span></h6>
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <% brands.forEach(function (b) { %>
+          <span class="border rounded px-2 py-1 small d-inline-flex align-items-center gap-2 <%= b.active ? '' : 'text-muted bg-body-tertiary' %>">
+            <span><strong><%= b.name %></strong> · <%= b.models %> modelo(s)<%= b.active ? '' : ' · desactivada' %></span>
+            <% if (esAdmin) { %>
+              <form method="post" action="/red/infraestructura/catalogo/marca/<%= b.id %>/<%= b.active ? 'desactivar' : 'activar' %>" class="d-inline"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn btn-link btn-sm p-0" title="<%= b.active ? 'Dejar de ofrecerla' : 'Volver a ofrecerla' %>"><i class="bi <%= b.active ? 'bi-eye-slash' : 'bi-eye' %>"></i></button></form>
+              <% if (!b.models) { %><form method="post" action="/red/infraestructura/catalogo/marca/<%= b.id %>/eliminar" class="d-inline"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn btn-link btn-sm p-0 text-danger" title="Eliminar" data-confirma="¿Eliminar la marca <%= b.name %>?"><i class="bi bi-trash"></i></button></form><% } %>
+            <% } %>
+          </span>
+        <% }); %>
+      </div>
+      <form method="post" action="/red/infraestructura/catalogo/marca" class="d-flex flex-wrap gap-2 align-items-end" autocomplete="off">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div><label class="form-label small mb-1" for="marca_name">Nueva marca</label>
+          <input class="form-control form-control-sm" id="marca_name" name="name" maxlength="80" required placeholder="Ej. Grandstream"></div>
+        <button class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg"></i> Agregar marca</button>
+      </form>
+    </div>
+    <p class="small text-muted mt-2">Las sedes y las áreas se administran en Configuración → Catálogos, y son las mismas de toda la aplicación.</p>
+  </div>
+  <div class="col-lg-4">
+    <form method="post" action="/red/infraestructura/catalogo/modelo" class="card p-3" autocomplete="off" id="modelo_form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <% if (edit) { %><input type="hidden" name="id" value="<%= edit.id %>"><% } %>
+      <h6><%= edit ? 'Editar ' + edit.brand_name + ' ' + edit.name : 'Nuevo modelo' %></h6>
+      <div class="mb-2"><label class="form-label small" for="m_brand">Marca *</label>
+        <select class="form-select form-select-sm" id="m_brand" name="brand_id" required data-buscable="Escriba la marca…">
+          <option value="">Elija la marca</option>
+          <% brands.filter(function (b) { return b.active || b.id === e.brand_id; }).forEach(function (b) { %><option value="<%= b.id %>" <%= e.brand_id === b.id ? 'selected' : '' %>><%= b.name %></option><% }); %>
+        </select></div>
+      <div class="mb-2"><label class="form-label small" for="m_name">Modelo *</label>
+        <input class="form-control form-control-sm" id="m_name" name="name" value="<%= v('name') %>" maxlength="100" required placeholder="SG2008 v4.20, EAP620 HD…"></div>
+      <div class="mb-2"><label class="form-label small" for="m_kind">Tipo *</label>
+        <select class="form-select form-select-sm" id="m_kind" name="kind" required>
+          <option value="switch" <%= e.kind === 'ap' ? '' : 'selected' %>>Switch</option><option value="ap" <%= e.kind === 'ap' ? 'selected' : '' %>>Punto de acceso (AP)</option>
+        </select></div>
+      <div class="mb-2"><label class="form-label small" for="m_ports">Puertos</label>
+        <input type="number" class="form-control form-control-sm" id="m_ports" name="port_count" value="<%= v('port_count') %>" min="1" max="1024" placeholder="8, 24, 48…"></div>
+      <div class="mb-2"><label class="form-label small" for="m_poe">Categoría PoE</label>
+        <select class="form-select form-select-sm" id="m_poe" name="poe"><option value="">Sin indicar</option>
+          <% Object.keys(POE).forEach(function (k) { %><option value="<%= k %>" <%= e.poe === k ? 'selected' : '' %>><%= POE[k] %></option><% }); %></select></div>
+      <div class="mb-3"><label class="form-label small" for="m_speed">Velocidad de los puertos</label>
+        <select class="form-select form-select-sm" id="m_speed" name="speed"><option value="">Sin indicar</option>
+          <% Object.keys(SPEEDS).forEach(function (k) { %><option value="<%= k %>" <%= e.speed === k ? 'selected' : '' %>><%= SPEEDS[k] %></option><% }); %></select></div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary btn-sm"><i class="bi bi-check-lg"></i> <%= edit ? 'Guardar' : 'Agregar modelo' %></button>
+        <% if (edit) { %><a class="btn btn-outline-secondary btn-sm" href="/red/infraestructura/catalogo">Cancelar</a><% } %>
+      </div>
+    </form>
+  </div>
+</div>
+<script src="/js/buscable.js"></script>
+<script>
+  document.querySelectorAll('button[data-confirma]').forEach(function (b) {
+    b.addEventListener('click', function (ev) { if (!window.confirm(b.getAttribute('data-confirma'))) ev.preventDefault(); });
+  });
+</script>
+<%- include('../partials/foot') %>

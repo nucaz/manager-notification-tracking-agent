@@ -651,13 +651,28 @@ pidiendo ese perfil. La pantalla *Permisos* lista quién tiene permisos especial
 lista de usuarios los marca. Cada cambio queda en la auditoría.
 
 **Red: switches y puntos de acceso.** La pestaña *Switches y AP* lleva la ficha técnica
-de cada switch y punto de acceso: marca, modelo, IP, MAC, cantidad de puertos, categoría
-PoE (no PoE, PoE, PoE+, PoE++), velocidad (Fast Ethernet, Gigabit, multigigabit, 10 G),
-sede, piso, hasta dos puertos de enlace, las VLAN configuradas y los protocolos de
-gestión que ofrece (REST API, RESTCONF, SNMP, gRPC Telemetry), con una tabla que explica
-cada uno. Son los mismos equipos de la pestaña *Equipos*, y los que se registran desde
-Omada aparecen aquí para completarlos. Los protocolos se anotan como referencia: la
-aplicación no se conecta a los equipos por ellos.
+de cada switch y punto de acceso: marca y modelo, IP, MAC, cantidad de puertos, categoría
+PoE, velocidad, sede, piso, área, hasta dos puertos de enlace, las VLAN configuradas y
+los protocolos de gestión que ofrece (REST API, RESTCONF, SNMP, gRPC Telemetry). Son los
+mismos equipos de la pestaña *Equipos*, y los que se registran desde Omada aparecen aquí
+para completarlos.
+
+- **Catálogos y búsqueda rápida.** Marca y modelo se eligen de un catálogo propio
+  (*Marcas y modelos*): cada modelo lleva su tipo, puertos, PoE y velocidad, y al elegirlo
+  esos datos se llenan solos. Sede y área salen del catálogo general (Configuración →
+  Catálogos). Los cuatro son desplegables donde se escribe para buscar, por cualquier
+  parte del texto o por iniciales («pl» encuentra «Pueblo Libre»).
+- **Credencial de acceso.** Usuario y contraseña del equipo. La contraseña se guarda
+  cifrada, no aparece en las listas, y solo un administrador puede verla desde la ficha;
+  cada consulta queda en la auditoría.
+- **Estado.** En uso, en stock, en reparación o de baja; el resumen cuenta el stock.
+- **Indicador de actividad.** Cada 5 minutos el servidor comprueba los equipos en uso y
+  la lista muestra verde (activo) o rojo (inactivo), con desde cuándo. Por equipo se elige
+  cómo: automático (dato de Omada si lo hay, ping y puertos de gestión habituales), un
+  puerto TCP, o SNMP v2c con su comunidad (cifrada). **«Inactivo» quiere decir que no
+  responde desde el servidor de la aplicación**: un equipo de una sede sin conexión de red
+  hacia el servidor saldrá inactivo aunque funcione, salvo que lo vea un controlador Omada
+  conectado; para esos, elija «No monitorear».
 
 **Red > Omada (controladores TP-Link).** La pestaña *Omada* muestra lo que
 conocen los controladores Omada: *Resumen* (clientes conectados, equipos en línea y

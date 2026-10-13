@@ -8,6 +8,7 @@ const { startScheduler: startM365Scheduler } = require('./jobs/syncM365');
 const { startScheduler: startAdScheduler } = require('./jobs/syncAd');
 const { startScheduler: startExternalSyncScheduler } = require('./jobs/syncExternal');
 const { startScheduler: startOmadaScheduler } = require('./jobs/syncOmada');
+const { startScheduler: startNetMonitorScheduler } = require('./jobs/syncNetMonitor');
 
 app.listen(env.port, () => {
   console.log(`Servidor escuchando en http://0.0.0.0:${env.port} (entorno: ${env.nodeEnv})`);
@@ -19,4 +20,5 @@ app.listen(env.port, () => {
   startAdScheduler();
   startExternalSyncScheduler();
   startOmadaScheduler();
+  startNetMonitorScheduler();
 });

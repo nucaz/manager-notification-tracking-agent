@@ -160,12 +160,21 @@ READMEs.
   deja pasar lo de editor con `edit` (nunca lo de administrador). Una comprobación propia de rol dentro de un
   módulo debe usar `req.effectiveRole || req.session.user.role`, o `moduleAccess(user, modulo)` desde otro
   módulo. El menú usa `realRole`. Prueba: `tests/permisos_usuario.e2e.js`.
-- **Red > Switches y AP** (`networkService.saveInfra`, tabla `network_device_specs` 1:1 con `network_devices`):
-  ficha técnica de switches y puntos de acceso (marca, modelo, puertos, PoE, velocidad, piso, hasta dos puertos
-  de enlace, protocolos de gestión que ofrece). Son las **mismas filas** de la pestaña Equipos: nombre, MAC, IP,
-  sede y VLAN siguen en `network_devices`, y editar un switch o AP desde Equipos redirige a su ficha. Los
-  protocolos (REST, RESTCONF, SNMP, gRPC) son solo un dato registrado: la aplicación no consulta los equipos.
-  Prueba: `tests/red_switches.e2e.js`.
+- **Red > Switches y AP** (`networkService.saveInfra`, `netMonitorService.js`, job `syncNetMonitor.js`): ficha
+  técnica de switches y puntos de acceso en `network_device_specs` (1:1 con `network_devices`; son las **mismas
+  filas** de la pestaña Equipos, y editar un switch o AP desde Equipos redirige a su ficha).
+  - **Marca y modelo** salen de un catálogo relacional (`network_brands`, `network_models` con tipo, puertos, PoE
+    y velocidad; la ficha guarda `model_id` y una copia del texto para buscar). **Sede y área** deben estar en el
+    catálogo general (`catalog_items`), salvo el valor que el equipo ya tenía. Un elemento en uso se desactiva,
+    no se borra.
+  - **Credencial de acceso**: `mgmt_password` cifrada con `cryptoService`; nunca va a las listas ni al HTML. Solo
+    un administrador la ve (`POST …/credencial`, JSON) y cada consulta queda en `audit_log`.
+  - **Monitoreo** (`network_device_monitor`, 1:1): cada 5 minutos, solo equipos `en_uso` y direcciones internas.
+    Método `auto` (dato reciente de Omada por MAC, si no ping, si no puertos habituales), `tcp`, `snmp` (v2c,
+    GET de sysUpTime codificado a mano, comunidad cifrada) o `no`. «Inactivo» = no responde **desde el servidor**.
+  - `public/js/buscable.js`: desplegables con búsqueda por texto o iniciales sobre un `<select data-buscable>`
+    (el select sigue siendo lo que se envía).
+  Prueba: `tests/red_switches.e2e.js` (el monitoreo, contra servicios locales).
 - **Red > Omada** (`omadaService.js`, job `syncOmada.js` cada 5 min): lee los controladores TP-Link Omada por
   su Open API oficial (modo *client credentials*; cabecera `Authorization: AccessToken=…`). **La lectura solo
   hace GET** (más el POST del token). Lo único que escribe en el controlador son las acciones sobre un cliente

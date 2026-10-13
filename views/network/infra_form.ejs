@@ -1,8 +1,9 @@
 <%- include('../partials/head', { title: title }) %>
 <% const v = function (k) { return item[k] === null || item[k] === undefined ? '' : item[k]; };
    const tiene = String(item.protocols || '').split(',');
-   // Un equipo que vino de otra pestaña trae "marca / modelo" junto: se propone como modelo.
-   const modelo = v('model') || (v('brand') ? '' : v('brand_model')); %>
+   const esAdmin = ['superadmin', 'admin'].includes(currentUser.role);
+   // Un equipo que vino de otra pestaña (Omada, Equipos) trae "marca / modelo" como texto: se muestra para elegir el del catalogo.
+   const textoPrevio = !item.model_id && item.brand_model ? item.brand_model : ''; %>
 <div class="mb-2"><a href="/red/infraestructura" class="small"><i class="bi bi-arrow-left"></i> Switches y AP</a></div>
 <div class="row"><div class="col-xl-9">
   <form method="post" action="<%= action %>" class="card p-4" autocomplete="off" id="infra_form">
@@ -18,13 +19,25 @@
         </select></div>
       <div class="col-md-5"><label class="form-label" for="name">Nombre *</label>
         <input class="form-control" id="name" name="name" value="<%= v('name') %>" required maxlength="150" placeholder="SW-PISO2-01, AP-RECEPCION…"></div>
-      <div class="col-md-4"><label class="form-label" for="serial">N.º de serie</label>
+      <div class="col-md-4"><label class="form-label" for="state">Estado</label>
+        <select class="form-select" id="state" name="state">
+          <% Object.keys(STATES).forEach(function (k) { %><option value="<%= k %>" <%= (item.state || 'en_uso') === k ? 'selected' : '' %>><%= STATES[k][0] %></option><% }); %>
+        </select>
+        <div class="form-text">Solo los equipos en uso se monitorean.</div></div>
+      <div class="col-md-4"><label class="form-label" for="brand_id">Marca</label>
+        <select class="form-select" id="brand_id" data-buscable="Escriba la marca…">
+          <option value="">Todas las marcas</option>
+          <% brands.forEach(function (b) { %><option value="<%= b.id %>" <%= item.brand_id === b.id ? 'selected' : '' %>><%= b.name %></option><% }); %>
+        </select></div>
+      <div class="col-md-5"><label class="form-label" for="model_id">Modelo</label>
+        <select class="form-select" id="model_id" name="model_id" data-buscable="Escriba el modelo o la marca…">
+          <option value="">Sin modelo del catálogo</option>
+          <% models.forEach(function (m) { %><option value="<%= m.id %>" data-brand="<%= m.brand_id %>" data-kind="<%= m.kind %>" data-ports="<%= m.port_count || '' %>" data-poe="<%= m.poe || '' %>" data-speed="<%= m.speed || '' %>"
+            <%= item.model_id === m.id ? 'selected' : '' %>><%= m.brand_name %> · <%= m.name %></option><% }); %>
+        </select>
+        <div class="form-text"><% if (textoPrevio) { %>Antes figuraba como «<%= textoPrevio %>». <% } %>¿No está? <a href="/red/infraestructura/catalogo" target="_blank" rel="noopener">Agregar marcas y modelos</a>.</div></div>
+      <div class="col-md-3"><label class="form-label" for="serial">N.º de serie</label>
         <input class="form-control" id="serial" name="serial" value="<%= v('serial') %>" maxlength="100"></div>
-      <div class="col-md-4"><label class="form-label" for="brand">Marca</label>
-        <input class="form-control" id="brand" name="brand" value="<%= v('brand') %>" maxlength="80" list="infra_marcas" placeholder="TP-Link, Cisco, Ubiquiti…">
-        <datalist id="infra_marcas"><% ['TP-Link', 'Cisco', 'Ubiquiti', 'MikroTik', 'HPE Aruba', 'D-Link', 'Huawei', 'Ruijie', 'Fortinet', 'Netgear'].forEach(function (m) { %><option value="<%= m %>"><% }); %></datalist></div>
-      <div class="col-md-4"><label class="form-label" for="model">Modelo</label>
-        <input class="form-control" id="model" name="model" value="<%= modelo %>" maxlength="100" placeholder="SG2008 v4.20, EAP620 HD…"></div>
       <div class="col-md-4"><label class="form-label" for="ip">IP</label>
         <input class="form-control font-monospace" id="ip" name="ip" value="<%= v('ip') %>" placeholder="192.168.100.94" maxlength="15"></div>
       <div class="col-md-4"><label class="form-label" for="mac">Dirección MAC</label>
@@ -32,11 +45,10 @@
         <div class="form-text">Se acepta con dos puntos, guiones o seguida.</div></div>
     </div>
 
-    <h6 class="text-muted mt-4">Características</h6>
+    <h6 class="text-muted mt-4">Características <span class="fw-normal small">(se llenan al elegir el modelo; puede ajustarlas)</span></h6>
     <div class="row g-3">
       <div class="col-md-3"><label class="form-label" for="port_count">Puertos</label>
-        <input type="number" class="form-control" id="port_count" name="port_count" value="<%= v('port_count') %>" min="1" max="1024" placeholder="8, 24, 48…">
-        <div class="form-text">Puertos de red del equipo.</div></div>
+        <input type="number" class="form-control" id="port_count" name="port_count" value="<%= v('port_count') %>" min="1" max="1024" placeholder="8, 24, 48…"></div>
       <div class="col-md-4"><label class="form-label" for="poe">Categoría PoE</label>
         <select class="form-select" id="poe" name="poe">
           <option value="">Sin indicar</option>
@@ -52,16 +64,20 @@
 
     <h6 class="text-muted mt-4">Ubicación</h6>
     <div class="row g-3">
-      <div class="col-md-3"><label class="form-label" for="sede">Sede</label>
-        <input class="form-control" id="sede" name="sede" value="<%= v('sede') %>" list="red_sedes" maxlength="100">
-        <datalist id="red_sedes"><% sedes.forEach(function (s) { %><option value="<%= s %>"><% }); %></datalist></div>
+      <div class="col-md-4"><label class="form-label" for="sede">Sede</label>
+        <select class="form-select" id="sede" name="sede" data-buscable="Escriba la sede o sus iniciales…">
+          <option value="">Sin sede</option>
+          <% sedes.forEach(function (s) { %><option value="<%= s %>" <%= item.sede === s ? 'selected' : '' %>><%= s %></option><% }); %>
+        </select></div>
       <div class="col-md-2"><label class="form-label" for="floor">Piso</label>
         <input class="form-control" id="floor" name="floor" value="<%= v('floor') %>" maxlength="40" placeholder="1, 2, Sótano…"></div>
       <div class="col-md-3"><label class="form-label" for="area">Área</label>
-        <input class="form-control" id="area" name="area" value="<%= v('area') %>" list="red_areas" maxlength="100">
-        <datalist id="red_areas"><% areas.forEach(function (s) { %><option value="<%= s %>"><% }); %></datalist></div>
-      <div class="col-md-4"><label class="form-label" for="location">Ubicación exacta</label>
-        <input class="form-control" id="location" name="location" value="<%= v('location') %>" maxlength="150" placeholder="Rack A, U12; techo de recepción…"></div>
+        <select class="form-select" id="area" name="area" data-buscable="Escriba el área…">
+          <option value="">Sin área</option>
+          <% areas.forEach(function (s) { %><option value="<%= s %>" <%= item.area === s ? 'selected' : '' %>><%= s %></option><% }); %>
+        </select></div>
+      <div class="col-md-3"><label class="form-label" for="location">Ubicación exacta</label>
+        <input class="form-control" id="location" name="location" value="<%= v('location') %>" maxlength="150" placeholder="Rack A, U12…"></div>
     </div>
 
     <h6 class="text-muted mt-4">Conexión</h6>
@@ -84,6 +100,37 @@
       </div>
     </div>
 
+    <h6 class="text-muted mt-4">Acceso al equipo</h6>
+    <div class="row g-3">
+      <div class="col-md-4"><label class="form-label" for="mgmt_user">Usuario</label>
+        <input class="form-control font-monospace" id="mgmt_user" name="mgmt_user" value="<%= v('mgmt_user') %>" maxlength="80" autocomplete="off" placeholder="admin"></div>
+      <div class="col-md-5"><label class="form-label" for="mgmt_password">Contraseña</label>
+        <input type="password" class="form-control font-monospace" id="mgmt_password" name="mgmt_password" maxlength="200" autocomplete="new-password"
+          placeholder="<%= item.has_password ? 'Guardada. Escriba otra solo para cambiarla.' : '' %>">
+        <% if (item.has_password) { %><div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="mgmt_password_clear" name="mgmt_password_clear" value="1">
+          <label class="form-check-label small" for="mgmt_password_clear">Quitar la contraseña guardada</label></div><% } %></div>
+      <div class="col-md-3 d-flex align-items-end">
+        <% if (item.id && item.has_password && esAdmin) { %><button type="button" class="btn btn-outline-secondary w-100" id="ver_credencial" data-url="/red/infraestructura/<%= item.id %>/credencial"><i class="bi bi-eye"></i> Ver credencial</button><% } %>
+      </div>
+      <div class="col-12"><div class="form-text mt-0">La contraseña se guarda cifrada y no se muestra en las listas. Solo un administrador puede verla, y cada consulta queda registrada en la auditoría.</div>
+        <div class="alert alert-warning py-2 small mt-2 mb-0" id="credencial_vista" hidden></div></div>
+    </div>
+
+    <h6 class="text-muted mt-4">Monitoreo de actividad</h6>
+    <div class="row g-3">
+      <div class="col-md-5"><label class="form-label" for="mon_method">Cómo se comprueba</label>
+        <select class="form-select" id="mon_method" name="mon_method">
+          <% Object.keys(METHODS).forEach(function (k) { %><option value="<%= k %>" <%= (item.mon_method || 'auto') === k ? 'selected' : '' %>><%= METHODS[k] %></option><% }); %>
+        </select></div>
+      <div class="col-md-3" data-mon="tcp snmp"><label class="form-label" for="mon_port">Puerto</label>
+        <input type="number" class="form-control" id="mon_port" name="mon_port" value="<%= v('mon_port') %>" min="1" max="65535" placeholder="443 / 161"></div>
+      <div class="col-md-4" data-mon="snmp"><label class="form-label" for="mon_community">Comunidad SNMP (v2c)</label>
+        <input type="password" class="form-control font-monospace" id="mon_community" name="mon_community" maxlength="60" autocomplete="new-password"
+          placeholder="<%= item.has_community ? 'Guardada. Escriba otra para cambiarla.' : 'public' %>"></div>
+      <div class="col-12"><div class="form-text mt-0">Cada 5 minutos el servidor de la aplicación comprueba el equipo y la lista lo muestra en verde (activo) o rojo (inactivo).
+        «Inactivo» significa que no responde <strong>desde este servidor</strong>: un equipo de una sede sin conexión de red hacia el servidor saldrá inactivo aunque funcione, salvo que lo vea un controlador Omada conectado.</div></div>
+    </div>
+
     <h6 class="text-muted mt-4">Protocolos de gestión que ofrece</h6>
     <div class="table-responsive">
       <table class="table table-sm small align-middle mb-1" data-tabla="no">
@@ -96,11 +143,80 @@
         </tbody>
       </table>
     </div>
-    <div class="form-text">Marque los que el equipo tiene disponibles. Es una referencia para saber cómo se podría consultar; la aplicación no se conecta al equipo.</div>
+    <div class="form-text">Marque los que el equipo tiene disponibles, como referencia.</div>
 
     <div class="mt-3"><label class="form-label" for="notes">Notas</label>
       <textarea class="form-control" id="notes" name="notes" rows="2" maxlength="500"><%= v('notes') %></textarea></div>
     <div class="mt-3 d-flex gap-2"><button class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar</button><a href="/red/infraestructura" class="btn btn-outline-secondary">Cancelar</a></div>
   </form>
 </div></div>
+<script src="/js/buscable.js"></script>
+<script>
+  (function () {
+    var form = document.getElementById('infra_form');
+    var kind = document.getElementById('kind');
+    var brand = document.getElementById('brand_id');
+    var model = document.getElementById('model_id');
+    var refresh = function (el) { el.dispatchEvent(new Event('buscable:refrescar')); };
+
+    // El modelo se ofrece segun el tipo y la marca elegidos.
+    function filtrarModelos() {
+      Array.prototype.forEach.call(model.options, function (o) {
+        if (!o.value) return;
+        o.hidden = o.getAttribute('data-kind') !== kind.value || (brand.value !== '' && o.getAttribute('data-brand') !== brand.value);
+      });
+      if (model.selectedIndex > 0 && model.options[model.selectedIndex].hidden) { model.value = ''; refresh(model); }
+    }
+    // Al elegir un modelo: su marca, y sus puertos, PoE y velocidad.
+    function aplicarModelo() {
+      var o = model.options[model.selectedIndex];
+      if (!o || !o.value) return;
+      if (brand.value !== o.getAttribute('data-brand')) { brand.value = o.getAttribute('data-brand'); refresh(brand); filtrarModelos(); }
+      [['port_count', 'data-ports'], ['poe', 'data-poe'], ['speed', 'data-speed']].forEach(function (p) {
+        var val = o.getAttribute(p[1]);
+        if (val) document.getElementById(p[0]).value = val;
+      });
+    }
+    kind.addEventListener('change', filtrarModelos);
+    brand.addEventListener('change', filtrarModelos);
+    model.addEventListener('change', aplicarModelo);
+    filtrarModelos();
+
+    // Campos del monitoreo segun el metodo.
+    var metodo = document.getElementById('mon_method');
+    function mostrarMonitoreo() {
+      form.querySelectorAll('[data-mon]').forEach(function (box) {
+        var on = box.getAttribute('data-mon').split(' ').indexOf(metodo.value) > -1;
+        box.classList.toggle('d-none', !on);
+        box.querySelectorAll('input').forEach(function (el) { el.disabled = !on; });
+      });
+    }
+    metodo.addEventListener('change', mostrarMonitoreo);
+    mostrarMonitoreo();
+
+    // Ver la credencial (administradores): se pide al servidor, queda en la auditoria y se oculta sola.
+    var ver = document.getElementById('ver_credencial');
+    var caja = document.getElementById('credencial_vista');
+    if (ver) ver.addEventListener('click', function () {
+      ver.disabled = true;
+      fetch(ver.getAttribute('data-url'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: '_csrf=' + encodeURIComponent(form.querySelector('[name="_csrf"]').value) })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (x) {
+          caja.hidden = false;
+          caja.textContent = '';
+          if (!x.ok) { caja.textContent = x.d.error || 'No se pudo leer la credencial.'; return; }
+          var u = document.createElement('span'); u.textContent = 'Usuario: ';
+          var uv = document.createElement('code'); uv.textContent = x.d.user || '(sin usuario)';
+          var p = document.createElement('span'); p.textContent = '   Contraseña: ';
+          var pv = document.createElement('code'); pv.id = 'credencial_clave'; pv.textContent = x.d.password;
+          var nota = document.createElement('div'); nota.className = 'text-muted'; nota.textContent = 'Se oculta sola en 30 segundos. Esta consulta quedó registrada.';
+          [u, uv, p, pv, nota].forEach(function (el) { caja.appendChild(el); });
+          setTimeout(function () { caja.hidden = true; caja.textContent = ''; }, 30000);
+        })
+        .catch(function () { caja.hidden = false; caja.textContent = 'No se pudo leer la credencial. Recargue la página e intente de nuevo.'; })
+        .then(function () { ver.disabled = false; });
+    });
+  })();
+</script>
 <%- include('../partials/foot') %>

@@ -9,6 +9,7 @@ const { uploader, DIRS } = require('../services/uploadService');
 const networkService = require('../services/networkService');
 const netToolsService = require('../services/netToolsService');
 const omadaService = require('../services/omadaService');
+const netMonitorService = require('../services/netMonitorService');
 const catalogService = require('../services/catalogService');
 const auditService = require('../services/auditService');
 
@@ -260,35 +261,126 @@ router.post('/equipos/:id(\\d+)/eliminar', canWrite, verifyCsrfToken, async (req
   }
 });
 
-// ---------------- Switches y AP: ficha tecnica (marca, modelo, puertos, PoE, enlaces, protocolos) ----------------
-const infraBase = async () => ({ tab: 'infra', ...(await viewBase()), POE: networkService.POE, SPEEDS: networkService.SPEEDS, PROTOCOLS: networkService.PROTOCOLS });
+// ---------------- Switches y AP: ficha tecnica, catalogo de marcas y modelos, credencial y monitoreo ----------------
+const infraBase = async () => ({ tab: 'infra', ...(await viewBase()), POE: networkService.POE, SPEEDS: networkService.SPEEDS, PROTOCOLS: networkService.PROTOCOLS,
+  STATES: networkService.STATES, METHODS: netMonitorService.METHODS });
 const infraKind = (k) => (networkService.INFRA_KINDS.includes(String(k)) ? String(k) : '');
+// Lo que ofrece el formulario: catalogos activos, mas lo que el equipo ya tiene aunque se haya desactivado.
+const infraLists = async (item) => {
+  const l = await lists();
+  const keep = (arr, v) => (v && !arr.includes(v) ? [...arr, v].sort() : arr);
+  const models = await networkService.models({ all: true });
+  return { ...l, sedes: keep(l.sedes, item.sede), areas: keep(l.areas, item.area),
+    brands: (await networkService.brands({ all: true })).filter((b) => b.active || b.id === item.brand_id),
+    models: models.filter((m) => m.active || m.id === item.model_id) };
+};
 
 router.get('/infraestructura', async (req, res, next) => {
   try {
     const all = await networkService.infra();
     const kind = infraKind(req.query.tipo);
     const sede = String(req.query.sede || '').slice(0, 100);
+    const estado = ['activos', 'inactivos', 'stock'].includes(req.query.estado) ? req.query.estado : '';
     let rows = kind ? all.filter((d) => d.kind === kind) : all;
     if (sede) rows = rows.filter((d) => (d.sede || '') === sede);
+    if (estado === 'activos') rows = rows.filter((d) => d.state === 'en_uso' && d.mon_status === 'up');
+    if (estado === 'inactivos') rows = rows.filter((d) => d.state === 'en_uso' && d.mon_status === 'down');
+    if (estado === 'stock') rows = rows.filter((d) => d.state === 'stock');
     const f = search(req, rows, ['name', 'mac', 'ip', 'sede', 'area', 'floor', 'location', 'brand', 'model', 'brand_model', 'serial', 'notes', 'vlan_names', 'uplink1', 'uplink2']);
-    res.render('network/infra', { title: 'Red — Switches y AP', ...(await infraBase()), all, items: f.rows, q: f.q, kind, sede,
-      sedesUsadas: [...new Set(all.map((d) => d.sede).filter(Boolean))].sort() });
+    const inUse = all.filter((d) => d.state === 'en_uso');
+    res.render('network/infra', { title: 'Red — Switches y AP', ...(await infraBase()), all, items: f.rows, q: f.q, kind, sede, estado,
+      sedesUsadas: [...new Set(all.map((d) => d.sede).filter(Boolean))].sort(),
+      counts: { up: inUse.filter((d) => d.mon_status === 'up').length, down: inUse.filter((d) => d.mon_status === 'down').length,
+        unknown: inUse.filter((d) => !d.mon_status).length, stock: all.filter((d) => d.state === 'stock').length },
+      lastCheck: all.map((d) => d.mon_checked_at || '').sort().pop() || '' });
   } catch (err) {
     next(err);
   }
 });
+
+// Comprobar ahora (la comprobacion automatica es cada 5 minutos): una por minuto, entre todos.
+let infraManual = 0;
+router.post('/infraestructura/comprobar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    if (Date.now() - infraManual < 60000) {
+      req.flash('error', 'Se acaba de comprobar hace menos de un minuto. Espere un momento.');
+      return res.redirect('/red/infraestructura');
+    }
+    infraManual = Date.now();
+    const r = await netMonitorService.run();
+    if (r.skipped) req.flash('error', 'Ya hay una comprobación en curso.');
+    else req.flash('success', `Comprobación terminada: ${r.up} activo(s), ${r.down} inactivo(s), ${r.unknown} sin comprobar.`);
+    return res.redirect('/red/infraestructura');
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Catalogo de marcas y modelos. Agregar y editar: quien puede escribir. Desactivar y borrar: administradores.
+router.get('/infraestructura/catalogo', canWrite, async (req, res, next) => {
+  try {
+    const models = await networkService.models({ all: true });
+    res.render('network/infra_catalog', { title: 'Red — Marcas y modelos', ...(await infraBase()), brands: await networkService.brands({ all: true }), models,
+      edit: models.find((m) => m.id === Number(req.query.editar)) || null });
+  } catch (err) {
+    next(err);
+  }
+});
+router.post('/infraestructura/catalogo/marca', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    await networkService.saveBrand(req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_catalogo', target: String(req.body.name || '').slice(0, 100), detail: 'marca agregada' });
+    req.flash('success', 'Marca agregada al catálogo.');
+    return res.redirect('/red/infraestructura/catalogo');
+  } catch (err) {
+    return fail(req, res, err, '/red/infraestructura/catalogo', next);
+  }
+});
+router.post('/infraestructura/catalogo/modelo', canWrite, verifyCsrfToken, async (req, res, next) => {
+  const id = Number(req.body.id) || 0;
+  try {
+    await networkService.saveModel(id, req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_catalogo', target: String(req.body.name || '').slice(0, 100), detail: id ? `modelo modificado (id ${id})` : 'modelo agregado' });
+    req.flash('success', id ? 'Modelo actualizado; los equipos que lo usan muestran el cambio.' : 'Modelo agregado al catálogo.');
+    return res.redirect('/red/infraestructura/catalogo');
+  } catch (err) {
+    return fail(req, res, err, id ? `/red/infraestructura/catalogo?editar=${id}` : '/red/infraestructura/catalogo', next);
+  }
+});
+router.post('/infraestructura/catalogo/:tipo(marca|modelo)/:id(\\d+)/:accion(activar|desactivar|eliminar)', isAdmin, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const { tipo, id, accion } = req.params;
+    const done = accion === 'eliminar' ? await networkService.deleteCatalog(tipo, id) : await networkService.setCatalogActive(tipo, id, accion === 'activar');
+    if (done) {
+      await auditService.log(req, { user: req.session.user, action: 'red_catalogo', target: `${tipo} id ${id}`, detail: accion });
+      req.flash('success', accion === 'eliminar' ? 'Quitado del catálogo.' : accion === 'activar' ? 'Vuelve a ofrecerse en los formularios.' : 'Ya no se ofrece en los formularios; los equipos que lo tienen lo conservan.');
+    }
+    return res.redirect('/red/infraestructura/catalogo');
+  } catch (err) {
+    return fail(req, res, err, '/red/infraestructura/catalogo', next);
+  }
+});
+
 router.get('/infraestructura/nuevo', canWrite, async (req, res, next) => {
   try {
-    res.render('network/infra_form', { title: 'Red — Nuevo switch o AP', ...(await infraBase()), ...(await lists()), item: { kind: infraKind(req.query.tipo) || 'switch', vlan_ids: [] }, action: '/red/infraestructura/nuevo' });
+    const item = { kind: infraKind(req.query.tipo) || 'switch', vlan_ids: [], state: 'en_uso', mon_method: 'auto' };
+    res.render('network/infra_form', { title: 'Red — Nuevo switch o AP', ...(await infraBase()), ...(await infraLists(item)), item, action: '/red/infraestructura/nuevo' });
   } catch (err) {
     next(err);
   }
 });
+// Guarda ficha y forma de monitoreo, y comprueba el equipo sin hacer esperar a quien guarda.
+const saveInfraAll = async (id, req) => {
+  await netMonitorService.settingsInput(id, req.body); // valida el monitoreo antes de guardar nada
+  const rowId = await networkService.saveInfra(id, req.body, req.session.user);
+  await netMonitorService.saveSettings(rowId, req.body);
+  netMonitorService.run(rowId).catch((e) => console.error('[red] No se pudo comprobar el equipo:', e.message));
+  return rowId;
+};
 router.post('/infraestructura/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
-    const id = await networkService.saveInfra(0, req.body, req.session.user);
-    await auditService.log(req, { user: req.session.user, action: 'red_equipo_creado', target: req.body.name, detail: `id ${id}, ${req.body.kind} (ficha técnica)` });
+    const id = await saveInfraAll(0, req);
+    await auditService.log(req, { user: req.session.user, action: 'red_equipo_creado', target: req.body.name, detail: `id ${id}, ${req.body.kind} (ficha técnica)${req.body.mgmt_password ? '; con credencial de acceso' : ''}` });
     req.flash('success', 'Equipo registrado.');
     return res.redirect('/red/infraestructura');
   } catch (err) {
@@ -302,19 +394,33 @@ router.get('/infraestructura/:id(\\d+)', canWrite, async (req, res, next) => {
       req.flash('error', 'El equipo ya no existe.');
       return res.redirect('/red/infraestructura');
     }
-    return res.render('network/infra_form', { title: `Red — ${item.name}`, ...(await infraBase()), ...(await lists()), item, action: `/red/infraestructura/${item.id}` });
+    return res.render('network/infra_form', { title: `Red — ${item.name}`, ...(await infraBase()), ...(await infraLists(item)), item, action: `/red/infraestructura/${item.id}` });
   } catch (err) {
     return next(err);
   }
 });
 router.post('/infraestructura/:id(\\d+)', canWrite, verifyCsrfToken, async (req, res, next) => {
   try {
-    await networkService.saveInfra(req.params.id, req.body, req.session.user);
-    await auditService.log(req, { user: req.session.user, action: 'red_equipo_modificado', target: req.body.name, detail: `id ${req.params.id} (ficha técnica)` });
+    await saveInfraAll(req.params.id, req);
+    await auditService.log(req, { user: req.session.user, action: 'red_equipo_modificado', target: req.body.name,
+      detail: `id ${req.params.id} (ficha técnica)${req.body.mgmt_password ? '; credencial de acceso cambiada' : ''}${req.body.mgmt_password_clear === '1' ? '; credencial de acceso quitada' : ''}` });
     req.flash('success', 'Equipo actualizado.');
     return res.redirect('/red/infraestructura');
   } catch (err) {
     return fail(req, res, err, `/red/infraestructura/${req.params.id}`, next);
+  }
+});
+// Ver la credencial de acceso: solo administradores, y cada consulta queda en la auditoria.
+router.post('/infraestructura/:id(\\d+)/credencial', isAdmin, verifyCsrfToken, async (req, res) => {
+  try {
+    const c = await networkService.credential(req.params.id);
+    if (!c) return res.status(404).json({ error: 'El equipo ya no existe.' });
+    if (c.password === null) return res.status(409).json({ error: 'No se puede leer la contraseña guardada (¿cambió la clave de cifrado del servidor?). Vuelva a escribirla.' });
+    await auditService.log(req, { user: req.session.user, action: 'red_credencial_vista', target: c.name, detail: `id ${req.params.id}${c.ip ? `, IP ${c.ip}` : ''}` });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ user: c.user, password: c.password });
+  } catch (err) {
+    return res.status(500).json({ error: 'No se pudo leer la credencial.' });
   }
 });
 router.post('/infraestructura/:id(\\d+)/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {

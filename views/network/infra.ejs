@@ -2,20 +2,41 @@
 <% const puede = currentUser.role !== 'lector';
    const esAdmin = ['superadmin', 'admin'].includes(currentUser.role);
    const n = function (k) { return all.filter(function (d) { return d.kind === k; }).length; };
-   const qs = function (o) { const p = []; const t = o.tipo === undefined ? kind : o.tipo; const s = o.sede === undefined ? sede : o.sede;
-     if (t) p.push('tipo=' + t); if (s) p.push('sede=' + encodeURIComponent(s)); return '/red/infraestructura' + (p.length ? '?' + p.join('&') : ''); };
+   const qs = function (o) { const p = []; const t = o.tipo === undefined ? kind : o.tipo; const s = o.sede === undefined ? sede : o.sede; const e = o.estado === undefined ? estado : o.estado;
+     if (t) p.push('tipo=' + t); if (s) p.push('sede=' + encodeURIComponent(s)); if (e) p.push('estado=' + e); return '/red/infraestructura' + (p.length ? '?' + p.join('&') : ''); };
+   // Indicador de actividad: [clase del punto, texto].
+   const luz = function (d) {
+     if (d.state !== 'en_uso') return ['secondary', STATES[d.state] ? STATES[d.state][0] : d.state];
+     if (d.mon_method === 'no') return ['secondary', 'No se monitorea'];
+     if (d.mon_status === 'up') return ['success', 'Activo'];
+     if (d.mon_status === 'down') return ['danger', 'Inactivo'];
+     return ['secondary', 'Sin comprobar'];
+   };
    const protos = function (d) { return String(d.protocols || '').split(',').filter(function (p) { return PROTOCOLS[p]; }); };
    const puertos = all.reduce(function (t, d) { return t + (d.kind === 'switch' ? Number(d.port_count) || 0 : 0); }, 0); %>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h2 class="mb-0">Red — Switches y AP</h2>
   <% if (puede) { %>
     <div class="d-flex flex-wrap gap-2">
+      <form method="post" action="/red/infraestructura/comprobar"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-outline-secondary" title="La comprobación automática es cada 5 minutos"><i class="bi bi-activity"></i> Comprobar ahora</button></form>
+      <a href="/red/infraestructura/catalogo" class="btn btn-outline-secondary"><i class="bi bi-list-ul"></i> Marcas y modelos</a>
       <a href="/red/infraestructura/nuevo?tipo=ap" class="btn btn-outline-primary"><i class="bi bi-wifi"></i> Nuevo AP</a>
       <a href="/red/infraestructura/nuevo?tipo=switch" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo switch</a>
     </div>
   <% } %>
 </div>
 <%- include('_tabs') %>
+<style>.infra-luz { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; vertical-align: -1px; }</style>
+<div class="row g-2 mb-3" id="infra_resumen">
+  <div class="col-6 col-md-3"><a class="card p-2 px-3 text-decoration-none h-100 <%= estado === 'activos' ? 'border-success' : '' %>" href="<%= qs({ estado: estado === 'activos' ? '' : 'activos' }) %>">
+    <div class="small text-muted"><span class="infra-luz bg-success"></span> Activos</div><div class="fs-4 fw-semibold text-body"><%= counts.up %></div></a></div>
+  <div class="col-6 col-md-3"><a class="card p-2 px-3 text-decoration-none h-100 <%= estado === 'inactivos' ? 'border-danger' : '' %>" href="<%= qs({ estado: estado === 'inactivos' ? '' : 'inactivos' }) %>">
+    <div class="small text-muted"><span class="infra-luz bg-danger"></span> Inactivos</div><div class="fs-4 fw-semibold <%= counts.down ? 'text-danger' : 'text-body' %>"><%= counts.down %></div></a></div>
+  <div class="col-6 col-md-3"><div class="card p-2 px-3 h-100"><div class="small text-muted"><span class="infra-luz bg-secondary"></span> Sin comprobar</div><div class="fs-4 fw-semibold"><%= counts.unknown %></div></div></div>
+  <div class="col-6 col-md-3"><a class="card p-2 px-3 text-decoration-none h-100 <%= estado === 'stock' ? 'border-info' : '' %>" href="<%= qs({ estado: estado === 'stock' ? '' : 'stock' }) %>">
+    <div class="small text-muted"><i class="bi bi-box-seam"></i> En stock</div><div class="fs-4 fw-semibold text-body"><%= counts.stock %></div></a></div>
+</div>
 <div class="card p-3">
   <div class="d-flex flex-wrap gap-2 mb-2 small">
     <a class="btn btn-sm <%= kind ? 'btn-outline-secondary' : 'btn-secondary' %>" href="<%= qs({ tipo: '' }) %>">Todos · <%= all.length %></a>
@@ -28,10 +49,12 @@
     <% } %>
   </div>
   <p class="small text-muted mb-2">Ficha técnica de cada switch y punto de acceso: marca, modelo, puertos, PoE, velocidad, piso, puertos de enlace, VLAN y protocolos de gestión.
-    Son los mismos equipos de la pestaña Equipos<%= puertos ? '; los switches suman ' + puertos + ' puertos' : '' %>.</p>
+    Son los mismos equipos de la pestaña Equipos<%= puertos ? '; los switches suman ' + puertos + ' puertos' : '' %>.
+    <span id="infra_ultima"><%= lastCheck ? 'Última comprobación: ' + String(lastCheck).slice(0, 16) + '.' : 'Aún no se ha comprobado ningún equipo.' %></span></p>
   <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
     <% if (kind) { %><input type="hidden" name="tipo" value="<%= kind %>"><% } %>
     <% if (sede) { %><input type="hidden" name="sede" value="<%= sede %>"><% } %>
+    <% if (estado) { %><input type="hidden" name="estado" value="<%= estado %>"><% } %>
     <label class="visually-hidden" for="infra_q">Buscar</label>
     <input type="search" class="form-control form-control-sm" id="infra_q" name="q" value="<%= q %>" placeholder="Nombre, modelo, IP, MAC, piso, VLAN…" style="max-width: 20rem">
     <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
@@ -39,13 +62,15 @@
   </form>
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle small" id="infra_tabla">
-      <thead><tr><th>Tipo</th><th>Nombre</th><th>Marca</th><th>Modelo</th><th>IP</th><th>MAC</th><th class="text-end">Puertos</th><th>PoE</th><th>Velocidad</th><th>Sede</th><th>Piso</th>
+      <thead><tr><th>Actividad</th><th>Tipo</th><th>Nombre</th><th>Marca</th><th>Modelo</th><th>IP</th><th>MAC</th><th class="text-end">Puertos</th><th>PoE</th><th>Velocidad</th><th>Sede</th><th>Piso</th>
         <th>Enlace 1</th><th>Enlace 2</th><th>VLAN</th><th>Protocolos</th>
-        <th data-oculta>Área</th><th data-oculta>Ubicación</th><th data-oculta>Serie</th><th data-oculta>Notas</th><th data-oculta>Origen</th>
+        <th data-oculta>Área</th><th data-oculta>Ubicación</th><th data-oculta>Serie</th><th data-oculta>Usuario de acceso</th><th data-oculta>Notas</th><th data-oculta>Origen</th>
         <% if (puede) { %><th data-orden="no"></th><% } %></tr></thead>
       <tbody>
-        <% items.forEach(function (d) { %>
+        <% items.forEach(function (d) { const l = luz(d); %>
           <tr>
+            <td class="text-nowrap" data-valor="<%= l[1] %>" title="<%= d.state === 'en_uso' ? (d.mon_detail || '') + (d.mon_changed_at && d.mon_status ? ' Desde ' + String(d.mon_changed_at).slice(0, 16) + '.' : '') : '' %>">
+              <span class="infra-luz bg-<%= l[0] %>"></span> <%= l[1] %><% if (d.state === 'en_uso' && d.mon_status === 'up' && d.mon_ms !== null) { %> <span class="text-muted"><%= d.mon_ms %> ms</span><% } %></td>
             <td class="text-nowrap"><i class="bi <%= KINDS[d.kind][1] %>"></i> <%= d.kind === 'ap' ? 'AP' : 'Switch' %></td>
             <td class="fw-semibold"><%= d.name %></td>
             <td><%= d.brand || '—' %></td>
@@ -64,6 +89,7 @@
             <td><%= d.area || '—' %></td>
             <td><%= d.location || '—' %></td>
             <td><%= d.serial || '—' %></td>
+            <td class="font-monospace"><%= d.mgmt_user || '—' %><% if (d.has_password) { %> <i class="bi bi-key" title="Tiene contraseña guardada (cifrada)"></i><% } %></td>
             <td><%= d.notes || '—' %></td>
             <td><%= SOURCES[d.source] || d.source %></td>
             <% if (puede) { %><td class="text-nowrap text-end">
@@ -74,7 +100,7 @@
             </td><% } %>
           </tr>
         <% }); %>
-        <% if (!items.length) { %><tr><td colspan="<%= puede ? 21 : 20 %>" class="text-center text-muted py-4">Sin switches ni puntos de acceso<%= kind || sede || q ? ' con ese filtro' : ' registrados' %>.</td></tr><% } %>
+        <% if (!items.length) { %><tr><td colspan="<%= puede ? 23 : 22 %>" class="text-center text-muted py-4">Sin switches ni puntos de acceso<%= kind || sede || q || estado ? ' con ese filtro' : ' registrados' %>.</td></tr><% } %>
       </tbody>
     </table>
   </div>
@@ -84,8 +110,10 @@
       <thead><tr><th>Protocolo</th><th>Formato de datos</th><th>Tipo de comunicación</th><th>Ideal para…</th></tr></thead>
       <tbody><% Object.keys(PROTOCOLS).forEach(function (p) { %><tr><td class="fw-semibold text-nowrap"><%= PROTOCOLS[p][0] %></td><td><%= PROTOCOLS[p][1] %></td><td><%= PROTOCOLS[p][2] %></td><td><%= PROTOCOLS[p][3] %></td></tr><% }); %></tbody>
     </table></div>
-    <p class="text-muted mt-2 mb-0">Aquí se registra qué ofrece cada equipo, como referencia. La aplicación no consulta los equipos por estos protocolos.</p>
+    <p class="text-muted mt-2 mb-0">Aquí se registra qué ofrece cada equipo, como referencia. Para el indicador de actividad la aplicación usa ping, un puerto TCP o SNMP v2c, según lo que se elija en la ficha de cada equipo.</p>
   </details>
+  <p class="small text-muted mt-2 mb-0"><span class="infra-luz bg-danger"></span> «Inactivo» quiere decir que el equipo no responde <strong>desde el servidor de la aplicación</strong>. Un equipo de una sede sin conexión de red hacia el servidor
+    saldrá inactivo aunque funcione; en ese caso elija «No monitorear» en su ficha, o conéctelo por Omada.</p>
 </div>
 <script>
   document.querySelectorAll('button[data-confirma]').forEach(function (b) {
