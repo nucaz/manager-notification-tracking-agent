@@ -762,7 +762,7 @@ router.post('/tablero/widgets', verifyCsrfToken, async (req, res) => {
   try {
     const b = req.body;
     // Compartir con todos solo admin y editor; un lector arma widgets para si.
-    const shared = b.shared === '1' && req.session.user.role !== 'lector';
+    const shared = b.shared === '1' && (req.effectiveRole || req.session.user.role) !== 'lector';
     const config = await dashboardService.addWidget(req.session.user, {
       title: b.title, dataset: b.dataset, groupBy: b.groupBy, metric: b.metric, chart: b.chart, top: b.top,
       filter: b.filter_field ? { field: b.filter_field, value: b.filter_value } : null,

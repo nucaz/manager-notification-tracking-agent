@@ -2,7 +2,7 @@
 
 <h2 class="mb-3"><%= title %></h2>
 
-<form method="post" class="card p-4" action="<%= item.id ? '/usuarios/' + item.id + '/editar' : '/usuarios/nuevo' %>" style="max-width:520px;"
+<form method="post" class="card p-4" action="<%= item.id ? '/usuarios/' + item.id + '/editar' : '/usuarios/nuevo' %>" style="max-width:760px;"
       <%- item.id ? 'onsubmit="return confirm(\'¿Guardar los cambios en este usuario? Se sobrescribirán los datos actuales.\');"' : '' %>>
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
   <div class="mb-3">
@@ -39,6 +39,35 @@
       <option value="admin" <%= item.role === 'admin' ? 'selected' : '' %>>Administrador (módulos; sin credenciales, usuarios ni respaldos)</option>
     </select>
   </div>
+  <% if (item.id && moduleRows) { const PERFIL = { none: 'sin acceso', view: 'solo ver', edit: 'ver y editar' }; %>
+    <div class="mb-3" id="permisos_especiales">
+      <label class="form-label mb-1">Permisos especiales de este usuario</label>
+      <% if (item.role === 'superadmin') { %>
+        <div class="form-text">Un superadministrador siempre tiene acceso a todo; no lleva permisos especiales.</div>
+      <% } else { %>
+        <div class="form-text mb-2">Por defecto cada módulo sigue lo que diga su perfil (pantalla <a href="/permisos">Permisos</a>). Aquí puede darle a este usuario algo distinto en un módulo:
+          quitarle el acceso, dejarlo solo de consulta, o permitirle editar aunque su perfil sea Lector. Si cambia el rol arriba, guarde y vuelva a entrar para ver sus valores por perfil.</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle small mb-1" data-tabla="no">
+            <thead><tr><th>Módulo</th><th>Por su perfil</th><th style="width: 16rem">Para este usuario</th></tr></thead>
+            <tbody>
+              <% moduleRows.forEach(function (m) { %>
+                <tr class="<%= m.override ? 'table-warning' : '' %>">
+                  <td><label for="um_<%= m.key %>" class="mb-0"><%= m.label %></label></td>
+                  <td class="text-muted"><%= PERFIL[m.byRole] %></td>
+                  <td><select class="form-select form-select-sm" name="um_<%= m.key %>" id="um_<%= m.key %>">
+                    <option value="">Según su perfil</option>
+                    <% Object.keys(ACCESS).forEach(function (k) { %><option value="<%= k %>" <%= m.override === k ? 'selected' : '' %>><%= ACCESS[k] %></option><% }); %>
+                  </select></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <div class="form-text">«Ver y editar» permite crear y modificar como un Editor; las acciones propias de un administrador siguen pidiendo ese perfil. En DevOps no hay solo lectura: quien entra puede hacer todo.</div>
+      <% } %>
+    </div>
+  <% } %>
   <% if (item.id) { %>
     <div class="form-check mb-3">
       <input type="checkbox" class="form-check-input" name="active" id="active" <%= item.active ? 'checked' : '' %>>

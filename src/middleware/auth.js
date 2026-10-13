@@ -10,7 +10,14 @@ function requireRole(...roles) {
       req.flash('error', 'Debes iniciar sesion para continuar.');
       return res.redirect('/login');
     }
-    if (!roles.includes(req.session.user.role)) {
+    // Permiso especial del usuario en este modulo (lo deja moduleRequired; ver middleware/modules.js):
+    // "solo ver" niega todo lo que exija un perfil; "ver y editar" permite lo que puede un editor.
+    if (req.moduleOverride === 'view') {
+      req.flash('error', 'Tu acceso a este módulo es solo de consulta.');
+      return res.redirect('/');
+    }
+    const asEditor = req.moduleOverride === 'edit' && roles.includes('editor');
+    if (!roles.includes(req.session.user.role) && !asEditor) {
       req.flash('error', 'No tienes permisos para realizar esta accion.');
       return res.redirect('/');
     }

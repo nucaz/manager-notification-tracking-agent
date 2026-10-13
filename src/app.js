@@ -126,14 +126,16 @@ app.use(async (req, res, next) => {
   // mostrar un link muerto). admin siempre ve todo.
   res.locals.enabledModules = {};
   if (req.session.user) {
-    const { MODULES, moduleEnabled } = require('./middleware/modules');
+    const { MODULES, moduleAllowed, userOverrides } = require('./middleware/modules');
+    res.locals.realRole = req.session.user.role; // el menu usa el perfil real, no el efectivo de un modulo
     if (req.session.user.role === 'superadmin') {
       for (const key of Object.keys(MODULES)) res.locals.enabledModules[key] = true;
     } else {
       try {
+        const overrides = await userOverrides(req.session.user.id);
         await Promise.all(
           Object.keys(MODULES).map(async (key) => {
-            res.locals.enabledModules[key] = await moduleEnabled(req.session.user.role, key);
+            res.locals.enabledModules[key] = await moduleAllowed(req.session.user, key, overrides);
           })
         );
       } catch (_) {

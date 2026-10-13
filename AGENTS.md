@@ -151,6 +151,14 @@ READMEs.
   una línea de comandos), auditadas y con tope; la revisión de puertos solo acepta direcciones privadas. La
   ruta usa `tracepath` porque `traceroute` exige privilegios que el contenedor no tiene. Prueba:
   `tests/red.e2e.js`.
+- **Permisos por módulo, en dos niveles** (`src/middleware/modules.js`): por **perfil** (`role_modules`, pantalla
+  Permisos; admin, editor y lector son configurables, el superadmin siempre ve todo) y por **usuario**
+  (`user_modules`, ficha del usuario): un permiso especial que manda sobre el perfil (`none`, `view`, `edit`).
+  `moduleRequired` deja `req.moduleOverride` y `req.effectiveRole`, y cambia `currentUser.role` en las vistas
+  de ese módulo (así los botones siguen la regla sin tocar cada vista); `requireRole` niega todo con `view` y
+  deja pasar lo de editor con `edit` (nunca lo de administrador). Una comprobación propia de rol dentro de un
+  módulo debe usar `req.effectiveRole || req.session.user.role`, o `moduleAccess(user, modulo)` desde otro
+  módulo. El menú usa `realRole`. Prueba: `tests/permisos_usuario.e2e.js`.
 - **Red > Switches y AP** (`networkService.saveInfra`, tabla `network_device_specs` 1:1 con `network_devices`):
   ficha técnica de switches y puntos de acceso (marca, modelo, puertos, PoE, velocidad, piso, hasta dos puertos
   de enlace, protocolos de gestión que ofrece). Son las **mismas filas** de la pestaña Equipos: nombre, MAC, IP,

@@ -4,7 +4,7 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
 const { requireAuth, canWrite } = require('../middleware/auth');
-const { moduleRequired, moduleEnabled } = require('../middleware/modules');
+const { moduleRequired, moduleAccess } = require('../middleware/modules');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const requestService = require('../services/requestService');
 const m365Service = require('../services/m365Service');
@@ -59,7 +59,7 @@ router.get('/:id', async (req, res, next) => {
       req.flash('error', 'Solicitud no encontrada.');
       return res.redirect('/solicitudes');
     }
-    const canAct = r.module === 'm365' && req.session.user.role !== 'lector' && await moduleEnabled(req.session.user.role, 'm365');
+    const canAct = r.module === 'm365' && (await moduleAccess(req.session.user, 'm365')).level === 'edit';
     res.render('requests/detail', { title: `Solicitud #${r.id}`, r, canAct, MODULES: requestService.MODULES, STATUS: requestService.STATUS,
       TYPE_LABELS, ENTITY_URL, pending: requestService.pendingRequired(r),
       requesterOptions: canAct && r.tasks.some((t) => ['reasignar', 'onedrive'].includes(t.task_key)) ? await requestService.pickerOptions() : [] });
@@ -71,7 +71,7 @@ router.get('/:id', async (req, res, next) => {
 // Acciones: solo solicitudes de Microsoft 365 y con el modulo habilitado.
 async function m365Request(req, res) {
   const r = await requestService.get(req.params.id);
-  if (!r || r.module !== 'm365' || !(await moduleEnabled(req.session.user.role, 'm365'))) {
+  if (!r || r.module !== 'm365' || (await moduleAccess(req.session.user, 'm365')).level !== 'edit') {
     req.flash('error', 'Solicitud no encontrada o sin acceso.');
     res.redirect('/solicitudes');
     return null;

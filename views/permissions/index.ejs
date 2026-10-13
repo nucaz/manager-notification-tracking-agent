@@ -5,9 +5,10 @@
 </div>
 
 <div class="alert alert-info">
-  Decide qué módulos puede <strong>abrir</strong> cada rol. El administrador siempre ve todo.
-  Esto no cambia qué puede <strong>escribir</strong> cada rol (eso lo sigue decidiendo el rol mismo:
-  un lector nunca puede crear/editar/eliminar, tenga o no un módulo habilitado aquí).
+  <strong>Por perfil:</strong> decide qué módulos puede <strong>abrir</strong> cada perfil. El superadministrador siempre ve todo.
+  Dentro de un módulo, un Lector solo consulta; un Editor crea y modifica; un Administrador además gestiona.
+  <br><strong>Por usuario:</strong> si una persona necesita algo distinto a su perfil (por ejemplo, un Lector que edite en un módulo, o un Editor sin acceso a otro),
+  se configura en su ficha: <a href="/usuarios" class="alert-link">Usuarios</a> → Editar → «Permisos especiales de este usuario».
 </div>
 
 <form method="post" action="/permisos">
@@ -19,7 +20,7 @@
           <tr>
             <th>Módulo</th>
             <% roles.forEach(function(role) { %>
-              <th class="text-center text-capitalize"><%= role %></th>
+              <th class="text-center"><%= ROLES[role] || role %></th>
             <% }); %>
           </tr>
         </thead>
@@ -40,5 +41,25 @@
   </div>
   <button type="submit" class="btn btn-primary mt-3">Guardar permisos</button>
 </form>
+
+<div class="card p-3 mt-4" id="permisos_usuarios">
+  <h6>Usuarios con permisos especiales</h6>
+  <% if (!specials.length) { %>
+    <p class="text-muted small mb-0">Ninguno: todos siguen lo que dice su perfil.</p>
+  <% } else { %>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle small mb-0" data-tabla="no">
+        <thead><tr><th>Usuario</th><th>Perfil</th><th>Distinto a su perfil</th><th></th></tr></thead>
+        <tbody>
+          <% specials.forEach(function (u) { %>
+            <tr><td class="fw-semibold"><%= u.name %></td><td><%= ROLES[u.role] || u.role %></td>
+              <td><% u.items.forEach(function (i) { %><span class="badge text-bg-<%= i.access === 'none' ? 'danger' : i.access === 'edit' ? 'success' : 'secondary' %> fw-normal me-1"><%= i.label %>: <%= ACCESS[i.access].toLowerCase() %></span><% }); %></td>
+              <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="/usuarios/<%= u.id %>/editar#permisos_especiales">Editar</a></td></tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
 
 <%- include('../partials/foot') %>

@@ -1,9 +1,9 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireAuth, isSuperAdmin } = require('../middleware/auth');
+const { requireAuth, isSuperAdmin, ROLES } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const auditService = require('../services/auditService');
-const { MODULES, CONFIGURABLE_ROLES, DEFAULT_MODULE_ACCESS } = require('../middleware/modules');
+const { MODULES, CONFIGURABLE_ROLES, DEFAULT_MODULE_ACCESS, ACCESS } = require('../middleware/modules');
 
 const router = express.Router();
 router.use(requireAuth, isSuperAdmin, verifyCsrfToken);
@@ -27,7 +27,17 @@ router.get('/', async (req, res, next) => {
       })),
     }));
 
-    res.render('permissions/index', { title: 'Permisos', matrix, roles: CONFIGURABLE_ROLES });
+    // Usuarios con permisos especiales (mandan sobre su perfil; se editan en la ficha del usuario).
+    const [special] = await pool.query(`SELECT u.id, u.full_name, u.role, m.module, m.access FROM user_modules m JOIN users u ON u.id = m.user_id
+      WHERE u.role <> 'superadmin' ORDER BY u.full_name, m.module`);
+    const byUser = new Map();
+    for (const r of special) {
+      if (!MODULES[r.module] || !ACCESS[r.access]) continue;
+      const u = byUser.get(r.id) || { id: r.id, name: r.full_name, role: r.role, items: [] };
+      u.items.push({ label: MODULES[r.module].replace(/ \(.*/, ''), access: r.access });
+      byUser.set(r.id, u);
+    }
+    res.render('permissions/index', { title: 'Permisos', matrix, roles: CONFIGURABLE_ROLES, ROLES, ACCESS, specials: [...byUser.values()] });
   } catch (err) {
     next(err);
   }

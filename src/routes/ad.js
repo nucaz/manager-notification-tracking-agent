@@ -29,7 +29,7 @@ const VIEW = { bucket, BUCKETS: clinicService.BUCKETS, PRIVILEGED_LABEL: adServi
 async function base(req) {
   const [run, cfg, wcfg] = await Promise.all([adService.lastRun(), adService.config(), adWriteService.config()]);
   const user = req && req.session.user;
-  const canChange = !!user && ['superadmin', 'admin', 'editor'].includes(user.role);
+  const canChange = !!user && ['superadmin', 'admin', 'editor'].includes(req.effectiveRole || user.role);
   return {
     run, configured: !!(cfg.url && cfg.bindUser && cfg.password && cfg.caPem), lastResult: cfg.lastResult,
     writes: { ready: !adWriteService.notReady(wcfg), reason: adWriteService.notReady(wcfg), managedOus: wcfg.managedOus },

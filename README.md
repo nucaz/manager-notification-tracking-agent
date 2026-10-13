@@ -640,6 +640,16 @@ administradores) hace ping, ruta de saltos, consulta DNS y revisión de puertos 
 abiertos **desde el servidor de la aplicación**; la revisión de puertos solo acepta
 direcciones de la red interna y cada prueba queda en la auditoría.
 
+**Permisos por perfil y por usuario.** En *Permisos* (superadministrador) se decide qué
+módulos abre cada perfil: Administrador, Editor y Lector. Cuando una persona necesita
+algo distinto a su perfil, se configura en su ficha (*Usuarios* → *Editar* → *Permisos
+especiales de este usuario*): por cada módulo puede quedar «según su perfil», «sin
+acceso», «solo ver» o «ver y editar». El permiso especial manda sobre el perfil: un
+Lector puede editar en un módulo concreto y un Editor quedar solo de consulta en otro.
+«Ver y editar» equivale a lo que hace un Editor; las acciones de administrador siguen
+pidiendo ese perfil. La pantalla *Permisos* lista quién tiene permisos especiales y la
+lista de usuarios los marca. Cada cambio queda en la auditoría.
+
 **Red: switches y puntos de acceso.** La pestaña *Switches y AP* lleva la ficha técnica
 de cada switch y punto de acceso: marca, modelo, IP, MAC, cantidad de puertos, categoría
 PoE (no PoE, PoE, PoE+, PoE++), velocidad (Fast Ethernet, Gigabit, multigigabit, 10 G),

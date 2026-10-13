@@ -14,7 +14,7 @@ router.get('/', requireAuth, async (req, res, next) => {
   const user = req.session.user;
   try {
     // Se consulta el permiso directamente (no el resumen que usa el menu).
-    if (!(await modules.moduleEnabled(user.role, 'devops'))) {
+    if (!(await modules.moduleAllowed(user, 'devops'))) {
       req.flash('error', 'No tienes acceso a DevOps. Pide a un administrador que te lo habilite en Permisos.');
       return res.redirect('/');
     }

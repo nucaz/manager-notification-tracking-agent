@@ -4,6 +4,7 @@ const pool = require('../db/pool');
 const { requireAuth, isSuperAdmin, ROLES } = require('../middleware/auth');
 const { verifyCsrfToken } = require('../middleware/csrf');
 const auditService = require('../services/auditService');
+const modules = require('../middleware/modules');
 
 const router = express.Router();
 router.use(requireAuth, isSuperAdmin, verifyCsrfToken);
@@ -15,10 +16,29 @@ function duplicateFieldMessage(err) {
   return 'Ya existe un usuario con ese correo.';
 }
 
+// Permisos especiales del usuario por modulo (mandan sobre su perfil). El
+// formulario envia um_<modulo> = '' (segun su perfil) | none | view | edit.
+async function moduleRows(userId, role) {
+  const overrides = userId ? await modules.userOverrides(userId) : {};
+  const out = [];
+  for (const [key, label] of Object.entries(modules.MODULES)) {
+    const enabled = role === 'superadmin' ? true : await modules.moduleEnabled(role || 'lector', key);
+    out.push({ key, label, override: overrides[key] || '', byRole: !enabled ? 'none' : (role === 'lector' || !role) ? 'view' : 'edit' });
+  }
+  return out;
+}
+async function saveOverrides(userId, role, body) {
+  await pool.query('DELETE FROM user_modules WHERE user_id = ?', [userId]);
+  if (role === 'superadmin') return []; // el superadministrador siempre tiene todo
+  const rows = Object.keys(modules.MODULES).map((k) => [userId, k, String(body[`um_${k}`] || '')]).filter((r) => modules.ACCESS[r[2]]);
+  if (rows.length) await pool.query('INSERT INTO user_modules (user_id, module, access) VALUES ?', [rows]);
+  return rows.map((r) => `${r[1]}=${r[2]}`);
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, full_name, email, role, active, otp_enabled, locked, created_at FROM users ORDER BY full_name'
+      'SELECT id, full_name, email, role, active, otp_enabled, locked, created_at, (SELECT COUNT(*) FROM user_modules m WHERE m.user_id = users.id) AS special FROM users ORDER BY full_name'
     );
     res.render('users/list', { title: 'Usuarios', items: rows });
   } catch (err) {
@@ -26,8 +46,8 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/nuevo', (req, res) => {
-  res.render('users/form', { title: 'Nuevo usuario', item: {} });
+router.get('/nuevo', async (req, res) => {
+  res.render('users/form', { title: 'Nuevo usuario', item: {}, moduleRows: null, ACCESS: modules.ACCESS });
 });
 
 router.post('/nuevo', async (req, res, next) => {
@@ -65,7 +85,7 @@ router.get('/:id/editar', async (req, res, next) => {
       req.flash('error', 'Usuario no encontrado.');
       return res.redirect('/usuarios');
     }
-    res.render('users/form', { title: 'Editar usuario', item: rows[0] });
+    res.render('users/form', { title: 'Editar usuario', item: rows[0], moduleRows: await moduleRows(rows[0].id, rows[0].role), ACCESS: modules.ACCESS });
   } catch (err) {
     next(err);
   }
@@ -99,11 +119,12 @@ router.post('/:id/editar', async (req, res, next) => {
         [full_name, email, role, whatsapp_number || null, telegram_chat_id || null, active ? 1 : 0, req.params.id]
       );
     }
+    const special = await saveOverrides(Number(req.params.id), role, req.body);
     await auditService.log(req, {
       user: req.session.user,
       action: 'user_update',
       target: email,
-      detail: password ? `rol: ${role}, contraseña cambiada` : `rol: ${role}`,
+      detail: `${password ? `rol: ${role}, contraseña cambiada` : `rol: ${role}`}${special.length ? `; permisos especiales: ${special.join(', ')}` : '; sin permisos especiales'}`.slice(0, 1000),
     });
     req.flash('success', 'Usuario actualizado correctamente.');
     res.redirect('/usuarios');

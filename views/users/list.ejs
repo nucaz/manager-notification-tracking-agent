@@ -13,7 +13,7 @@
         <tr>
           <td><%= u.full_name %></td>
           <td><%= u.email %></td>
-          <td><span class="badge <%= u.role === 'superadmin' ? 'bg-danger' : 'bg-secondary' %>"><%= ({ superadmin: 'Superadministrador', admin: 'Administrador', editor: 'Editor', lector: 'Lector' })[u.role] || u.role %></span></td>
+          <td><span class="badge <%= u.role === 'superadmin' ? 'bg-danger' : 'bg-secondary' %>"><%= ({ superadmin: 'Superadministrador', admin: 'Administrador', editor: 'Editor', lector: 'Lector' })[u.role] || u.role %></span><% if (u.special) { %> <a href="/usuarios/<%= u.id %>/editar#permisos_especiales" class="badge text-bg-warning text-decoration-none" title="Tiene permisos especiales en <%= u.special %> módulo(s)">+<%= u.special %> especial<%= u.special > 1 ? 'es' : '' %></a><% } %></td>
           <td><%= u.active ? 'Sí' : 'No' %></td>
           <td>
             <% if (u.otp_enabled) { %>
