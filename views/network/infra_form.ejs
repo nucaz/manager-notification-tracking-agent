@@ -1,0 +1,106 @@
+<%- include('../partials/head', { title: title }) %>
+<% const v = function (k) { return item[k] === null || item[k] === undefined ? '' : item[k]; };
+   const tiene = String(item.protocols || '').split(',');
+   // Un equipo que vino de otra pestaña trae "marca / modelo" junto: se propone como modelo.
+   const modelo = v('model') || (v('brand') ? '' : v('brand_model')); %>
+<div class="mb-2"><a href="/red/infraestructura" class="small"><i class="bi bi-arrow-left"></i> Switches y AP</a></div>
+<div class="row"><div class="col-xl-9">
+  <form method="post" action="<%= action %>" class="card p-4" autocomplete="off" id="infra_form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <h5><%= item.id ? 'Editar ' + item.name : 'Nuevo switch o punto de acceso' %></h5>
+
+    <h6 class="text-muted mt-2">Identificación</h6>
+    <div class="row g-3">
+      <div class="col-md-3"><label class="form-label" for="kind">Tipo *</label>
+        <select class="form-select" id="kind" name="kind" required>
+          <option value="switch" <%= item.kind === 'switch' ? 'selected' : '' %>>Switch</option>
+          <option value="ap" <%= item.kind === 'ap' ? 'selected' : '' %>>Punto de acceso (AP)</option>
+        </select></div>
+      <div class="col-md-5"><label class="form-label" for="name">Nombre *</label>
+        <input class="form-control" id="name" name="name" value="<%= v('name') %>" required maxlength="150" placeholder="SW-PISO2-01, AP-RECEPCION…"></div>
+      <div class="col-md-4"><label class="form-label" for="serial">N.º de serie</label>
+        <input class="form-control" id="serial" name="serial" value="<%= v('serial') %>" maxlength="100"></div>
+      <div class="col-md-4"><label class="form-label" for="brand">Marca</label>
+        <input class="form-control" id="brand" name="brand" value="<%= v('brand') %>" maxlength="80" list="infra_marcas" placeholder="TP-Link, Cisco, Ubiquiti…">
+        <datalist id="infra_marcas"><% ['TP-Link', 'Cisco', 'Ubiquiti', 'MikroTik', 'HPE Aruba', 'D-Link', 'Huawei', 'Ruijie', 'Fortinet', 'Netgear'].forEach(function (m) { %><option value="<%= m %>"><% }); %></datalist></div>
+      <div class="col-md-4"><label class="form-label" for="model">Modelo</label>
+        <input class="form-control" id="model" name="model" value="<%= modelo %>" maxlength="100" placeholder="SG2008 v4.20, EAP620 HD…"></div>
+      <div class="col-md-4"><label class="form-label" for="ip">IP</label>
+        <input class="form-control font-monospace" id="ip" name="ip" value="<%= v('ip') %>" placeholder="192.168.100.94" maxlength="15"></div>
+      <div class="col-md-4"><label class="form-label" for="mac">Dirección MAC</label>
+        <input class="form-control font-monospace" id="mac" name="mac" value="<%= v('mac') %>" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17">
+        <div class="form-text">Se acepta con dos puntos, guiones o seguida.</div></div>
+    </div>
+
+    <h6 class="text-muted mt-4">Características</h6>
+    <div class="row g-3">
+      <div class="col-md-3"><label class="form-label" for="port_count">Puertos</label>
+        <input type="number" class="form-control" id="port_count" name="port_count" value="<%= v('port_count') %>" min="1" max="1024" placeholder="8, 24, 48…">
+        <div class="form-text">Puertos de red del equipo.</div></div>
+      <div class="col-md-4"><label class="form-label" for="poe">Categoría PoE</label>
+        <select class="form-select" id="poe" name="poe">
+          <option value="">Sin indicar</option>
+          <% Object.keys(POE).forEach(function (k) { %><option value="<%= k %>" <%= item.poe === k ? 'selected' : '' %>><%= POE[k] %></option><% }); %>
+        </select>
+        <div class="form-text">En un switch: si entrega PoE. En un AP: cómo se alimenta.</div></div>
+      <div class="col-md-5"><label class="form-label" for="speed">Velocidad de los puertos</label>
+        <select class="form-select" id="speed" name="speed">
+          <option value="">Sin indicar</option>
+          <% Object.keys(SPEEDS).forEach(function (k) { %><option value="<%= k %>" <%= item.speed === k ? 'selected' : '' %>><%= SPEEDS[k] %></option><% }); %>
+        </select></div>
+    </div>
+
+    <h6 class="text-muted mt-4">Ubicación</h6>
+    <div class="row g-3">
+      <div class="col-md-3"><label class="form-label" for="sede">Sede</label>
+        <input class="form-control" id="sede" name="sede" value="<%= v('sede') %>" list="red_sedes" maxlength="100">
+        <datalist id="red_sedes"><% sedes.forEach(function (s) { %><option value="<%= s %>"><% }); %></datalist></div>
+      <div class="col-md-2"><label class="form-label" for="floor">Piso</label>
+        <input class="form-control" id="floor" name="floor" value="<%= v('floor') %>" maxlength="40" placeholder="1, 2, Sótano…"></div>
+      <div class="col-md-3"><label class="form-label" for="area">Área</label>
+        <input class="form-control" id="area" name="area" value="<%= v('area') %>" list="red_areas" maxlength="100">
+        <datalist id="red_areas"><% areas.forEach(function (s) { %><option value="<%= s %>"><% }); %></datalist></div>
+      <div class="col-md-4"><label class="form-label" for="location">Ubicación exacta</label>
+        <input class="form-control" id="location" name="location" value="<%= v('location') %>" maxlength="150" placeholder="Rack A, U12; techo de recepción…"></div>
+    </div>
+
+    <h6 class="text-muted mt-4">Conexión</h6>
+    <div class="row g-3">
+      <div class="col-md-6"><label class="form-label" for="uplink1">Puerto de enlace 1</label>
+        <input class="form-control" id="uplink1" name="uplink1" value="<%= v('uplink1') %>" maxlength="100" placeholder="Puerto 8 → SW-CORE puerto 3">
+        <div class="form-text">Por dónde sube hacia la red: su puerto y a qué equipo y puerto llega.</div></div>
+      <div class="col-md-6"><label class="form-label" for="uplink2">Puerto de enlace 2</label>
+        <input class="form-control" id="uplink2" name="uplink2" value="<%= v('uplink2') %>" maxlength="100" placeholder="Opcional: segundo enlace o respaldo"></div>
+      <div class="col-12"><span class="form-label d-block">VLAN configuradas</span>
+        <% if (vlanList.length) { %>
+          <div class="d-flex flex-wrap gap-3 border rounded p-2" style="max-height: 12rem; overflow: auto">
+            <% vlanList.forEach(function (vl) { %>
+              <div class="form-check"><input class="form-check-input" type="checkbox" name="vlan_ids" value="<%= vl.id %>" id="vl_<%= vl.id %>"
+                <%= (item.vlan_ids || []).indexOf(vl.id) > -1 ? 'checked' : '' %>>
+                <label class="form-check-label small" for="vl_<%= vl.id %>"><strong><%= vl.vlan_number %></strong> <%= vl.name %><%= vl.sede ? ' · ' + vl.sede : '' %></label></div>
+            <% }); %>
+          </div>
+        <% } else { %><div class="small text-muted">Aún no hay VLAN registradas. <a href="/red/vlan">Registrar VLAN</a> y luego marcarlas aquí.</div><% } %>
+      </div>
+    </div>
+
+    <h6 class="text-muted mt-4">Protocolos de gestión que ofrece</h6>
+    <div class="table-responsive">
+      <table class="table table-sm small align-middle mb-1" data-tabla="no">
+        <thead><tr><th style="width: 2rem"></th><th>Protocolo</th><th>Formato de datos</th><th>Tipo de comunicación</th><th>Ideal para…</th></tr></thead>
+        <tbody>
+          <% Object.keys(PROTOCOLS).forEach(function (p) { %>
+            <tr><td><input class="form-check-input" type="checkbox" name="protocols" value="<%= p %>" id="proto_<%= p %>" <%= tiene.indexOf(p) > -1 ? 'checked' : '' %>></td>
+              <td class="fw-semibold text-nowrap"><label for="proto_<%= p %>"><%= PROTOCOLS[p][0] %></label></td><td><%= PROTOCOLS[p][1] %></td><td><%= PROTOCOLS[p][2] %></td><td><%= PROTOCOLS[p][3] %></td></tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <div class="form-text">Marque los que el equipo tiene disponibles. Es una referencia para saber cómo se podría consultar; la aplicación no se conecta al equipo.</div>
+
+    <div class="mt-3"><label class="form-label" for="notes">Notas</label>
+      <textarea class="form-control" id="notes" name="notes" rows="2" maxlength="500"><%= v('notes') %></textarea></div>
+    <div class="mt-3 d-flex gap-2"><button class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar</button><a href="/red/infraestructura" class="btn btn-outline-secondary">Cancelar</a></div>
+  </form>
+</div></div>
+<%- include('../partials/foot') %>

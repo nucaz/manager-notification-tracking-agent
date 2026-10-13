@@ -640,6 +640,15 @@ administradores) hace ping, ruta de saltos, consulta DNS y revisión de puertos 
 abiertos **desde el servidor de la aplicación**; la revisión de puertos solo acepta
 direcciones de la red interna y cada prueba queda en la auditoría.
 
+**Red: switches y puntos de acceso.** La pestaña *Switches y AP* lleva la ficha técnica
+de cada switch y punto de acceso: marca, modelo, IP, MAC, cantidad de puertos, categoría
+PoE (no PoE, PoE, PoE+, PoE++), velocidad (Fast Ethernet, Gigabit, multigigabit, 10 G),
+sede, piso, hasta dos puertos de enlace, las VLAN configuradas y los protocolos de
+gestión que ofrece (REST API, RESTCONF, SNMP, gRPC Telemetry), con una tabla que explica
+cada uno. Son los mismos equipos de la pestaña *Equipos*, y los que se registran desde
+Omada aparecen aquí para completarlos. Los protocolos se anotan como referencia: la
+aplicación no se conecta a los equipos por ellos.
+
 **Red > Omada (controladores TP-Link).** La pestaña *Omada* muestra lo que
 conocen los controladores Omada: *Resumen* (clientes conectados, equipos en línea y
 caídos, velocidad de bajada y subida, gráfico de consumo de 6 horas a 30 días, clientes

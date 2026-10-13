@@ -187,6 +187,57 @@ async function deleteDevice(id) {
   return r.affectedRows > 0;
 }
 
+// ------------------------------ switches y AP ------------------------------
+// Ficha tecnica (network_device_specs, 1:1) de los equipos de tipo switch o AP.
+const INFRA_KINDS = ['switch', 'ap'];
+const POE = { no: 'No PoE', poe: 'PoE (802.3af)', poe_plus: 'PoE+ (802.3at)', poe_pp: 'PoE++ (802.3bt)', pasivo: 'PoE pasivo' };
+const SPEEDS = { fast: 'Fast Ethernet (100 Mbps)', gigabit: 'Gigabit (1 Gbps)', multigig: 'Multigigabit (2.5 / 5 Gbps)', '10g': '10 Gigabit' };
+// Formas de consultar o gestionar el equipo: [nombre, formato de datos, tipo de comunicacion, ideal para].
+const PROTOCOLS = {
+  rest: ['REST API (HTTPS)', 'JSON / XML', 'Consulta (petición / respuesta)', 'Integración directa con paneles web y scripts personalizados.'],
+  restconf: ['RESTCONF', 'JSON / XML', 'Consulta (petición / respuesta)', 'Configuración y monitoreo estándar basado en modelos YANG.'],
+  snmp: ['SNMP', 'MIB / OID (binario)', 'Consulta (petición / respuesta)', 'Herramientas de monitoreo tradicionales (Zabbix, PRTG).'],
+  grpc: ['gRPC Telemetry', 'Protocol Buffers', 'Flujo continuo (streaming)', 'Analítica avanzada en tiempo real y grandes volúmenes de datos.'],
+};
+const INFRA_SQL = `SELECT d.*, sp.brand, sp.model, sp.port_count, sp.poe, sp.speed, sp.floor, sp.uplink1, sp.uplink2, sp.protocols,
+    (SELECT GROUP_CONCAT(v.vlan_number ORDER BY v.vlan_number SEPARATOR ', ') FROM network_device_vlans dv JOIN network_vlans v ON v.id = dv.vlan_id WHERE dv.device_id = d.id) AS vlan_numbers,
+    (SELECT GROUP_CONCAT(CONCAT(v.vlan_number, ' ', v.name) ORDER BY v.vlan_number SEPARATOR ', ') FROM network_device_vlans dv JOIN network_vlans v ON v.id = dv.vlan_id WHERE dv.device_id = d.id) AS vlan_names
+  FROM network_devices d LEFT JOIN network_device_specs sp ON sp.device_id = d.id`;
+
+async function infra() {
+  const [rows] = await pool.query(`${INFRA_SQL} WHERE d.kind IN (?) ORDER BY d.sede, sp.floor, d.kind DESC, d.name`, [INFRA_KINDS]);
+  return rows;
+}
+async function infraDevice(id) {
+  const [[row]] = await pool.query(`${INFRA_SQL} WHERE d.id = ? AND d.kind IN (?)`, [Number(id) || 0, INFRA_KINDS]);
+  if (!row) return null;
+  const [v] = await pool.query('SELECT vlan_id FROM network_device_vlans WHERE device_id = ?', [row.id]);
+  return { ...row, vlan_ids: v.map((x) => x.vlan_id) };
+}
+function specInput(b) {
+  const ports = String(b.port_count === undefined || b.port_count === null ? '' : b.port_count).trim();
+  if (ports && !(/^\d{1,4}$/.test(ports) && Number(ports) >= 1 && Number(ports) <= 1024)) throw new Error('La cantidad de puertos debe ser un número entre 1 y 1024.');
+  const pick = (v, set) => (set[v] ? v : null);
+  const protocols = [...new Set([].concat(b.protocols || []).map(String))].filter((p) => PROTOCOLS[p]);
+  return { brand: clean(b.brand, 80), model: clean(b.model, 100), port_count: ports ? Number(ports) : null, poe: pick(b.poe, POE), speed: pick(b.speed, SPEEDS), floor: clean(b.floor, 40),
+    uplink1: clean(b.uplink1, 100), uplink2: clean(b.uplink2, 100), protocols: protocols.join(',') || null };
+}
+// Guarda el equipo (los mismos datos que en Equipos) y su ficha tecnica.
+async function saveInfra(id, body, user) {
+  if (!INFRA_KINDS.includes(String(body.kind))) throw new Error('Elija si es un switch o un punto de acceso.');
+  const spec = specInput(body);
+  const data = deviceInput({ ...body, mac_wifi: '', brand_model: [spec.brand, spec.model].filter(Boolean).join(' ') });
+  let keep = {};
+  if (id) {
+    const [[cur]] = await pool.query('SELECT kind, mac_wifi FROM network_devices WHERE id = ?', [Number(id)]);
+    if (!cur || !INFRA_KINDS.includes(cur.kind)) throw new Error('El equipo ya no existe.');
+    keep = { mac_wifi: cur.mac_wifi };
+  }
+  const rowId = await saveRow(id, id ? { ...data, ...keep } : { ...data, source: 'manual' }, body.vlan_ids, user);
+  await pool.query('INSERT INTO network_device_specs SET ? ON DUPLICATE KEY UPDATE ?', [{ device_id: rowId, ...spec }, spec]);
+  return rowId;
+}
+
 // Trae las PC que la aplicacion ya conoce. GLPI aporta MAC, IP, serie, modelo
 // y ubicacion; el directorio activo, nombre e IP. Solo llena lo que esta vacio:
 // lo escrito a mano no se pisa. Devuelve { created, updated, withMac }.
@@ -245,5 +296,5 @@ async function overview() {
 }
 
 module.exports = {
-  KINDS, SOURCES, normalizeMac, normalizeIp, vlans, vlan, saveVlan, deleteVlan, devices, device, phones, phone, saveDevice, savePhone, deleteDevice, importPcs, overview,
+  KINDS, SOURCES, INFRA_KINDS, POE, SPEEDS, PROTOCOLS, infra, infraDevice, saveInfra, normalizeMac, normalizeIp, vlans, vlan, saveVlan, deleteVlan, devices, device, phones, phone, saveDevice, savePhone, deleteDevice, importPcs, overview,
 };

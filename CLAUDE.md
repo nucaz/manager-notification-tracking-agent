@@ -152,6 +152,12 @@ READMEs.
   una línea de comandos), auditadas y con tope; la revisión de puertos solo acepta direcciones privadas. La
   ruta usa `tracepath` porque `traceroute` exige privilegios que el contenedor no tiene. Prueba:
   `tests/red.e2e.js`.
+- **Red > Switches y AP** (`networkService.saveInfra`, tabla `network_device_specs` 1:1 con `network_devices`):
+  ficha técnica de switches y puntos de acceso (marca, modelo, puertos, PoE, velocidad, piso, hasta dos puertos
+  de enlace, protocolos de gestión que ofrece). Son las **mismas filas** de la pestaña Equipos: nombre, MAC, IP,
+  sede y VLAN siguen en `network_devices`, y editar un switch o AP desde Equipos redirige a su ficha. Los
+  protocolos (REST, RESTCONF, SNMP, gRPC) son solo un dato registrado: la aplicación no consulta los equipos.
+  Prueba: `tests/red_switches.e2e.js`.
 - **Red > Omada** (`omadaService.js`, job `syncOmada.js` cada 5 min): lee los controladores TP-Link Omada por
   su Open API oficial (modo *client credentials*; cabecera `Authorization: AccessToken=…`). **La lectura solo
   hace GET** (más el POST del token). Lo único que escribe en el controlador son las acciones sobre un cliente

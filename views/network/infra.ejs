@@ -1,0 +1,95 @@
+<%- include('../partials/head', { title: title }) %>
+<% const puede = currentUser.role !== 'lector';
+   const esAdmin = ['superadmin', 'admin'].includes(currentUser.role);
+   const n = function (k) { return all.filter(function (d) { return d.kind === k; }).length; };
+   const qs = function (o) { const p = []; const t = o.tipo === undefined ? kind : o.tipo; const s = o.sede === undefined ? sede : o.sede;
+     if (t) p.push('tipo=' + t); if (s) p.push('sede=' + encodeURIComponent(s)); return '/red/infraestructura' + (p.length ? '?' + p.join('&') : ''); };
+   const protos = function (d) { return String(d.protocols || '').split(',').filter(function (p) { return PROTOCOLS[p]; }); };
+   const puertos = all.reduce(function (t, d) { return t + (d.kind === 'switch' ? Number(d.port_count) || 0 : 0); }, 0); %>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h2 class="mb-0">Red — Switches y AP</h2>
+  <% if (puede) { %>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="/red/infraestructura/nuevo?tipo=ap" class="btn btn-outline-primary"><i class="bi bi-wifi"></i> Nuevo AP</a>
+      <a href="/red/infraestructura/nuevo?tipo=switch" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo switch</a>
+    </div>
+  <% } %>
+</div>
+<%- include('_tabs') %>
+<div class="card p-3">
+  <div class="d-flex flex-wrap gap-2 mb-2 small">
+    <a class="btn btn-sm <%= kind ? 'btn-outline-secondary' : 'btn-secondary' %>" href="<%= qs({ tipo: '' }) %>">Todos · <%= all.length %></a>
+    <a class="btn btn-sm <%= kind === 'switch' ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= qs({ tipo: 'switch' }) %>"><i class="bi bi-hdd-network"></i> Switches · <%= n('switch') %></a>
+    <a class="btn btn-sm <%= kind === 'ap' ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= qs({ tipo: 'ap' }) %>"><i class="bi bi-wifi"></i> Puntos de acceso · <%= n('ap') %></a>
+    <% if (sedesUsadas.length > 1) { %>
+      <span class="vr mx-1"></span>
+      <a class="btn btn-sm <%= sede ? 'btn-outline-secondary' : 'btn-secondary' %>" href="<%= qs({ sede: '' }) %>">Todas las sedes</a>
+      <% sedesUsadas.forEach(function (s) { %><a class="btn btn-sm <%= sede === s ? 'btn-secondary' : 'btn-outline-secondary' %>" href="<%= qs({ sede: s }) %>"><%= s %></a><% }); %>
+    <% } %>
+  </div>
+  <p class="small text-muted mb-2">Ficha técnica de cada switch y punto de acceso: marca, modelo, puertos, PoE, velocidad, piso, puertos de enlace, VLAN y protocolos de gestión.
+    Son los mismos equipos de la pestaña Equipos<%= puertos ? '; los switches suman ' + puertos + ' puertos' : '' %>.</p>
+  <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2" role="search">
+    <% if (kind) { %><input type="hidden" name="tipo" value="<%= kind %>"><% } %>
+    <% if (sede) { %><input type="hidden" name="sede" value="<%= sede %>"><% } %>
+    <label class="visually-hidden" for="infra_q">Buscar</label>
+    <input type="search" class="form-control form-control-sm" id="infra_q" name="q" value="<%= q %>" placeholder="Nombre, modelo, IP, MAC, piso, VLAN…" style="max-width: 20rem">
+    <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i> Buscar</button>
+    <% if (q) { %><span class="small text-muted"><%= items.length %> resultado(s)</span> <a class="small" href="<%= qs({}) %>">Quitar búsqueda</a><% } %>
+  </form>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle small" id="infra_tabla">
+      <thead><tr><th>Tipo</th><th>Nombre</th><th>Marca</th><th>Modelo</th><th>IP</th><th>MAC</th><th class="text-end">Puertos</th><th>PoE</th><th>Velocidad</th><th>Sede</th><th>Piso</th>
+        <th>Enlace 1</th><th>Enlace 2</th><th>VLAN</th><th>Protocolos</th>
+        <th data-oculta>Área</th><th data-oculta>Ubicación</th><th data-oculta>Serie</th><th data-oculta>Notas</th><th data-oculta>Origen</th>
+        <% if (puede) { %><th data-orden="no"></th><% } %></tr></thead>
+      <tbody>
+        <% items.forEach(function (d) { %>
+          <tr>
+            <td class="text-nowrap"><i class="bi <%= KINDS[d.kind][1] %>"></i> <%= d.kind === 'ap' ? 'AP' : 'Switch' %></td>
+            <td class="fw-semibold"><%= d.name %></td>
+            <td><%= d.brand || '—' %></td>
+            <td><%= d.model || (d.brand ? '—' : d.brand_model || '—') %></td>
+            <td class="font-monospace text-nowrap"><%= d.ip || '—' %></td>
+            <td class="font-monospace text-nowrap"><%= d.mac || '—' %></td>
+            <td class="text-end"><%= d.port_count || '—' %></td>
+            <td class="text-nowrap"><% if (d.poe) { %><span class="badge text-bg-<%= d.poe === 'no' ? 'secondary' : 'success' %> fw-normal"><%= POE[d.poe] %></span><% } else { %>—<% } %></td>
+            <td class="text-nowrap"><%= d.speed ? SPEEDS[d.speed].replace(/ \(.*/, '') : '—' %></td>
+            <td><%= d.sede || '—' %></td>
+            <td><%= d.floor || '—' %></td>
+            <td><%= d.uplink1 || '—' %></td>
+            <td><%= d.uplink2 || '—' %></td>
+            <td title="<%= d.vlan_names || '' %>"><%= d.vlan_numbers || '—' %></td>
+            <td><% protos(d).forEach(function (p) { %><span class="badge text-bg-light border fw-normal me-1" title="<%= PROTOCOLS[p][3] %>"><%= PROTOCOLS[p][0].replace(' (HTTPS)', '').replace(' Telemetry', '') %></span><% }); %><%= protos(d).length ? '' : '—' %></td>
+            <td><%= d.area || '—' %></td>
+            <td><%= d.location || '—' %></td>
+            <td><%= d.serial || '—' %></td>
+            <td><%= d.notes || '—' %></td>
+            <td><%= SOURCES[d.source] || d.source %></td>
+            <% if (puede) { %><td class="text-nowrap text-end">
+              <% if (esAdmin && d.ip) { %><a class="btn btn-sm btn-outline-secondary" href="/red/herramientas?host=<%= encodeURIComponent(d.ip) %>" title="Ping y otras pruebas"><i class="bi bi-terminal"></i></a><% } %>
+              <a class="btn btn-sm btn-outline-primary" href="/red/infraestructura/<%= d.id %>" title="Editar"><i class="bi bi-pencil"></i></a>
+              <form method="post" action="/red/infraestructura/<%= d.id %>/eliminar" class="d-inline"><input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn btn-sm btn-outline-danger" title="Eliminar" data-confirma="¿Eliminar <%= d.name %> del inventario de red?"><i class="bi bi-trash"></i></button></form>
+            </td><% } %>
+          </tr>
+        <% }); %>
+        <% if (!items.length) { %><tr><td colspan="<%= puede ? 21 : 20 %>" class="text-center text-muted py-4">Sin switches ni puntos de acceso<%= kind || sede || q ? ' con ese filtro' : ' registrados' %>.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+  <details class="small mt-2">
+    <summary class="text-muted">Protocolos de gestión: qué significa cada uno</summary>
+    <div class="table-responsive mt-2"><table class="table table-sm small mb-0" data-tabla="no">
+      <thead><tr><th>Protocolo</th><th>Formato de datos</th><th>Tipo de comunicación</th><th>Ideal para…</th></tr></thead>
+      <tbody><% Object.keys(PROTOCOLS).forEach(function (p) { %><tr><td class="fw-semibold text-nowrap"><%= PROTOCOLS[p][0] %></td><td><%= PROTOCOLS[p][1] %></td><td><%= PROTOCOLS[p][2] %></td><td><%= PROTOCOLS[p][3] %></td></tr><% }); %></tbody>
+    </table></div>
+    <p class="text-muted mt-2 mb-0">Aquí se registra qué ofrece cada equipo, como referencia. La aplicación no consulta los equipos por estos protocolos.</p>
+  </details>
+</div>
+<script>
+  document.querySelectorAll('button[data-confirma]').forEach(function (b) {
+    b.addEventListener('click', function (e) { if (!window.confirm(b.getAttribute('data-confirma'))) e.preventDefault(); });
+  });
+</script>
+<%- include('../partials/foot') %>

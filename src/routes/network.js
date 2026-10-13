@@ -228,6 +228,8 @@ router.get('/equipos/:id(\\d+)', canWrite, async (req, res, next) => {
       req.flash('error', 'El equipo ya no existe.');
       return res.redirect('/red/equipos');
     }
+    // Un switch o un AP se edita en su ficha tecnica (pestaña Switches y AP).
+    if (networkService.INFRA_KINDS.includes(item.kind)) return res.redirect(`/red/infraestructura/${item.id}`);
     return res.render('network/device_form', { title: `Red — ${item.name}`, tab: 'equipos', ...(await viewBase()), ...(await lists()), item, phone: null,
       action: `/red/equipos/${item.id}` });
   } catch (err) {
@@ -253,6 +255,76 @@ router.post('/equipos/:id(\\d+)/eliminar', canWrite, verifyCsrfToken, async (req
       req.flash('success', 'Equipo eliminado del inventario de red.');
     }
     return res.redirect('/red/equipos');
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ---------------- Switches y AP: ficha tecnica (marca, modelo, puertos, PoE, enlaces, protocolos) ----------------
+const infraBase = async () => ({ tab: 'infra', ...(await viewBase()), POE: networkService.POE, SPEEDS: networkService.SPEEDS, PROTOCOLS: networkService.PROTOCOLS });
+const infraKind = (k) => (networkService.INFRA_KINDS.includes(String(k)) ? String(k) : '');
+
+router.get('/infraestructura', async (req, res, next) => {
+  try {
+    const all = await networkService.infra();
+    const kind = infraKind(req.query.tipo);
+    const sede = String(req.query.sede || '').slice(0, 100);
+    let rows = kind ? all.filter((d) => d.kind === kind) : all;
+    if (sede) rows = rows.filter((d) => (d.sede || '') === sede);
+    const f = search(req, rows, ['name', 'mac', 'ip', 'sede', 'area', 'floor', 'location', 'brand', 'model', 'brand_model', 'serial', 'notes', 'vlan_names', 'uplink1', 'uplink2']);
+    res.render('network/infra', { title: 'Red — Switches y AP', ...(await infraBase()), all, items: f.rows, q: f.q, kind, sede,
+      sedesUsadas: [...new Set(all.map((d) => d.sede).filter(Boolean))].sort() });
+  } catch (err) {
+    next(err);
+  }
+});
+router.get('/infraestructura/nuevo', canWrite, async (req, res, next) => {
+  try {
+    res.render('network/infra_form', { title: 'Red — Nuevo switch o AP', ...(await infraBase()), ...(await lists()), item: { kind: infraKind(req.query.tipo) || 'switch', vlan_ids: [] }, action: '/red/infraestructura/nuevo' });
+  } catch (err) {
+    next(err);
+  }
+});
+router.post('/infraestructura/nuevo', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const id = await networkService.saveInfra(0, req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_equipo_creado', target: req.body.name, detail: `id ${id}, ${req.body.kind} (ficha técnica)` });
+    req.flash('success', 'Equipo registrado.');
+    return res.redirect('/red/infraestructura');
+  } catch (err) {
+    return fail(req, res, err, `/red/infraestructura/nuevo?tipo=${infraKind(req.body.kind)}`, next);
+  }
+});
+router.get('/infraestructura/:id(\\d+)', canWrite, async (req, res, next) => {
+  try {
+    const item = await networkService.infraDevice(req.params.id);
+    if (!item) {
+      req.flash('error', 'El equipo ya no existe.');
+      return res.redirect('/red/infraestructura');
+    }
+    return res.render('network/infra_form', { title: `Red — ${item.name}`, ...(await infraBase()), ...(await lists()), item, action: `/red/infraestructura/${item.id}` });
+  } catch (err) {
+    return next(err);
+  }
+});
+router.post('/infraestructura/:id(\\d+)', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    await networkService.saveInfra(req.params.id, req.body, req.session.user);
+    await auditService.log(req, { user: req.session.user, action: 'red_equipo_modificado', target: req.body.name, detail: `id ${req.params.id} (ficha técnica)` });
+    req.flash('success', 'Equipo actualizado.');
+    return res.redirect('/red/infraestructura');
+  } catch (err) {
+    return fail(req, res, err, `/red/infraestructura/${req.params.id}`, next);
+  }
+});
+router.post('/infraestructura/:id(\\d+)/eliminar', canWrite, verifyCsrfToken, async (req, res, next) => {
+  try {
+    const item = await networkService.infraDevice(req.params.id);
+    if (item && await networkService.deleteDevice(item.id)) {
+      await auditService.log(req, { user: req.session.user, action: 'red_equipo_eliminado', target: item.name, detail: `${item.kind} ${item.mac || ''} ${item.ip || ''}` });
+      req.flash('success', 'Equipo eliminado del inventario de red.');
+    }
+    return res.redirect('/red/infraestructura');
   } catch (err) {
     return next(err);
   }
