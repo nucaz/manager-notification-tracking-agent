@@ -1,29 +1,37 @@
 <%- include('../partials/head', { title: title }) %>
 <%
+  // Filtros por columna activos (f_<columna>): viajan en todos los enlaces de la pantalla.
+  const filtros = local ? local.filters : {};
   function url(params) {
-    const p = new URLSearchParams(Object.assign({ tipo: tipo, q: q, por: por === 20 ? '' : String(por), orden: orden, dir: orden ? dir : '' }, params));
+    const p = new URLSearchParams(Object.assign({ tipo: tipo, q: q, por: por === 20 ? '' : String(por), orden: orden, dir: orden ? dir : '' }, filtros, params));
     Array.from(p.keys()).forEach(function (k) { if (!p.get(k)) p.delete(k); });
     return '/glpi/inventario?' + p.toString();
   }
   // En pantalla: las columnas mas utiles; el Excel lleva todas.
-  const visibles = ['name', 'state', 'type', 'manufacturer', 'model', 'os', 'os_version', 'processor', 'memory_type', 'memory', 'ip',
+  const visibles = ['name', 'state', 'type', 'manufacturer', 'model', 'os', 'os_version', 'processor', 'cpu_generation', 'memory_type', 'mem_type', 'memory', 'ip',
     'serial', 'otherserial', 'location', 'user', 'entity'];
-  const columnas = type.columns.filter(function (c) { return visibles.includes(c.key); });
+  const todas = local ? local.columns : type.columns;
+  const columnas = todas.filter(function (c) { return visibles.includes(c.key); });
+  const nFiltros = Object.keys(filtros).length;
+  const opciones = function (key) { return JSON.stringify((local && local.options[key]) || []); };
 %>
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h2 class="mb-0">Inventario GLPI</h2>
-  <% if (!connectionError) { %>
-    <a href="/glpi/inventario/exportar.xlsx?<%= url({ page: '', por: '' }).split('?')[1] %>" class="btn btn-outline-success">
-      <i class="bi bi-file-earmark-excel"></i> Exportar <%= type.label.toLowerCase() %> a Excel
-    </a>
-  <% } %>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/glpi/inventario/tablero" class="btn btn-outline-primary"><i class="bi bi-bar-chart"></i> Tablero y estadísticas</a>
+    <% if (!connectionError) { %>
+      <a href="/glpi/inventario/exportar.xlsx?<%= url({ page: '', por: '' }).split('?')[1] %>" class="btn btn-outline-success">
+        <i class="bi bi-file-earmark-excel"></i> Exportar <%= type.label.toLowerCase() %> a Excel
+      </a>
+    <% } %>
+  </div>
 </div>
 
 <ul class="nav nav-tabs mb-3">
   <% Object.keys(tipos).forEach(function(k) { %>
     <li class="nav-item">
-      <a class="nav-link <%= k === tipo ? 'active' : '' %>" href="<%= url({ tipo: k, page: '', orden: '', dir: '' }) %>"><i class="bi <%= tipos[k].icon %>"></i> <%= tipos[k].label %></a>
+      <a class="nav-link <%= k === tipo ? 'active' : '' %>" href="/glpi/inventario?tipo=<%= k %>"><i class="bi <%= tipos[k].icon %>"></i> <%= tipos[k].label %></a>
     </li>
   <% }); %>
 </ul>
@@ -37,8 +45,9 @@
   <form class="row g-2 mb-3" method="get">
     <input type="hidden" name="tipo" value="<%= tipo %>">
     <% if (orden) { %><input type="hidden" name="orden" value="<%= orden %>"><input type="hidden" name="dir" value="<%= dir %>"><% } %>
+    <% Object.keys(filtros).forEach(function (k) { %><input type="hidden" name="<%= k %>" value="<%= filtros[k] %>"><% }); %>
     <div class="col-12 col-md-5">
-      <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar <%= type.label.toLowerCase() %> por nombre, serie o N.º de inventario..." aria-label="Buscar">
+      <input type="text" name="q" value="<%= q %>" class="form-control" placeholder="Buscar <%= type.label.toLowerCase() %> por nombre, serie, N.º de inventario, usuario o IP..." aria-label="Buscar">
     </div>
     <div class="col-auto">
       <button class="btn btn-outline-secondary" type="submit">Buscar</button>
@@ -61,15 +70,20 @@
       <div class="small mt-1"><%= extras.help %> El resto del inventario no se ve afectado.</div>
     </div>
   <% } %>
+  <% if (local) { (local.warnings || []).forEach(function (w) { %><div class="alert alert-warning py-2 small"><%= w %></div><% }); } %>
 
   <div class="card p-3">
-    <p class="text-muted small mb-2"><%= type.label %> en GLPI<%= q ? ' que coinciden con "' + q + '"' : '' %>: <strong><%= total %></strong></p>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2 small">
+      <span class="text-muted"><%= type.label %><%= q ? ' que coinciden con "' + q + '"' : '' %><%= nFiltros ? ' con ' + nFiltros + ' filtro(s) de columna' : '' %>: <span id="inv_total"><strong><%= total %></strong></span></span>
+      <% if (nFiltros) { %><a href="<%= url(Object.assign(Object.fromEntries(Object.keys(filtros).map(function (k) { return [k, '']; })), { page: '' })) %>" id="inv_quitar_filtros"><i class="bi bi-funnel"></i> Quitar filtros de columna</a><% } %>
+      <span class="ms-auto text-muted" id="inv_origen"><% if (local) { %>Copia de GLPI del <%= local.syncedAt %> · se renueva cada 30 minutos · use <i class="bi bi-funnel"></i> en cada columna para filtrar<% } else { %>Consulta en vivo a GLPI (los filtros por columna aparecen cuando hay copia local)<% } %></span>
+    </div>
     <div class="table-responsive">
-      <table class="table table-hover table-sm align-middle mb-0 <%= columnas.length > 10 ? 'small' : '' %>" data-tabla="servidor" data-param-pagina="page">
+      <table class="table table-hover table-sm align-middle mb-0 <%= columnas.length > 10 ? 'small' : '' %>" data-tabla="servidor" data-param-pagina="page" id="inv_tabla">
         <thead>
           <tr>
-            <% columnas.forEach(function(c) { %><th class="text-nowrap" data-orden="<%= c.key %>"><%= c.label %></th><% }); %>
-            <th></th>
+            <% columnas.forEach(function(c) { %><th class="text-nowrap" data-orden="<%= c.key %>"<% if (local) { %><% if (c.filter === 'lista') { %> data-filtro="f_<%= c.key %>" data-opciones="<%= opciones(c.key) %>"<% } else { %> data-filtro-texto="f_<%= c.key %>"<% } %><% } %>><%= c.label %></th><% }); %>
+            <th data-orden="no"></th>
           </tr>
         </thead>
         <tbody>
@@ -84,7 +98,7 @@
             </tr>
           <% }); %>
           <% if (items.length === 0) { %>
-            <tr><td colspan="<%= columnas.length + 1 %>" class="text-center text-muted py-4">No se encontraron <%= type.label.toLowerCase() %>.</td></tr>
+            <tr><td colspan="<%= columnas.length + 1 %>" class="text-center text-muted py-4">No se encontraron <%= type.label.toLowerCase() %><%= nFiltros || q ? ' con esos filtros' : '' %>.</td></tr>
           <% } %>
         </tbody>
       </table>

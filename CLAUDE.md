@@ -164,6 +164,14 @@ READMEs.
   **Reportes**: todo reporte de `reportService.REPORTS` declara su `module` y solo se ofrece (y se descarga) a
   quien tiene acceso a ese módulo; un reporte nuevo sin `module` no se ofrece a nadie. Una descarga pedida sin
   acceso nunca cae a otro reporte. Prueba: `tests/permisos_usuario.e2e.js`.
+- **Inventario GLPI: tablero y filtros por columna** (`glpiStatsService.js`): con copia local (`glpi_assets`), la
+  lista sale de ahí con filtros por columna (`f_<columna>`; casillas para pocos valores, «contiene» para el
+  resto; un valor con coma viaja con `;`, ver `keyOf`) y columnas derivadas; sin copia, se consulta GLPI en vivo
+  como antes. Deriva del texto de GLPI: familia, generación o serie, modelo, año aproximado, antigüedad y si el
+  procesador está en la lista de Windows 11 (`cpuInfo`), tipo/formato/velocidad de memoria (`memInfo`), marca
+  normalizada y sede. El tablero (`/glpi/inventario/tablero`) es el mismo motor de widgets de celulares:
+  `dashboardService.BOARDS` separa los tableros y cada widget pertenece al tablero de su conjunto de datos.
+  Prueba: `tests/glpi_tablero.e2e.js`.
 - **Red > Switches y AP** (`networkService.saveInfra`, `netMonitorService.js`, job `syncNetMonitor.js`): ficha
   técnica de switches y puntos de acceso en `network_device_specs` (1:1 con `network_devices`; son las **mismas
   filas** de la pestaña Equipos, y editar un switch o AP desde Equipos redirige a su ficha).

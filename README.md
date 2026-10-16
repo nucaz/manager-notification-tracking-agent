@@ -679,6 +679,18 @@ para completarlos.
   hacia el servidor saldrá inactivo aunque funcione, salvo que lo vea un controlador Omada
   conectado; para esos, elija «No monitorear».
 
+**Inventario GLPI: tablero y filtros por columna.** La lista del inventario se arma
+desde la copia local de GLPI (se renueva cada 30 minutos), así que abre rápido y cada
+columna tiene su filtro, como en los demás módulos: casillas con la cantidad de equipos
+de cada valor, o «contiene» para nombre, serie, usuario o IP. Las computadoras suman dos
+columnas calculadas, *Generación del procesador* y *Tipo de memoria (DDR)*, y el Excel
+lleva lo filtrado. El botón *Tablero y estadísticas* abre indicadores (procesadores no
+compatibles con Windows 11, de 10 años o más, memoria DDR3) y widgets por generación,
+familia y antigüedad del procesador, marca, tipo y cantidad de memoria, sistema operativo
+y sede; cada persona puede armar los suyos (agrupar por un campo y filtrar por otro) y
+cada cifra abre la lista de equipos que hay detrás. La compatibilidad con Windows 11 solo
+revisa el procesador, y el año del procesador es el aproximado de su serie.
+
 **Red > Omada (controladores TP-Link).** La pestaña *Omada* muestra lo que
 conocen los controladores Omada: *Resumen* (clientes conectados, equipos en línea y
 caídos, velocidad de bajada y subida, gráfico de consumo de 6 horas a 30 días, clientes

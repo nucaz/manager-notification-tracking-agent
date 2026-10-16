@@ -2,7 +2,7 @@
 
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
   <div>
-    <div class="small text-muted"><a href="/celulares/tablero">Tablero</a> › <%= d.config.title %></div>
+    <div class="small text-muted"><a href="<%= locals.boardBase || '/celulares/tablero' %>">Tablero</a> › <%= d.config.title %></div>
     <h2 class="mb-1" id="detalle_titulo"><%= d.label %></h2>
     <p class="text-muted mb-0">
       <%= d.groupLabel %><%= d.label === 'Todos' ? ': todos los grupos' : d.label === 'Otros' ? ': los grupos que no entran en el widget' : '' %>
@@ -12,7 +12,7 @@
   </div>
   <div class="d-flex gap-2">
     <a href="<%= excelUrl %>" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
-    <a href="/celulares/tablero" class="btn btn-outline-secondary">Volver al tablero</a>
+    <a href="<%= locals.boardBase || '/celulares/tablero' %>" class="btn btn-outline-secondary">Volver al tablero</a>
   </div>
 </div>
 

@@ -4,8 +4,10 @@
   const fmt = function(r, v) { return r.money ? soles(v) : Number(v).toLocaleString('es-PE'); };
   const COLORS = ['#2d5be3', '#18a058', '#f0a020', '#d03050', '#7a5af5', '#0ea5b7', '#a3a3a3', '#e66a2c', '#4c6ef5', '#94a3b8', '#16a34a', '#be185d'];
   const d = decisions;
+  const boardBase = locals.boardBase || '/celulares/tablero';
 %>
 
+<% if (d) { %>
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
     <h2 class="mb-1">Tablero de celulares y chips</h2>
@@ -45,6 +47,31 @@
   </div></div>
 </div>
 
+<% } else { %>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h2 class="mb-1"><%= boardTitle %></h2>
+    <p class="text-muted mb-0"><%= boardIntro %></p>
+  </div>
+  <div class="d-flex gap-2">
+    <% (locals.boardLinks || []).forEach(function(l) { %><a href="<%= l[0] %>" class="btn btn-outline-secondary"><%= l[1] %></a><% }); %>
+    <a href="#nuevo_widget" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nuevo widget</a>
+  </div>
+</div>
+<% (locals.boardWarnings || []).forEach(function(w) { %><div class="alert alert-warning py-2 small"><%= w %></div><% }); %>
+<% if (kpis) { %>
+<div class="row g-3 mb-3" id="tablero_indicadores">
+  <% kpis.forEach(function(k) { %>
+    <div class="col-sm-6 col-xl-3"><div class="card stat-card p-3 h-100">
+      <div class="text-muted small"><%= k.label %></div>
+      <div class="stat-number <%= k.tone ? 'text-' + k.tone : '' %>"><% if (k.href) { %><a class="link-dark text-decoration-none" href="<%= k.href %>" title="Ver cuáles son"><%= k.value %></a><% } else { %><%= k.value %><% } %></div>
+      <div class="small text-muted"><%= k.note %></div>
+    </div></div>
+  <% }); %>
+</div>
+<% } %>
+<% } %>
+
 <% const widget = function(w) { %>
   <div class="col-md-6 col-xl-4">
     <div class="card p-3 h-100 widget" data-widget="<%= w.preset ? 'predefinido' : w.id %>">
@@ -53,7 +80,7 @@
         <% if (!w.preset) { %>
           <span class="badge bg-light text-dark border"><%= w.shared ? 'Compartido' : 'Solo yo' %></span>
           <% if (w.mine || (w.shared && ['superadmin', 'admin'].includes(currentUser.role))) { %>
-          <form method="post" action="/celulares/tablero/widgets/<%= w.id %>/quitar" onsubmit="return confirm('¿Quitar este widget del tablero?');">
+          <form method="post" action="<%= boardBase %>/widgets/<%= w.id %>/quitar" onsubmit="return confirm('¿Quitar este widget del tablero?');">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button class="btn btn-sm btn-link text-danger p-0" type="submit" title="Quitar widget"><i class="bi bi-x-lg"></i></button>
           </form>
@@ -116,11 +143,11 @@
 
 <div class="card p-3" id="nuevo_widget">
   <h5>Nuevo widget</h5>
-  <form method="post" action="/celulares/tablero/widgets" class="row g-2 align-items-end" id="form_widget">
+  <form method="post" action="<%= boardBase %>/widgets" class="row g-2 align-items-end" id="form_widget">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
     <div class="col-md-4">
       <label class="form-label small mb-1" for="w_titulo">Título</label>
-      <input type="text" class="form-control" id="w_titulo" name="title" maxlength="80" placeholder="Ej. Equipos A76 por sede">
+      <input type="text" class="form-control" id="w_titulo" name="title" maxlength="80" placeholder="<%= locals.boardPlaceholder || 'Ej. Equipos A76 por sede' %>">
     </div>
     <div class="col-md-2">
       <label class="form-label small mb-1" for="w_datos">Datos</label>
@@ -163,8 +190,10 @@
       <button class="btn btn-primary w-100" type="submit">Agregar al tablero</button>
     </div>
   </form>
+  <% if (locals.boardExamples) { %><p class="small text-muted mt-2 mb-0"><%- boardExamples %></p><% } else { %>
   <p class="small text-muted mt-2 mb-0">Ejemplos: <em>Celulares · Agrupar por sede · filtro Marca y modelo = ZTE A76</em> (cuántos A76 hay en cada sede);
     <em>Celulares · Fin de las cuotas · filtro Sede = SURCO</em> (qué renovar primero); <em>Chips · Persona · Costo mensual</em> (quién concentra más gasto).</p>
+  <% } %>
 </div>
 
 <script>

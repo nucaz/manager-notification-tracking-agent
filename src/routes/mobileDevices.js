@@ -719,7 +719,7 @@ router.post('/importar', canWrite, importUploader.single('file'), verifyCsrfToke
 router.get('/tablero', async (req, res, next) => {
   try {
     const board = await dashboardService.board(req.session.user);
-    res.render('mobileDevices/board', { title: 'Tablero de celulares y chips', ...board, datasets: dashboardService.DATASETS, charts: dashboardService.CHARTS,
+    res.render('mobileDevices/board', { title: 'Tablero de celulares y chips', ...board, charts: dashboardService.CHARTS,
       detailUrl: dashboardService.detailUrl });
   } catch (err) {
     next(err);

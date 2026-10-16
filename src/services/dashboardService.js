@@ -1,7 +1,9 @@
-// Tablero de celulares y chips: indicadores para decidir (comprar, dar de
-// baja, subir o bajar el stock, renovar el contrato) y widgets: los
-// predefinidos y los que arma cada usuario (agrupar por un campo, medir
-// cantidad o monto, filtrar, barras / dona / tabla).
+// Tableros con widgets: los predefinidos y los que arma cada usuario
+// (agrupar por un campo, medir cantidad o monto, filtrar, barras / dona /
+// tabla). Hay dos tableros (BOARDS): el de celulares y chips, con
+// indicadores para decidir (comprar, dar de baja, stock, renovar), y el del
+// inventario GLPI (procesador, generacion, memoria, marcas...). Cada widget
+// pertenece al tablero de su conjunto de datos.
 //
 // Un widget es solo una configuracion validada contra este catalogo
 // (conjunto de datos, campo, medida, filtro): nunca SQL. Se calcula sobre
@@ -10,6 +12,7 @@ const pool = require('../db/pool');
 const statsService = require('./deviceStatsService');
 const usageService = require('./chipUsageService');
 const labels = require('../config/mobileLabels');
+const glpiStats = require('./glpiStatsService');
 
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const text = (v, empty) => (v === null || v === undefined || String(v).trim() === '' ? empty : String(v));
@@ -30,6 +33,7 @@ function tramoCuotas(rest) {
 
 const DATASETS = {
   celulares: {
+    board: 'celulares',
     label: 'Celulares',
     fields: {
       marca: 'Marca', modelo: 'Marca y modelo', estado: 'Estado', sede: 'Sede', area: 'Área', operadora: 'Operadora',
@@ -59,6 +63,7 @@ const DATASETS = {
     },
   },
   chips: {
+    board: 'celulares',
     label: 'Chips (líneas)',
     fields: {
       uso: 'Uso real', donde: 'Dónde está', operadora: 'Operadora', sede: 'Sede', area: 'Área', persona: 'Persona',
@@ -83,6 +88,46 @@ const DATASETS = {
   },
 };
 
+// --- Inventario GLPI (copia local; ver glpiStatsService) ---
+const glpiHref = (tipo, id) => `/glpi/inventario/${tipo === 'computadoras' ? '' : `${tipo}/`}${id}`;
+const COMMON_GLPI_FIELDS = { marca: 'Marca', modelo: 'Marca y modelo', tipo: 'Tipo', sede: 'Sede (entidad)', estado: 'Estado', usuario: 'Usuario' };
+const glpiCommon = (tipo, r) => ({
+  marca: r.brand, modelo: `${r.brand} ${r.model || 'sin modelo'}`, tipo: r.type || 'Sin tipo', sede: r.sede, estado: r.state || 'Sin estado', usuario: r.user || 'Sin usuario',
+  nombre: r.name || `#${r.id}`, serie: r.serial || '—', _href: glpiHref(tipo, r.id), _key: r.name || String(r.id),
+});
+function glpiDataset(tipo, label, extra) {
+  return {
+    board: 'glpi',
+    label,
+    fields: { ...COMMON_GLPI_FIELDS, ...(extra ? extra.fields : {}) },
+    metrics: { cantidad: `Cantidad de ${label.toLowerCase()}` },
+    columns: extra ? extra.columns : [['nombre', 'Nombre'], ['marca', 'Marca'], ['modelo', 'Modelo'], ['tipo', 'Tipo'], ['sede', 'Sede'], ['usuario', 'Usuario'], ['serie', 'N.º de serie']],
+    async rows() {
+      // Sin copia local y sin GLPI que responda: ese tipo queda vacio (el tablero lo avisa), sin tumbar el resto.
+      let list = [];
+      try { ({ rows: list } = await glpiStats.rows(tipo)); } catch (e) { list = []; }
+      return list.map((r) => ({ ...glpiCommon(tipo, r), ...(extra ? extra.map(r) : {}) }));
+    },
+  };
+}
+DATASETS.glpi_computadoras = glpiDataset('computadoras', 'Computadoras', {
+  fields: {
+    cpu_marca: 'Procesador: fabricante', cpu_familia: 'Procesador: familia (Core i5, Ryzen 5…)', cpu_generacion: 'Procesador: generación o serie',
+    cpu_modelo: 'Procesador: modelo', cpu_antiguedad: 'Antigüedad del procesador', cpu_anio: 'Año aprox. del procesador', win11: 'Procesador compatible con Windows 11',
+    mem_tipo: 'Memoria: tipo (DDR)', mem_formato: 'Memoria: formato', mem_velocidad: 'Memoria: velocidad', mem_mixta: 'Memoria: módulos de distinta velocidad',
+    mem_total: 'Memoria total', so: 'Sistema operativo',
+  },
+  columns: [['nombre', 'Nombre'], ['marca', 'Marca'], ['modelo', 'Modelo'], ['cpu_modelo', 'Procesador'], ['cpu_generacion', 'Generación'], ['cpu_anio', 'Año aprox.'],
+    ['win11', 'Windows 11'], ['mem_total', 'Memoria'], ['mem_velocidad', 'Tipo y velocidad'], ['so', 'Sistema operativo'], ['sede', 'Sede'], ['usuario', 'Usuario'], ['serie', 'N.º de serie']],
+  map: (r) => ({
+    cpu_marca: r.cpu.vendor, cpu_familia: r.cpu.family, cpu_generacion: r.cpu.generation, cpu_modelo: r.cpu.model, cpu_antiguedad: r.cpu_age,
+    cpu_anio: r.cpu.year ? String(r.cpu.year) : 'Sin dato', win11: r.cpu.win11, mem_tipo: r.mem.type, mem_formato: r.mem.form, mem_velocidad: r.mem.speed, mem_mixta: r.mem.mixed,
+    mem_total: r.memory || 'Sin dato', so: r.os || 'Sin dato', _cpuYear: r.cpu.year, _memGb: r.mem_gb,
+  }),
+});
+DATASETS.glpi_monitores = glpiDataset('monitores', 'Monitores');
+DATASETS.glpi_impresoras = glpiDataset('impresoras', 'Impresoras');
+
 const CHARTS = { barras: 'Barras', dona: 'Dona', tabla: 'Tabla' };
 
 // Widgets que trae el tablero (no se pueden borrar; los propios si).
@@ -98,10 +143,35 @@ const PRESETS = [
   { title: 'Equipos en stock por modelo (disponibles)', dataset: 'celulares', groupBy: 'modelo', metric: 'cantidad', chart: 'tabla', top: 15, filter: { field: 'estado', value: 'En stock' } },
 ];
 
-function validate(raw) {
+// Widgets que trae el tablero del inventario GLPI.
+const GLPI_PRESETS = [
+  { title: 'Computadoras por generación del procesador', dataset: 'glpi_computadoras', groupBy: 'cpu_generacion', metric: 'cantidad', chart: 'barras', top: 15 },
+  { title: 'Computadoras por familia de procesador', dataset: 'glpi_computadoras', groupBy: 'cpu_familia', metric: 'cantidad', chart: 'dona', top: 10 },
+  { title: 'Antigüedad del procesador (para renovar)', dataset: 'glpi_computadoras', groupBy: 'cpu_antiguedad', metric: 'cantidad', chart: 'barras', top: 6 },
+  { title: 'Procesador compatible con Windows 11', dataset: 'glpi_computadoras', groupBy: 'win11', metric: 'cantidad', chart: 'dona', top: 4 },
+  { title: 'Computadoras por marca', dataset: 'glpi_computadoras', groupBy: 'marca', metric: 'cantidad', chart: 'dona', top: 10 },
+  { title: 'Tipo de memoria (DDR)', dataset: 'glpi_computadoras', groupBy: 'mem_tipo', metric: 'cantidad', chart: 'dona', top: 6 },
+  { title: 'Memoria total por equipo', dataset: 'glpi_computadoras', groupBy: 'mem_total', metric: 'cantidad', chart: 'barras', top: 10 },
+  { title: 'Memoria: tipo y velocidad', dataset: 'glpi_computadoras', groupBy: 'mem_velocidad', metric: 'cantidad', chart: 'tabla', top: 15 },
+  { title: 'Sistema operativo', dataset: 'glpi_computadoras', groupBy: 'so', metric: 'cantidad', chart: 'barras', top: 8 },
+  { title: 'Computadoras por sede', dataset: 'glpi_computadoras', groupBy: 'sede', metric: 'cantidad', chart: 'barras', top: 12 },
+  { title: 'Modelos de procesador más usados', dataset: 'glpi_computadoras', groupBy: 'cpu_modelo', metric: 'cantidad', chart: 'tabla', top: 15 },
+  { title: 'Monitores por marca', dataset: 'glpi_monitores', groupBy: 'marca', metric: 'cantidad', chart: 'dona', top: 10 },
+];
+
+// Cada tablero: sus conjuntos de datos, donde vive y sus widgets predefinidos.
+const BOARDS = {
+  celulares: { base: '/celulares/tablero', presets: PRESETS },
+  glpi: { base: '/glpi/inventario/tablero', presets: GLPI_PRESETS },
+};
+const boardOf = (dataset) => (DATASETS[dataset] ? DATASETS[dataset].board : null);
+const datasetsOf = (board) => Object.fromEntries(Object.entries(DATASETS).filter(([, d]) => d.board === board));
+
+// board: si se indica, el conjunto de datos debe ser de ese tablero.
+function validate(raw, board) {
   const c = raw && typeof raw === 'object' ? raw : {};
   const ds = DATASETS[c.dataset];
-  if (!ds) throw new Error('Elija los datos del widget (celulares o chips).');
+  if (!ds || (board && ds.board !== board)) throw new Error('Elija los datos del widget.');
   if (!ds.fields[c.groupBy]) throw new Error('Elija por qué campo agrupar.');
   if (!ds.metrics[c.metric]) throw new Error('Elija qué medir.');
   const chart = CHARTS[c.chart] ? c.chart : 'barras';
@@ -152,16 +222,16 @@ function detailUrl(config, { value, otros } = {}) {
   if (config.hideEmpty) p.set('hide', config.hideEmpty);
   if (otros) p.set('otros', '1');
   else if (value !== undefined && value !== null) p.set('value', String(value));
-  return `/celulares/tablero/detalle?${p.toString()}`;
+  return `${BOARDS[boardOf(config.dataset)].base}/detalle?${p.toString()}`;
 }
 
 // La lista detras de una cifra. Vuelve a calcular el widget (para saber
 // que grupos quedan en "Otros") y devuelve las filas, ordenadas.
-async function detail(query) {
+async function detail(query, board = 'celulares') {
   const config = validate({
     title: query.title, dataset: query.dataset, groupBy: query.groupBy, metric: query.metric, top: query.top,
     filter: query.filter_field ? { field: query.filter_field, value: query.filter_value } : null, hideEmpty: query.hide || null,
-  });
+  }, board);
   const ds = DATASETS[config.dataset];
   const rows = await ds.rows();
   const base = widgetRows(config, rows);
@@ -201,7 +271,25 @@ function decisions(cel, chips) {
   };
 }
 
-async function listWidgets(user) {
+// Indicadores del inventario GLPI (cada uno enlaza a la lista que hay detras).
+function glpiKpis(rowsByDataset) {
+  const pcs = rowsByDataset.glpi_computadoras || [];
+  const total = pcs.length;
+  const pct = (n) => (total ? Math.round((n * 1000) / total) / 10 : 0);
+  const link = (title, groupBy, value) => detailUrl({ title, dataset: 'glpi_computadoras', groupBy, metric: 'cantidad', top: 50, filter: null, hideEmpty: null }, { value });
+  const noW11 = pcs.filter((r) => r.win11 === 'No').length;
+  const old = pcs.filter((r) => r.cpu_antiguedad === '10 años o más').length;
+  const ddr3 = pcs.filter((r) => r.mem_tipo === 'DDR3').length;
+  const low = pcs.filter((r) => r._memGb !== null && r._memGb !== undefined && r._memGb <= 8).length;
+  return [
+    { label: 'Computadoras en GLPI', value: total, note: `${(rowsByDataset.glpi_monitores || []).length} monitores · ${(rowsByDataset.glpi_impresoras || []).length} impresoras`, href: null },
+    { label: 'Procesador no compatible con Windows 11', value: noW11, note: `${pct(noW11)} % de las computadoras (solo se revisa el procesador)`, href: link('Procesador compatible con Windows 11', 'win11', 'No'), tone: noW11 ? 'danger' : '' },
+    { label: 'Procesador de 10 años o más', value: old, note: `${pct(old)} %: candidatas a renovación`, href: link('Antigüedad del procesador', 'cpu_antiguedad', '10 años o más'), tone: old ? 'warning' : '' },
+    { label: 'Memoria DDR3', value: ddr3, note: `${pct(ddr3)} % · ${low} con 8 GB o menos`, href: link('Tipo de memoria (DDR)', 'mem_tipo', 'DDR3'), tone: ddr3 ? 'warning' : '' },
+  ];
+}
+
+async function listWidgets(user, board = 'celulares') {
   const [rows] = await pool.query(
     'SELECT * FROM dashboard_widgets WHERE user_id = ? OR shared = 1 ORDER BY position, id',
     [user.id]
@@ -210,11 +298,11 @@ async function listWidgets(user) {
     let config = null;
     try { config = validate(JSON.parse(w.config)); } catch (_) { config = null; }
     return { id: w.id, mine: w.user_id === user.id, shared: !!w.shared, config };
-  }).filter((w) => w.config);
+  }).filter((w) => w.config && boardOf(w.config.dataset) === board);
 }
 
-async function addWidget(user, raw, shared) {
-  const config = validate(raw);
+async function addWidget(user, raw, shared, board = 'celulares') {
+  const config = validate(raw, board);
   const [[pos]] = await pool.query('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM dashboard_widgets');
   await pool.query('INSERT INTO dashboard_widgets (user_id, title, config, shared, position) VALUES (?, ?, ?, ?, ?)',
     [user.id, config.title, JSON.stringify(config), shared ? 1 : 0, pos.p]);
@@ -230,23 +318,26 @@ async function removeWidget(user, id) {
   return res.affectedRows > 0;
 }
 
-async function board(user) {
+async function board(user, boardKey = 'celulares') {
   const rowsByDataset = {};
-  for (const [k, ds] of Object.entries(DATASETS)) rowsByDataset[k] = await ds.rows();
-  const widgets = await listWidgets(user);
+  const sets = datasetsOf(boardKey);
+  for (const [k, ds] of Object.entries(sets)) rowsByDataset[k] = await ds.rows();
+  const widgets = await listWidgets(user, boardKey);
   const build = (config, extra) => ({ ...extra, config, result: compute(config, rowsByDataset[config.dataset]) });
   // Valores posibles de cada campo, para el formulario de "nuevo widget" (filtro).
   const values = {};
-  for (const [k, ds] of Object.entries(DATASETS)) {
+  for (const [k, ds] of Object.entries(sets)) {
     values[k] = {};
     Object.keys(ds.fields).forEach((f) => { values[k][f] = [...new Set(rowsByDataset[k].map((r) => r[f]))].sort((a, b) => String(a).localeCompare(String(b), 'es')).slice(0, 200); });
   }
   return {
-    decisions: decisions(rowsByDataset.celulares, rowsByDataset.chips),
-    presets: PRESETS.map((p) => build(validate(p), { preset: true })),
+    datasets: sets,
+    decisions: boardKey === 'celulares' ? decisions(rowsByDataset.celulares, rowsByDataset.chips) : null,
+    kpis: boardKey === 'glpi' ? glpiKpis(rowsByDataset) : null,
+    presets: BOARDS[boardKey].presets.map((p) => build(validate(p, boardKey), { preset: true })),
     custom: widgets.map((w) => build(w.config, { id: w.id, mine: w.mine, shared: w.shared })),
     values,
   };
 }
 
-module.exports = { DATASETS, CHARTS, PRESETS, validate, compute, decisions, board, addWidget, removeWidget, listWidgets, cuotasRestantes, tramoCuotas, detailUrl, detail };
+module.exports = { DATASETS, CHARTS, PRESETS, GLPI_PRESETS, BOARDS, datasetsOf, glpiKpis, validate, compute, decisions, board, addWidget, removeWidget, listWidgets, cuotasRestantes, tramoCuotas, detailUrl, detail };
