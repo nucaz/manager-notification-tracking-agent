@@ -49,6 +49,7 @@
                 <span class="{{ 'text-danger' if r.last_sync_status and 'ERROR' in r.last_sync_status else 'text-muted' }}">{{ r.last_sync_status or 'sin sincronizar aún' }}</span>
               </td>
               <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-outline-primary btn-edit" data-id="{{ r.id }}" data-name="{{ r.name }}" data-url="{{ r.github_url }}" data-interval="{{ r.sync_interval_minutes }}">Editar</button>
                 <button class="btn btn-sm btn-outline-secondary btn-sync" data-id="{{ r.id }}">Sincronizar</button>
                 <button class="btn btn-sm btn-outline-danger btn-delete" data-id="{{ r.id }}">Eliminar</button>
               </td>
@@ -58,6 +59,28 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+    <div class="card p-3 mt-3 d-none" id="editCard">
+      <h5 class="mb-1">Editar <span id="editName"></span></h5>
+      <p class="small text-muted mb-2">El nombre no cambia: es la carpeta del clon y la de sus respaldos. Al guardar se comprueba que la nueva URL se pueda leer con el token,
+        el clon se re-apunta (no se vuelve a descargar) y se sincroniza.</p>
+      <div id="editError" class="alert alert-danger d-none"></div>
+      <div id="editOk" class="alert alert-success d-none"></div>
+      <form id="editForm" autocomplete="off">
+        <input type="hidden" name="id" id="edit_id">
+        <div class="mb-2"><label class="form-label" for="edit_url">URL del repositorio</label>
+          <input type="text" class="form-control" id="edit_url" name="github_url" required></div>
+        <div class="mb-2"><label class="form-label" for="edit_token">Token de acceso</label>
+          <input type="password" class="form-control" id="edit_token" name="github_token" placeholder="Vacío = conservar el guardado" autocomplete="new-password">
+          <div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="edit_clear" name="clear_token">
+            <label class="form-check-label small" for="edit_clear">Quitar el token guardado (repositorio público)</label></div></div>
+        <div class="mb-2"><label class="form-label" for="edit_interval">Sincronizar cada (minutos)</label>
+          <input type="number" class="form-control" id="edit_interval" name="sync_interval_minutes" min="5" max="10080" required></div>
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary" id="editSubmit">Comprobar y guardar</button>
+          <button type="button" class="btn btn-outline-secondary" id="editCancel">Cancelar</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -126,10 +149,50 @@ function detalleDe(data, status) {
   });
 })();
 
+// Editar URL, token o intervalo (el nombre no se cambia).
+const editCard = document.getElementById('editCard');
+const editForm = document.getElementById('editForm');
+const editBox = (id, msg) => { const el = document.getElementById(id); el.textContent = msg || ''; el.classList.toggle('d-none', !msg); };
+document.getElementById('editCancel').addEventListener('click', () => editCard.classList.add('d-none'));
+editForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  editBox('editError', ''); editBox('editOk', '');
+  const boton = document.getElementById('editSubmit');
+  boton.disabled = true; boton.textContent = 'Comprobando...';
+  const payload = {
+    github_url: document.getElementById('edit_url').value.trim(),
+    github_token: document.getElementById('edit_token').value.trim() || null,
+    clear_token: document.getElementById('edit_clear').checked,
+    sync_interval_minutes: parseInt(document.getElementById('edit_interval').value, 10) || 60,
+  };
+  try {
+    const res = await fetch(`/api/repos/${document.getElementById('edit_id').value}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(payload) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { editBox('editError', detalleDe(data, res.status)); }
+    else { editBox('editOk', 'Guardado. ' + data.message + ' Se está sincronizando; la tabla se actualiza en unos segundos.'); setTimeout(() => window.location.reload(), 4000); }
+  } catch (err) {
+    editBox('editError', 'No se pudo enviar al servidor. Recargue la página e intente de nuevo.');
+  }
+  boton.disabled = false; boton.textContent = 'Comprobar y guardar';
+});
+
 document.getElementById('reposTable').addEventListener('click', async (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
   const id = btn.dataset.id;
+  if (btn.classList.contains('btn-edit')) {
+    document.getElementById('edit_id').value = id;
+    document.getElementById('editName').textContent = btn.dataset.name;
+    document.getElementById('edit_url').value = btn.dataset.url;
+    document.getElementById('edit_interval').value = btn.dataset.interval;
+    document.getElementById('edit_token').value = '';
+    document.getElementById('edit_clear').checked = false;
+    editBox('editError', ''); editBox('editOk', '');
+    editCard.classList.remove('d-none');
+    editCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('edit_url').focus();
+    return;
+  }
   if (btn.classList.contains('btn-sync')) {
     btn.disabled = true;
     btn.textContent = 'Sincronizando...';

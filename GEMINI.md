@@ -171,6 +171,11 @@ READMEs.
   normalizada y sede. El tablero (`/glpi/inventario/tablero`) es el mismo motor de widgets de celulares:
   `dashboardService.BOARDS` separa los tableros y cada widget pertenece al tablero de su conjunto de datos.
   Prueba: `tests/glpi_tablero.e2e.js`.
+- **DevOps Sidecar: editar un repositorio** (`PATCH /api/repos/{id}`): URL, token e intervalo; el **nombre no se
+  edita** (es la carpeta del clon y la clave `slug(name)` de sus respaldos). Comprueba la URL con `git ls-remote`
+  antes de guardar; si cambia, `git_service.repoint_clone` re-apunta y descarga: mismo historial = sigue la cadena;
+  otro = aparta el clon (`.anterior-<fecha>`) para que se clone de cero y el próximo respaldo salga completo. Si
+  la descarga falla, vuelve a la URL anterior y no guarda. Prueba: `devops-sidecar/tests/test_editar_repos.py`.
 - **Red > Switches y AP** (`networkService.saveInfra`, `netMonitorService.js`, job `syncNetMonitor.js`): ficha
   técnica de switches y puntos de acceso en `network_device_specs` (1:1 con `network_devices`; son las **mismas
   filas** de la pestaña Equipos, y editar un switch o AP desde Equipos redirige a su ficha).

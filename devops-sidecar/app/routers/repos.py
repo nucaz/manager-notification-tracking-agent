@@ -105,6 +105,50 @@ def create_repo(payload: schemas.RepoCreate, background_tasks: BackgroundTasks, 
     return repo
 
 
+@router.patch("/{repo_id}")
+def update_repo(repo_id: int, payload: schemas.RepoUpdate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Cambia la URL, el token o el intervalo de un repositorio.
+
+    - Antes de guardar comprueba que la nueva URL se puede leer con el token.
+    - El nombre no cambia: es la carpeta del clon y la de sus respaldos, que
+      quedan donde estaban.
+    - Si cambia la URL, el clon se re-apunta y se descarga. Mismo historial: la
+      cadena de respaldos sigue con incrementales. Otro historial: el clon
+      anterior se aparta (no se borra) y se clona de cero, asi el proximo
+      respaldo de cada trabajo sale completo."""
+    repo = db.get(models.Repo, repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repositorio no encontrado.")
+    token = "" if payload.clear_token else (payload.github_token or git_service.repo_token(repo))
+    ok, head = git_service.remote_head(payload.github_url, token)
+    if not ok:
+        raise HTTPException(status_code=422, detail=f"No se pudo leer el repositorio con esa URL y token; no se guardó nada: {head}")
+    url_changed = git_service.strip_credentials(payload.github_url) != git_service.strip_credentials(repo.github_url)
+    estado, detalle = "sin_cambio", ""
+    if url_changed:
+        ok, estado, detalle = git_service.repoint_clone(repo.local_path, repo.github_url, payload.github_url, token)
+        if not ok:
+            raise HTTPException(status_code=422, detail=f"La URL responde, pero no se pudo descargar; el clon sigue con la URL anterior y no se guardó nada: {detalle}")
+    repo.github_url = payload.github_url
+    if payload.clear_token:
+        repo.github_token = None
+    elif payload.github_token:
+        repo.github_token = crypto_service.encrypt(payload.github_token)
+    repo.sync_interval_minutes = payload.sync_interval_minutes
+    db.commit()
+    db.refresh(repo)
+    scheduler.schedule_repo_sync(repo)
+    background_tasks.add_task(scheduler.sync_repo_job, repo.id)
+    messages = {
+        "sin_cambio": "La URL no cambió.",
+        "sin_clon": "Todavía no había clon: se clona ahora desde la nueva URL.",
+        "mismo": "Es el mismo repositorio (su historial continúa): los respaldos siguen en la misma cadena.",
+        "otro": ("La nueva URL tiene otro historial: el clon anterior se guardó aparte (" + Path(detalle).name + ") y se clona de cero; "
+                 "el próximo respaldo de cada trabajo será completo y los anteriores se conservan."),
+    }
+    return {"repo": schemas.RepoOut.model_validate(repo).model_dump(mode="json"), "estado": estado, "url_changed": url_changed, "message": messages[estado]}
+
+
 @router.post("/{repo_id}/sync", response_model=schemas.RepoOut)
 def sync_now(repo_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     repo = db.get(models.Repo, repo_id)

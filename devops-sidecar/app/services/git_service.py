@@ -6,7 +6,7 @@ import base64
 import os
 import re
 import subprocess
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -127,6 +127,52 @@ def _default_branch(local_path: str, env: dict | None = None) -> str:
     result = _run(["git", "remote", "show", "origin"], cwd=local_path, timeout=60, env=env)
     match = re.search(r"HEAD branch:\s*(\S+)", result.stdout or "")
     return match.group(1) if match else "main"
+
+
+def remote_head(url: str, token: str = "") -> tuple[bool, str]:
+    """Comprueba que se puede leer el repositorio de esa URL (con ese token):
+    (True, sha del HEAD remoto) o (False, motivo). No descarga nada."""
+    env = header_env("x-access-token", token) if token and url.startswith("https://") else None
+    try:
+        result = _run(["git", "ls-remote", "--", strip_credentials(url), "HEAD"], timeout=60, env=env)
+    except subprocess.TimeoutExpired:
+        return False, "el servidor no respondió a tiempo"
+    if result.returncode != 0:
+        return False, (result.stderr or "git ls-remote falló").strip()[:300]
+    line = (result.stdout or "").strip().split("\n")[0]
+    sha = line.split()[0] if line else ""
+    return (True, sha) if _SHA_RE.match(sha) else (True, "")
+
+
+def repoint_clone(local_path: str, old_url: str, new_url: str, token: str = "") -> tuple[bool, str, str]:
+    """Apunta el clon a la nueva URL, descarga y compara historiales.
+    Devuelve (ok, estado, detalle): estado = "mismo" (el ultimo commit que
+    tenia el clon esta en la nueva URL: mismo repositorio, quiza con commits
+    nuevos), "otro" (historial distinto: el clon se aparta como
+    <carpeta>.anterior-<fecha> y la siguiente sincronizacion clona de cero, asi
+    el proximo respaldo sale completo) o "sin_clon". Si la descarga falla, el
+    clon vuelve a la URL anterior y no se toca nada."""
+    base = Path(local_path)
+    if not (base / ".git").exists():
+        return True, "sin_clon", ""
+    old_head = (_run(["git", "rev-parse", "HEAD"], cwd=local_path, timeout=15).stdout or "").strip()
+    env = header_env("x-access-token", token) if token and new_url.startswith("https://") else None
+    _run(["git", "remote", "set-url", "origin", strip_credentials(new_url)], cwd=local_path, timeout=15)
+    _run(["git", "remote", "set-head", "origin", "-d"], cwd=local_path, timeout=15)
+    try:
+        result = _run(["git", "fetch", "--all", "--prune"], cwd=local_path, timeout=600, env=env)
+    except subprocess.TimeoutExpired:
+        result = None
+    if result is None or result.returncode != 0:
+        _run(["git", "remote", "set-url", "origin", strip_credentials(old_url)], cwd=local_path, timeout=15)
+        return False, "error", ((result.stderr if result else "") or "la descarga no terminó a tiempo").strip()[:300]
+    branch = _default_branch(local_path, env)
+    same = not old_head or _run(["git", "merge-base", "--is-ancestor", old_head, f"origin/{branch}"], cwd=local_path, timeout=60).returncode == 0
+    if same:
+        return True, "mismo", branch
+    aside = base.with_name(f"{base.name}.anterior-{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    base.rename(aside)
+    return True, "otro", str(aside)
 
 
 def sync_repo(repo: models.Repo) -> tuple[bool, str]:

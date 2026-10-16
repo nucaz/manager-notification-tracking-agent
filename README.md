@@ -1257,6 +1257,14 @@ Detalle completo (qué está verificado y qué no, cómo configurar el
 webhook de Coolify, decisiones de seguridad, estructura interna) en
 [`devops-sidecar/README.md`](devops-sidecar/README.md).
 
+**Editar un repositorio** (botón *Editar* en Repositorios): cambia la URL, el token o el
+intervalo sin perder nada. Antes de guardar se comprueba que la nueva URL se pueda leer
+con el token. El nombre no cambia, porque es la carpeta del clon y la de sus respaldos.
+Si la nueva URL es el mismo repositorio (movido o renombrado), el clon se re-apunta y la
+cadena de respaldos sigue con incrementales; si es otro historial, el clon anterior se
+guarda aparte (`<nombre>.anterior-<fecha>`, no se borra), se clona de cero y el próximo
+respaldo de cada trabajo sale completo, sin tocar los anteriores.
+
 ### 11.1 Un solo usuario para las dos aplicaciones
 
 Con `SSO_SHARED_SECRET` (el **mismo** valor en `.env` y en

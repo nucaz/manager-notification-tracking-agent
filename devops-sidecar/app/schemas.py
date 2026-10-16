@@ -58,6 +58,29 @@ class RepoCreate(BaseModel):
         return name
 
 
+class RepoUpdate(BaseModel):
+    """Editar un repositorio ya registrado. El nombre NO se cambia: es la carpeta
+    del clon y la clave de sus respaldos (cambiarlo los separaria)."""
+    github_url: str = Field(min_length=1, max_length=500)
+    github_token: str | None = None   # vacio = conservar el guardado
+    clear_token: bool = False          # quitar el token guardado
+    sync_interval_minutes: int = Field(default=60, ge=5, le=10080)
+
+    @field_validator("github_url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not REPO_URL.match(v):
+            raise ValueError("La URL del repositorio no es válida: debe ser como https://github.com/organizacion/repositorio.git")
+        return v
+
+    @field_validator("github_token")
+    @classmethod
+    def _token(cls, v: str | None) -> str | None:
+        v = (v or "").strip()
+        return v or None
+
+
 class RepoOut(BaseModel):
     id: int
     name: str
